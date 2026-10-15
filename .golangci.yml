@@ -1,0 +1,48 @@
+version: "2"
+
+run:
+  timeout: 5m
+  modules-download-mode: readonly
+
+linters:
+  default: none
+  enable:
+    - errcheck
+    - govet
+    - staticcheck
+    - ineffassign
+    - unused
+    - revive
+    - gocritic
+    - gosec
+    - sqlclosecheck
+    - bodyclose
+    - contextcheck
+    - exhaustive
+    - misspell
+  settings:
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - performance
+        - style
+    revive:
+      rules:
+        - name: exported
+          disabled: true
+    exhaustive:
+      default-signifies-exhaustive: true
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters:
+          - gosec
+          - errcheck
+          - gocritic
+          - bodyclose
+          - contextcheck
+
+formatters:
+  enable:
+    - gofmt
+    - goimports

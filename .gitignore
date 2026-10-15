@@ -1,1 +1,19 @@
 docs/
+
+# uploaded source material (design zip, etc.)
+.uploads/
+
+# build artifacts
+/bin/
+/dist/
+/cover.out
+/coverage.out
+
+# local env / secrets — never commit
+.env
+.env.*
+deploy/secrets/*.txt
+
+# editor / OS
+.DS_Store
+*.swp
