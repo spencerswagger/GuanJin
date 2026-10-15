@@ -1,0 +1,759 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>关津 · 预设档位与配置点清单</title>
+<style>
+  :root{
+    --bd:#e5e7eb; --bd2:#d1d5db;
+    --tx:#111827; --tx2:#4b5563; --tx3:#6b7280;
+    --bg:#ffffff; --bg2:#f9fafb; --bg3:#f3f4f6;
+    --l1:#6b7280; --l2:#0f766e; --l3:#1d4ed8;
+  }
+  *{box-sizing:border-box}
+  b,strong{font-weight:500}
+  body{
+    margin:0; padding:24px 20px 64px;
+    font:14px/1.6 -apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+    color:var(--tx); background:var(--bg);
+  }
+  h1{font-size:17px; font-weight:500; margin:0 0 6px}
+  .sub{font-size:13px; color:var(--tx3); margin:0 0 16px; line-height:1.75}
+  .rule{background:#f8fafc; border:1px solid var(--bd); border-radius:10px; padding:12px 14px; margin:0 0 10px; font-size:12.5px; line-height:1.85}
+  .rule b{color:#1e3a8a}
+  .rule .h{font-weight:500; margin-bottom:4px}
+  h2{font-size:14.5px; font-weight:500; margin:32px 0 10px; padding-top:18px; border-top:1px solid var(--bd)}
+  h2 span{font-weight:400; color:var(--tx3); font-size:12.5px; margin-left:8px}
+  .scroll{overflow:auto; border:1px solid var(--bd); border-radius:10px}
+  table{border-collapse:separate; border-spacing:0; width:100%; font-size:12.5px}
+  thead th{
+    position:sticky; top:0; z-index:3; background:var(--bg3); color:var(--tx);
+    font-weight:500; text-align:left; padding:9px 10px;
+    border-bottom:1px solid var(--bd2); border-right:1px solid var(--bd); white-space:nowrap;
+  }
+  tbody td{padding:8px 10px; border-bottom:1px solid var(--bd); border-right:1px solid var(--bd); vertical-align:top; background:var(--bg)}
+  tbody tr:last-child td{border-bottom:none}
+  th:last-child, td:last-child{border-right:none}
+  tbody td:first-child{background:var(--bg2); border-right:1px solid var(--bd2)}
+  tr.grp td{background:var(--bg3); font-weight:500; padding:7px 10px; font-size:12px; letter-spacing:.02em; border-right:none}
+  .c1{color:var(--l1)} .c2{color:var(--l2)} .c3{color:var(--l3)} .lv{font-weight:500}
+  td.up{background:#eff6ff}
+  .dash{color:var(--tx3)}
+  .reason{color:var(--tx2); font-size:11.5px; white-space:nowrap}
+  .dir{font-size:11.5px; white-space:nowrap}
+  .dir.q{color:#0f766e} .dir.s{color:#b45309} .dir.b{color:#6d28d9}
+  [data-tip]{cursor:help; text-decoration:underline dotted #9ca3af; text-underline-offset:3px; text-decoration-thickness:1px}
+  [data-tip]:hover{background:#fef9c3}
+  #tip b{color:#fca5a5; font-weight:500}
+  #tip{
+    position:fixed; z-index:99; display:none; max-width:440px;
+    padding:10px 12px; border-radius:8px;
+    background:#1f2937; color:#f9fafb; font-size:12.5px; line-height:1.7;
+    white-space:pre-line; box-shadow:0 8px 24px rgba(0,0,0,.22); pointer-events:none;
+  }
+  .legend{display:flex; gap:18px; flex-wrap:wrap; font-size:12px; color:var(--tx2); margin-bottom:14px}
+  .note{color:var(--tx3); font-size:12px; margin-top:14px; line-height:1.75}
+</style>
+</head>
+<body>
+
+<h1>关津 · 预设档位与配置点清单</h1>
+<p class="sub">
+  带点线下划线的文字可悬停查看说明与依据；<span style="background:#eff6ff; padding:1px 5px; border-radius:4px;">浅蓝底</span>表示该档位相对上一档有升级。<br>
+  本期前提：不引入硬件密码模块。
+</p>
+
+<div class="rule">
+  <div class="h">分类规则（本清单的全部依据）</div>
+  ① <b>用户无感知、或轻微感知且能理解的安全</b> → 进「平台固定实现」，全档一致，不做成配置项；<br>
+  ② <b>变更时需要数据迁移或不可逆的</b> → 进「平台固定实现」并<b>直接按最高级实现</b>；<br>
+  ③ <b>与业务系统安全要求相关的</b> → 进「客户端档位」，由每个业务系统注册时选定；<br>
+  ④ <b>锦上添花的功能</b> → 进「独立可选功能」，与你选哪一档无关。
+</div>
+
+<div class="rule">
+  <div class="h">档位模型：只有一层，且无上下文时按「生效配置」计算</div>
+  <b>档位只有「客户端档位」这一层。</b>每个业务系统注册时选一个等级，它定义的是<b>「访问这个业务系统的准入门槛」</b>。平台级的所有实现都按最高标准固定，与档位无关。<br>
+  <br>
+  <b>登录与注册一定有业务系统上下文</b>——用户永远不会“直接指向认证平台”，一定是从某个业务系统重定向过来的。所以登录与注册都按<b>目标业务系统</b>的门槛与其注册准入规则计算。<br>
+  <br>
+  <b>无上下文时按「生效配置」计算</b>：平台为每个用户维护一份<b>「已访问过的业务系统」记录</b>。当某个操作没有业务系统上下文时（例：从个人中心改口令、会话续期、后台处置），按该用户<b>已访问过的所有业务系统中档位最高的那一个</b>计算。<br>
+  <br>
+  <b>这一条顺带解决了「敏感操作门槛」</b>：换绑主标识符、注销账号、修改口令这类<b>账号级操作没有客户端上下文</b>，因此其前置要求 = 该用户的生效配置。用户访问过 L3 系统 → 换绑就要求 AAL2；只访问过 L1 → 按 L1。<br>
+  <br>
+  <b>为什么“晋升后保持”是自然的</b>：凭据强度只增不减（口令能从 10 位改成 14 位，改不回去），所以用户一旦因 L3 系统升级过，就自然保持在高档位——这不是额外规则，而是不可逆的物理结果。<br>
+  <br>
+  <b>配置按客户端、状态全局共享</b>：门槛值按客户端不同；而<b>失败计数、锁定状态、口令历史、会话总数、已访问记录必须跨客户端统一</b>——否则换个业务系统就能绕过。
+</div>
+
+<div class="rule">
+  <div class="h">密评三个「身份鉴别」分别是什么（GB/T 39786-2021）</div>
+  密评在三个技术层面各有一条「身份鉴别」，<b>对象完全不同</b>，不要混为一谈：<br>
+  <br>
+  · <b>8.2 a) 通信实体</b>——网络通信的<b>两端互相确认身份</b>。它不是人，是系统 / 设备。<br>
+  典型实现：双向 TLS（mTLS）/ 国密证书、IPSec VPN。<br>
+  <b>由谁承担</b>：关津承担「平台 ↔ 业务系统」这一段；其余通道（运维 VPN、堡垒机通道）由部署方承担。<br>
+  <br>
+  · <b>8.3 a) 登录设备的用户</b>——<b>运维人员</b>登录主机 / 数据库 / 网络设备时的身份鉴别。<br>
+  典型实现：证书登录、堡垒机 + 动态口令、国密 SSH。<br>
+  <b>由谁承担</b>：<b>部署方</b>的运维安全体系，<b>不是 关津的应用功能</b>。关津只负责自己不为运维提供弱口令通道。<br>
+  <br>
+  · <b>8.4 a) 登录用户</b>——<b>应用系统的最终用户</b>（C 端用户）登录时的身份鉴别。<br>
+  典型实现：口令 SM3 派生存储、基于 SM3 / HMAC 的动态口令。<br>
+  <b>由谁承担</b>：<b>这就是 关津的本职。</b><br>
+  <br>
+  <b>为什么必须写清这个分工</b>：等保与密评的测评对象是<b>整个信息系统</b>，关津只是其中一个组件。不写清哪一层归谁，测评时会互相推诿，最终判缺项。
+</div>
+
+<div class="rule">
+  <div class="h">档位变更时的影响（回答“变更需迁移”到底指什么）</div>
+  <b>三类变更，只有第三类需要真正的数据迁移</b>：<br>
+  · <b>① 纯参数调整</b>（阈值、超时、长度）——<b>即时生效，零迁移</b>；<br>
+  · <b>② 门槛收紧导致存量凭据不合规</b>（口令长度 12 → 14）——不迁移数据，靠<b>准入门槛拦截 + 要求改口令</b>自然过渡；<br>
+  · <b>③ 算法或数据结构变更</b>（口令派生算法与参数、审计完整性算法、敏感字段加密方式、主密钥）——<b>需要真正的数据迁移，且不可逆</b>。因此这四项<b>固定为最高级、与档位无关</b>。
+</div>
+
+<div class="rule">
+  <div class="h">默认档位：L2</div>
+  新建业务系统若不特别声明，按 <b>L2</b> 接入——即默认满足<b>等保二级 + 密评二级</b>。<br>
+  <b>要等保三级必须显式选 L3</b>（L3 才会强制多因子）。这一点容易误解为“默认就满足三级”，故单独写明。
+</div>
+
+<div class="legend">
+  <span><b class="c1">L1 基础</b>　低敏业务系统</span>
+  <span><b class="c2">L2 标准</b>　一般业务系统（对外服务但非关键）</span>
+  <span><b class="c3">L3 加强</b>　重要业务系统、承载个人信息的 C 端系统</span>
+</div>
+
+<h2>一 · 档位总览 <span>对标各家有等级要求的体系</span></h2>
+<div class="scroll">
+<table>
+  <thead>
+    <tr>
+      <th>档位</th>
+      <th>等保 2.0<br><small style="font-weight:400;color:var(--tx3)">GB/T 22239-2019</small></th>
+      <th>密评<br><small style="font-weight:400;color:var(--tx3)">GB/T 39786-2021</small></th>
+      <th>NIST AAL<br><small style="font-weight:400;color:var(--tx3)">SP 800-63B</small></th>
+      <th>ISO/IEC 29115<br><small style="font-weight:400;color:var(--tx3)">LoA</small></th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><span class="lv c1">L1 · 基础</span></td>
+      <td><span class="dash">不对标</span></td>
+      <td><span class="dash">不对标</span></td>
+      <td data-tip="AAL1 提供一定的保证：单因素或多因素均可，需在安全认证协议下证明对认证器的持有与控制。">AAL1</td>
+      <td data-tip="LoA1：低信任要求，通常单因素即可满足。">LoA1</td>
+    </tr>
+    <tr>
+      <td><span class="lv c2">L2 · 标准</span></td>
+      <td data-tip="等保二级身份鉴别仅 a) b) c) 三条——没有“两种或以上组合鉴别技术”，该条自第三级起才出现；访问控制为 a)~d)。">第二级</td>
+      <td data-tip="密评第二级要求密码产品达到 GB/T 37092 一级及以上。一级对物理安全机制无特殊要求，纯软件实现即可满足。">第二级</td>
+      <td data-tip="等保二级不要求多因子，本档默认单因素登录，因此对标 AAL1。
+平台不限制管理员自行加配因子（可达 AAL2），但档位不强制——所以档位承诺的级别是 AAL1。">AAL1</td>
+      <td data-tip="LoA2：中等偏低的信任要求，单因素加基本强度要求即可。">LoA2</td>
+    </tr>
+    <tr>
+      <td><span class="lv c3">L3 · 加强</span></td>
+      <td data-tip="等保三级技术要求全部可由软件实现：身份鉴别 d) 双因素（软件 TOTP 即可）、访问控制 e)~g)、安全审计 a)~d)。三级要求使用国密算法，但不强制密码机。
+
+⚠️ 访问控制 f) 粒度、g) 安全标记由应用层难以独立满足，需在项目方案中出具「责任划界声明」，明确由主机 / OS 加固层承担。">第三级</td>
+      <td data-tip="受“不引入硬件密码模块”的前提限制，本档在密评维度的上限为第二级——密评三级要求密码产品达 GB/T 37092 二级及以上，而二级要求密码模块具备防拆封装等物理安全机制。
+
+因此本档承诺密评二级，不承诺密评三级。">第二级</td>
+      <td data-tip="本档门槛要求最低两种不同因素，因此对标 AAL2。
+AAL3 需硬件认证器与抗钓鱼能力，本期不做。">AAL2</td>
+      <td data-tip="LoA3：较高信任要求，通常需要多因素认证。LoA4 需强身份核验与硬件令牌，本期不做。">LoA3</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<h2>二 · 平台固定实现 <span>全档一致，与档位无关</span></h2>
+<div class="scroll">
+<table>
+  <thead>
+    <tr><th>能力</th><th style="width:140px">归类理由</th><th>说明</th></tr>
+  </thead>
+  <tbody>
+
+    <tr class="grp"><td colspan="3">认证与凭据</td></tr>
+    <tr>
+      <td data-tip="为什么按最高级定死：算法与参数一旦确定就没法随便改——改一次要重算全部用户的口令，属于不可逆变更。">口令慢哈希派生存储</td>
+      <td class="reason">变更需迁移</td>
+      <td>加盐慢哈希派生，按最高强度实现；禁止 MD5 / SHA 等快速哈希直存</td>
+    </tr>
+    <tr>
+      <td>无默认口令</td>
+      <td class="reason">轻微感知且可理解</td>
+      <td>引导管理员口令由外部注入，首次登录强制修改</td>
+    </tr>
+    <tr>
+      <td>管理员重置后强制改密</td>
+      <td class="reason">轻微感知且可理解</td>
+      <td>被管理员重置口令的用户，下次登录必须修改</td>
+    </tr>
+    <tr>
+      <td>弱口令黑名单校验</td>
+      <td class="reason">无感知</td>
+      <td>命中常见弱口令与已泄露口令库即拒绝</td>
+    </tr>
+    <tr>
+      <td data-tip="机制固定不可关；阈值与锁定时长属于准入门槛，见第三节。
+判定算法（必须照此实现）：
+· 计数器只有一个，全局累计，跨业务系统共享；
+· 判定阈值取「当前业务系统门槛」与「该用户生效配置」中更严的一个；
+· 登录成功后清零，清零是全局的；
+· 锁定状态全局共享，一旦锁定所有业务系统都拒绝；
+· 解锁也是全局的，按触发锁定时使用的时长到期后统一解锁。">登录失败计数与锁定机制</td>
+      <td class="reason">轻微感知且可理解</td>
+      <td>功能不可关闭；判定算法见悬停说明；阈值与时长见第三节</td>
+    </tr>
+    <tr>
+      <td>阶梯认证</td>
+      <td class="reason">无感知</td>
+      <td>已有会话升级保证级别时只补缺失因素，不要求重新登录</td>
+    </tr>
+    <tr>
+      <td>账号存在性不泄露</td>
+      <td class="reason">无感知</td>
+      <td>登录失败与找回流程的提示内容、响应耗时保持一致</td>
+    </tr>
+    <tr>
+      <td data-tip="为什么生物特征不能单独作为认证因素：
+
+① 不可撤销、不可更换——密码泄露可以改、密钥丢了可以重发，但你的脸换不了。一旦泄露就是永久泄露。
+② 生物特征不是秘密——人脸随处可见（社交媒体、监控），指纹留在你碰过的每个物体上，声纹一段录音即可获得。不需要“攻击”就能拿到。
+③ 比对本质是“相似度阈值判断”，不是精确匹配——必然存在误接受概率（FAR）。密码/密钥是精确匹配，不存在这个概念。
+④ 依据：NIST SP 800-63B 明确要求生物特征只能作为多因素认证的一部分，必须与物理认证器（something you own）结合；OWASP 立场相同。
+
+工程含义：生物特征的正确用法是“解锁本地密钥材料的便利手段”，而不是“比对成功＝认证通过”。
+
+注：“人脸实人认证”是另一回事——它属于身份核验，不是日常认证，本平台不涉及。">生物特征不作单因素</td>
+      <td class="reason">固定策略</td>
+      <td>人脸等生物特征不得单独作为认证因素</td>
+    </tr>
+    <tr>
+      <td data-tip="高风险场景（同 IP/设备高频失败、异地跳变等）自动触发图形 / 滑块验证，用于阻断自动化撞库与批量注册。
+不作为配置项：用户对此完全无感知（只有异常时才出现），且它在最需要的时候必须一定启动——做成开关等于给了绕过它的机会。">图形验证码（自适应触发）</td>
+      <td class="reason">无感知</td>
+      <td>高风险时自动触发，不可关闭；正常登录不受影响</td>
+    </tr>
+    <tr>
+      <td>变更通知</td>
+      <td class="reason">轻微感知且可理解</td>
+      <td>换绑、找回、口令变更后通知全部已绑标识符（含旧值）</td>
+    </tr>
+    <tr>
+      <td data-tip="《个人信息保护法》要求个人有权注销账号、有权获取个人信息副本（可携带权）；处理敏感个人信息需单独同意。
+平台作为千万级 C 端身份基础设施，这些是硬约束而非增值功能——所以固定提供，与档位无关。">账号注销与数据导出</td>
+      <td class="reason">合规底线</td>
+      <td>用户可自助注销账号、可导出自己的个人信息副本；敏感信息的处理需单独同意并留痕</td>
+    </tr>
+
+    <tr class="grp"><td colspan="3">会话与鉴权</td></tr>
+    <tr>
+      <td>强制下线</td>
+      <td class="reason">无感知</td>
+      <td>管理员与用户均可终止指定会话，无开关</td>
+    </tr>
+    <tr>
+      <td data-tip="本项目已确定由 关津承载数据面（代替独立网关），因此：
+· 请求都要经过平台 → 撤销可【实时生效】，不存在“拉取间隔”带来的延迟；
+· 代价是平台必须承受全部业务流量，因此部署形态为<b>多副本 + 无状态化</b>。
+
+若业务系统被直连、不经数据面，则需靠撤销清单增量传播，延迟 = 接入侧拉取间隔（默认建议 ≤30 秒）。">撤销传播机制</td>
+      <td class="reason">无感知</td>
+      <td>由 关津承载数据面 → <b>实时生效</b>。若将来改为接入侧本地验签，则退化为清单传播（≤30 秒）</td>
+    </tr>
+    <tr>
+      <td>在线会话查看</td>
+      <td class="reason">无感知</td>
+      <td>可按用户 / 设备查看活跃会话</td>
+    </tr>
+    <tr>
+      <td data-tip="引入接入依赖后业务接口默认全部需要登录，仅内置白名单（健康检查、错误页、静态资源）与显式声明的公开接口放行。
+未做成档位差异，否则会出现“引入依赖即大面积 401”的接入事故。">业务接口默认拒绝</td>
+      <td class="reason">开发者会感知但正确</td>
+      <td>默认全部需要登录，仅内置白名单与显式声明的公开接口放行</td>
+    </tr>
+    <tr>
+      <td>权限数据完整性校验</td>
+      <td class="reason">无感知</td>
+      <td>策略数据在加载与比对时校验完整性</td>
+    </tr>
+    <tr>
+      <td data-tip="Redis 承载锁定状态、失败计数、授权码、撤销清单——这些是安全判定的依据。
+如果 Redis 不可用就降级放行，等于在被攻击时自动解除防护。因此规则是：Redis 不可用时认证服务<b>整体拒绝服务</b>（fail-closed），而不是降级。">依赖故障时的安全默认</td>
+      <td class="reason">固定策略</td>
+      <td>Redis 不可用时认证服务整体拒绝服务（fail-closed），不降级放行</td>
+    </tr>
+    <tr>
+      <td data-tip="密评三级 8.2 a) 要求“应采用【密码技术】对通信实体进行身份鉴别”。
+
+⚠️ 常见误区：把设备指纹放进请求头【不算】。请求头是客户端自己填的字符串，攻击者可以直接改——没有密码学绑定，等于没有认证。条文的关键词是“密码技术”，指纹不是密码技术；靠“内网隔离”或“来源 IP 白名单”也一样不算，那是网络位置而非实体身份。
+
+可行做法（按强度排序）：
+· mTLS / 国密证书——最标准，两端各持证书互相验证；
+· 应用层签名——用共享密钥对请求做 HMAC 签名（含时间戳 + nonce 防重放）。
+
+注意区分：之前讨论过的“省掉 client_secret、改用 PKCE”是【授权码换令牌】场景的事，与本条的“通信实体身份鉴别”不是一回事，不能相互替代。">通信实体身份鉴别</td>
+      <td class="reason">合规底线</td>
+      <td>平台 ↔ 业务系统之间用 <b>mTLS（国密证书）或应用层 HMAC 签名</b>；设备指纹 / 内网位置 / IP 白名单<b>不算</b></td>
+    </tr>
+
+    <tr class="grp"><td colspan="3">审计</td></tr>
+    <tr>
+      <td data-tip="审计是全量埋点，不按“重要程度”做过滤——埋点了再判断一次配置，只会制造漏审风险。">审计全量覆盖</td>
+      <td class="reason">无感知</td>
+      <td>覆盖每个用户、全部认证事件与管理操作，不做过滤</td>
+    </tr>
+    <tr>
+      <td data-tip="为什么按最高级定死：审计记录的完整性标签一旦生成，历史记录就只能用同一个算法验证——换算法等于放弃对历史记录的取证能力。">审计完整性保护（HMAC-SM3）</td>
+      <td class="reason">变更需迁移</td>
+      <td>每条记录附加校验标签，按最高强度实现</td>
+    </tr>
+    <tr>
+      <td>审计进程保护</td>
+      <td class="reason">无感知</td>
+      <td>写入独立于主流程，失败时告警但不中断主业务</td>
+    </tr>
+    <tr>
+      <td>记录变更前后值</td>
+      <td class="reason">无感知</td>
+      <td>管理类操作记录变更前与变更后的值</td>
+    </tr>
+    <tr>
+      <td data-tip="合规是随各业务系统一起测评的，因此审计必须能按业务系统维度导出，供各业务方独立取证。">按 Client 切分与导出</td>
+      <td class="reason">无感知</td>
+      <td>审计可按业务系统维度切分与导出</td>
+    </tr>
+    <tr>
+      <td data-tip="审计留存是平台的合规资产，不是业务系统的要求——所以按最高实现，不随档位变化。
+为什么不做成按客户端留存：删除是不可逆的，按客户端设不同留存期需要一套清理策略，收益小、风险大。">审计留存时长</td>
+      <td class="reason">平台级，与档位无关</td>
+      <td>固定按最高：365 天（等保三级要求不少于 180 天，此处取更高）；存储成本有压力时作为平台参数统一调低</td>
+    </tr>
+    <tr>
+      <td data-tip="等保三级安全管理中心要求对分散的审计数据集中收集汇总与集中分析。
+但“是否接入 SOC”取决于部署方有没有日志平台——所以平台固定提供外送能力，接不接由部署方决定。">日志外送（Syslog / SOC）</td>
+      <td class="reason">平台级，与档位无关</td>
+      <td>固定提供外送能力；是否接入 SOC 由部署方决定</td>
+    </tr>
+
+    <tr class="grp"><td colspan="3">密码与密钥</td></tr>
+    <tr>
+      <td>传输强制加密（机制）</td>
+      <td class="reason">无感知</td>
+      <td>生产环境不允许明文 HTTP，全链路加密</td>
+    </tr>
+    <tr>
+      <td data-tip="等保三级系统密码应用须使用国密算法。既然平台级按最高实现，就直接固定国密 TLS，不按档位分级。
+
+⚠️ 部署前置：国密 TLS 需要国密证书（SM2 证书）。证书未就位前无法完成部署——需要在项目启动时同步推进。">传输加密套件</td>
+      <td class="reason">平台级，与档位无关</td>
+      <td>固定国密 TLS（强制国密证书）。⚠️ 部署前置：需提前准备国密证书</td>
+    </tr>
+    <tr>
+      <td>令牌必须验签</td>
+      <td class="reason">无感知</td>
+      <td>不存在跳过验签的生产开关</td>
+    </tr>
+    <tr>
+      <td data-tip="为什么按最高级定死：加密方式一旦确定，存量数据已按该方式落库——换算法就要重新加密全量存量数据。
+加密范围由平台的“字段分级清单”决定（标识符、凭据材料、审计明细等），这份清单是内部实现，不对外开放配置。">敏感字段存储加密</td>
+      <td class="reason">变更需迁移</td>
+      <td>个人信息、凭据材料等敏感字段以 SM4 加密落库，按最高强度实现</td>
+    </tr>
+    <tr>
+      <td data-tip="密评三级 8.4 g) 要求保证重要数据在存储过程中的完整性。平台此前只对审计记录做了 HMAC-SM3，其余关键数据（标识符、凭据材料、策略数据）尚无完整性保护。
+实现：对关键表附加完整性校验值，写入时生成、读取时验证；不涉及算法可逆问题，因此固定开启。">关键数据存储完整性</td>
+      <td class="reason">合规底线</td>
+      <td>除审计外，标识符、凭据材料、策略等关键数据在存储时附加完整性校验</td>
+    </tr>
+    <tr>
+      <td data-tip="用户可见的脱敏行为：手机号显示为 138****8888、邮箱显示为 a***@x.com、令牌与口令在任何界面与日志中都不出现完整值。
+范围包括管理后台、审计查询结果与审计导出文件。">敏感数据脱敏展示</td>
+      <td class="reason">无感知</td>
+      <td>界面、审计查询与导出中的标识符一律脱敏；日志不含完整令牌与口令</td>
+    </tr>
+    <tr>
+      <td data-tip="为什么按最高级定死：主密钥一旦投入使用，所有被它加密的密钥都绑定在它上面——更换主密钥等于重新加密全部密钥材料。因此它必须从外部注入，且不随档位变化。
+
+另：主密钥不落库的原因见说明列。">主密钥外部注入</td>
+      <td class="reason">变更需迁移</td>
+      <td>主密钥由环境变量注入，不落库、不落配置。若主密钥也加密落库，拿到库即拿到一切（自解锁），加密形同虚设</td>
+    </tr>
+    <tr>
+      <td>密钥全生命周期审计</td>
+      <td class="reason">无感知</td>
+      <td>产生 / 分发 / 更新 / 归档 / 撤销 / 销毁全程留痕</td>
+    </tr>
+    <tr>
+      <td data-tip="签名密钥是全平台共享的（同一套密钥签所有令牌），与业务系统无关——所以轮换周期按最高实现、固定值。
+轮换必须遵循“先并行发布新公钥 → 等存量令牌自然过期 → 再退役旧密钥”，避免全量用户掉线。
+注意：这与“口令强制更换周期”是两件事，后者见第三节。">签名密钥轮换周期</td>
+      <td class="reason">平台级，与档位无关</td>
+      <td>固定 90 天。与业务系统无关（密钥全平台共享）</td>
+    </tr>
+    <tr>
+      <td data-tip="对关键管理操作附 SM2 数字签名并留存可验证证据，实现“谁做的、做了什么、不可抵赖”。
+它是平台自身的能力，用户无感知，因此按最高实现——固定开启，不按档位分级。">关键操作抗抵赖（SM2 签名）</td>
+      <td class="reason">平台级，与档位无关</td>
+      <td>固定开启</td>
+    </tr>
+
+    <tr class="grp"><td colspan="3">权限、注册与风控</td></tr>
+    <tr>
+      <td data-tip="等保要求“授予管理用户所需的最小权限，实现管理用户的权限分离”；三级测评实践通常按系统管理员 / 安全管理员 / 审计管理员“三员分离”核查。
+这是平台自身的角色模型，C 端用户不感知，因此按最高实现——固定提供三权分立能力。部署方可以只创建一个人兼任三角色（那就不达标），但平台不因此降低能力。">管理员角色模型</td>
+      <td class="reason">平台级，与档位无关</td>
+      <td>固定提供三权分立（系统管理员 / 安全管理员 / 审计员）</td>
+    </tr>
+    <tr>
+      <td data-tip="档位只约束“最少几种因素”（见第三节），不限制“能用哪几种”。
+你完全可以在 L1 同时配手机号、邮箱和 OTP——平台不会因此要求升级档位。
+“禁止某类因子”是另一回事，见第三节「禁用因子」。">因子类型不设限</td>
+      <td class="reason">不限制使用</td>
+      <td>任意已注册的认证因子都可配置，平台不限制种类</td>
+    </tr>
+    <tr>
+      <td data-tip="占用外部资源的标识符（手机号、邮箱）必须验证——它们属于他人的稀缺资源，不验证即可被抢注。平台内部标识符（用户名）可免验证。
+代价：仅用户名+密码注册的用户没有可验证的找回通道，只能走管理员重置。
+注册准入的具体规则（是否允许自注册、是否需邀请）是客户端级的，见第三节。">注册与验证规则</td>
+      <td class="reason">轻微感知且可理解</td>
+      <td>占用外部资源的标识符必须验证</td>
+    </tr>
+    <tr>
+      <td data-tip="注册与验证码发送是公网暴露面，必须限流。强度与业务规模有关（大促时过高会误伤），因此作为平台运行参数给一套较严的默认值，由部署方按实际流量调整。">注册与验证码限流</td>
+      <td class="reason">平台级，与档位无关</td>
+      <td>维度为 IP × 标识符 × 设备；给较严默认值，部署方可调</td>
+    </tr>
+    <tr>
+      <td>短信日配额与预算告警</td>
+      <td class="reason">无感知</td>
+      <td>单标识符 / 单 IP 配额 + 预算阈值告警 + 可一键关停短信因子</td>
+    </tr>
+    <tr>
+      <td data-tip="对异地登录、设备变更、失败激增等异常做检测，发现后主动撤销会话。
+它必须跨业务系统统一观察才有效（否则看不到“同一账号在 10 个业务系统用不同 IP 登录”），因此固定全局开启。
+注意：请求级即时拦截属于网关职责；平台负责的是账号级异常的检测与处置。">异常检测与处置</td>
+      <td class="reason">平台级，与档位无关</td>
+      <td>固定全局开启；检测到异常主动撤销会话</td>
+    </tr>
+    <tr>
+      <td data-tip="等保三级「访问控制」有三条与平台相关，含义各不相同：
+
+e) 应由【授权主体】配置访问控制策略，访问控制策略规定主体对客体的访问规则。
+   —— “授权主体”指被授权做这件事的管理员，通常是三员里的【安全管理员】。核心含义是：授权必须由“有人负责的、显式的配置”产生，不能是系统默认放行或代码里硬编码。
+   （注意：等保里没有“业务负责人”这个概念，别按那个理解。）
+
+f) 访问控制的【粒度】应达到主体为用户级或进程级，客体为文件、数据库表级。
+   —— 主体 = 谁在访问（用户 / 进程）；客体 = 被访问的对象（文件 / 数据库表）。要求细到“某个具体的人 对 某张具体的表”，而不是“某类角色 对 某个模块”。
+
+g) 应对【重要主体和客体设置安全标记】，并控制主体对有安全标记信息资源的访问。
+   —— “安全标记”是给主体和客体各打一个密级标签（如 公开 / 内部 / 秘密），访问规则是“主体密级 ≥ 客体密级才可访问”。
+   它与 RBAC 的本质区别：RBAC 属于自主访问控制（管理员 / 资源所有者决定谁能访问）；安全标记是系统按密级强制判定——即使管理员给了权限，密级不够仍然拒绝。
+   ⚠️ 注意：只有【四级】才明确写“强制访问控制”；三级只要求“标记 + 按标记控制”，强度较低。
+
+责任划分：e) 由平台的基础 RBAC 承担；f) 的数据库表级由平台 + 数据库权限承担，文件级由主机层承担；g) 由平台对自有数据打标 + 主机层对文件打标共同承担。
+f) 与 g) 涉及操作系统文件层，应用层无法完整满足——因此 L3 的交付物里必须包含这份「访问控制责任划界声明」，不写就会在测评时被判缺项。
+
+e/f/g 的具体落地方式、平台与业务系统的分工、以及 Casbin 模型选型，见同目录 `GuanJin-权限模型设计.md`。">访问控制责任划界（L3 交付物）</td>
+      <td class="reason">合规底线</td>
+      <td>随 L3 出具责任划界声明：e) 平台承担（基础 RBAC）；f) 表级平台 + 数据库、文件级主机层；g) 平台对自有数据打标 + 主机层</td>
+    </tr>
+
+    <tr class="grp"><td colspan="3">平台机制</td></tr>
+    <tr>
+      <td>预设档位管理</td>
+      <td class="reason">平台机制</td>
+      <td>业务系统注册时选定档位；每次调整留审计</td>
+    </tr>
+
+  </tbody>
+</table>
+</div>
+
+<h2>三 · 客户端档位 <span>即「访问该业务系统的准入门槛」；门槛不满足时要求用户升级</span></h2>
+<div class="scroll">
+<table>
+  <thead>
+    <tr><th>门槛项</th><th>L1 基础</th><th>L2 标准</th><th>L3 加强</th><th style="width:110px">允许调整方向</th></tr>
+  </thead>
+  <tbody>
+
+    <tr class="grp"><td colspan="5">A · 凭据要求（检查用户当前凭据是否达标）</td></tr>
+    <tr>
+      <td data-tip="等价于“最少要用几种不同的认证因素”：
+AAL1 = 至少 1 种；AAL2 = 至少 2 种不同因素。
+
+⚠️ 只约束数量下限，不限制因子种类。
+依据：等保三级 身份鉴别 d) 要求“两种或以上组合的鉴别技术，且其中一种至少使用密码技术”。">最低保证级别（ACR）</td>
+      <td class="c1">AAL1</td><td class="c2">AAL1</td><td class="c3 up">AAL2</td>
+      <td class="dir b">只能提高</td>
+    </tr>
+    <tr>
+      <td data-tip="用户在 A（L1）注册时口令 10 位；访问 B（L3 要求 14 位）时被拦截，要求改口令。改到 14 位后两边都满足——因为强度只增不减，不会冲突。
+
+长度取值参考等保四级对默认口令的描述（≥10 位）并做阶梯；NIST SP 800-63B 只要求最小 8 位，但更看重长度与黑名单而非复杂度组合。">口令最小长度</td>
+      <td class="c1">10</td><td class="c2">12</td><td class="c3 up">14</td>
+      <td class="dir q">只能更长</td>
+    </tr>
+    <tr>
+      <td data-tip="要求口令包含的字符类别数：小写字母 / 大写字母 / 数字 / 符号。
+L1 起步即为 2 类，不设“1 类”的低门槛。">口令复杂度（字符类别数）</td>
+      <td class="c1">2 类</td><td class="c2">3 类</td><td class="c3 up">4 类</td>
+      <td class="dir q">只能更多</td>
+    </tr>
+    <tr>
+      <td data-tip="不允许与最近 N 次使用过的口令重复。
+“最近 N 次”的记录是全局的（口令只有一个）；N 的取值按当前门槛判定。">历史口令不可复用</td>
+      <td class="c1">3 次</td><td class="c2">5 次</td><td class="c3 up">8 次</td>
+      <td class="dir q">只能更多</td>
+    </tr>
+    <tr>
+      <td data-tip="用户上次改密是 100 天前——访问 A（要求 180 天内）通过；访问 B（要求 60 天内）被拦截，要求改口令。
+口令的“年龄”是全局的，过期判定按当前门槛。
+
+⚠️ 标准冲突点：等保要求“定期更换”；NIST SP 800-63B 不建议强制定期更换（认为会促使用户选择更弱更好记的口令）。本项目取严。">口令强制更换周期</td>
+      <td class="c1">180 天</td><td class="c2">90 天</td><td class="c3 up">60 天</td>
+      <td class="dir s">只能更短</td>
+    </tr>
+
+    <tr class="grp"><td colspan="5">B · 会话与令牌</td></tr>
+    <tr>
+      <td data-tip="等保要求“登录连接超时自动退出”。
+参考 NIST 建议值：AAL2 空闲上限 30 分钟，AAL3 空闲上限 15 分钟。">会话空闲超时</td>
+      <td class="c1">120 分钟</td><td class="c2">30 分钟</td><td class="c3 up">15 分钟</td>
+      <td class="dir s">只能更短</td>
+    </tr>
+    <tr>
+      <td data-tip="会话的绝对最长生命周期，与空闲超时无关，到点必须重新认证。
+参考 NIST：AAL2 重新认证间隔不超过 12 小时。
+
+⚠️ 硬约束：刷新令牌有效期必须 ≤ 本项，否则用户可用刷新令牌无限续期，绝对超时被完全绕过。">会话绝对超时（重认证间隔）</td>
+      <td class="c1">24 小时</td><td class="c2">12 小时</td><td class="c3 up">8 小时</td>
+      <td class="dir s">只能更短</td>
+    </tr>
+    <tr>
+      <td data-tip="访问令牌的有效期。它是“踢下线延迟”的兜底上限——访问令牌越短，即使撤销清单没及时到达，最坏情况下的暴露窗口也越短。
+
+⚠️ 只填数字没用，必须与刷新令牌配套：访问令牌短、刷新令牌长，是为了既保证撤销及时、又避免用户频繁重新登录。">访问令牌有效期</td>
+      <td class="c1">15 分钟</td><td class="c2">10 分钟</td><td class="c3 up">5 分钟</td>
+      <td class="dir s">只能更短</td>
+    </tr>
+    <tr>
+      <td data-tip="刷新令牌的有效期。必须 ≤ 会话绝对超时（否则绝对超时形同虚设），且刷新时应轮换、检测重复使用。
+
+强制约束：刷新令牌有效期 ≤ 会话绝对超时。本表取值已满足（12≤24 / 8≤12 / 4≤8）。">刷新令牌有效期</td>
+      <td class="c1">12 小时</td><td class="c2">8 小时</td><td class="c3 up">4 小时</td>
+      <td class="dir s">只能更短</td>
+    </tr>
+    <tr>
+      <td data-tip="同一用户在该业务系统内可同时保留的会话数上限。
+⚠️ 实现注意：“不限”是特例，无法参与“只能更小”的比较运算，方向校验器需要对它单独处理。">单用户并发会话数上限</td>
+      <td class="c1">不限</td><td class="c2">10</td><td class="c3 up">5</td>
+      <td class="dir s">只能更小（“不限”为特例）</td>
+    </tr>
+    <tr>
+      <td data-tip="超过并发上限时的处置方式。
+· 拒绝新登录：不影响既有会话，适合低敏场景；
+· 挤掉最旧：新登录总是成功，旧的被踢——适合需要防账号共用的场景。">并发会话超额处置</td>
+      <td class="c1">拒绝新登录</td><td class="c2 up">挤掉最旧</td><td class="c3 up">挤掉最旧 + 告警</td>
+      <td class="dir b">只能更严</td>
+    </tr>
+
+    <tr class="grp"><td colspan="5">C · 失败处理</td></tr>
+    <tr>
+      <td data-tip="连续失败达该次数后锁定账号。
+
+⚠️ 关键实现：阈值按业务系统，但失败计数与锁定状态全局共享——否则攻击者在 A 试 9 次（未达 A 的阈值 10）、换到 B 再试，如果各算各的永远触发不了。
+判定取「当前业务系统门槛」与「该用户生效配置」中更严的一个。">失败尝试上限</td>
+      <td class="c1">10</td><td class="c2">5</td><td class="c3 up">3</td>
+      <td class="dir s">只能更小</td>
+    </tr>
+    <tr>
+      <td data-tip="触发锁定后的封禁时长，按触发锁定时使用的门槛取值（锁定状态本身全局共享，锁一个所有业务系统都锁）。
+平台另支持“递增锁定”：同一账号反复触发时逐次延长时长，上限受当前门槛的最大时长约束。">锁定时长</td>
+      <td class="c1">5 分钟</td><td class="c2">15 分钟</td><td class="c3 up">30 分钟</td>
+      <td class="dir q">只能更长</td>
+    </tr>
+
+    <tr class="grp"><td colspan="5">D · 准入与生命周期</td></tr>
+    <tr>
+      <td data-tip="登录与注册都带业务系统上下文（用户一定是从某个业务系统重定向过来的），因此注册按<b>目标业务系统</b>的准入规则计算——不是平台级的一个开关。
+
+注册出来的账号是全局的，但“从哪个入口进来、要满足什么条件”按该业务系统。
+默认值不随档位变化；若某业务系统需要收紧（如只允许邀请、要求实名前置），可单独配置。">注册准入规则</td>
+      <td class="c1">允许自注册</td><td class="c2">允许自注册</td><td class="c3">允许自注册</td>
+      <td class="dir b">只能更严</td>
+    </tr>
+    <tr>
+      <td data-tip="是否允许用户自助找回口令。
+敏感业务系统可能要求“只能由管理员重置”，以杜绝通过找回通道接管账号。
+默认全档允许（这是 C 端的基本体验）；L3 可配置为“仅管理员重置”。">口令自助找回</td>
+      <td class="c1">允许</td><td class="c2">允许</td><td class="c3">允许（可配置为仅管理员重置）</td>
+      <td class="dir b">只能更严</td>
+    </tr>
+    <tr>
+      <td data-tip="用户点击“退出登录”时，影响范围有多大。
+· 仅当前业务系统：只结束本系统的会话，其他业务系统不受影响；
+· 全部业务系统：单点登出（SLO），一次退出全域失效——安全性更高，但需要跨系统通知机制。">单点登出级联范围</td>
+      <td class="c1">仅当前业务系统</td><td class="c2 up">全部业务系统</td><td class="c3 up">全部业务系统</td>
+      <td class="dir b">只能更广</td>
+    </tr>
+
+    <tr class="grp"><td colspan="5">E · 因子限制与配套要求</td></tr>
+    <tr>
+      <td data-tip="该业务系统<b>不允许</b>用哪些因子登录（例如高敏系统禁用短信，防 SIM swap）。
+
+⚠️ 与“最小保证级别”如何配合（关键规则）：
+禁用因子只约束“进入本系统时的验证方式”。如果用户持有一个含被禁因子的凭据（例如在别的业务系统用“口令+短信”达成了 AAL2），切换到本系统时<b>该凭据不被承认，视为需要安全升级</b>——要求补一个本系统允许的因素。
+即：<b>被禁因子既不能用于进入本系统，也不计入进入本系统时的保证级别。</b>
+
+默认三档都不禁用；按业务系统单独配置。">禁用因子</td>
+      <td class="c1">无</td><td class="c2">无</td><td class="c3">无（可配置禁用短信等）</td>
+      <td class="dir b">只能增加禁用</td>
+    </tr>
+    <tr>
+      <td data-tip="渗透测试与漏洞管理是建设方的工程动作，不是平台的技术实现——平台不写它们的代码，但可以在准入时登记与跟踪。
+L3 的准入门槛里包含“接入方需具备年度渗透测试与漏洞闭环能力”，平台提供登记与状态展示，不提供技术实现。">建设方配套要求</td>
+      <td class="c1">无要求</td><td class="c2 up">定期漏洞扫描</td><td class="c3 up">每年渗透 + 高危 1 月内修复 + 接入 SOC</td>
+      <td class="dir b">只能更严</td>
+    </tr>
+
+  </tbody>
+</table>
+</div>
+
+<h2>四 · 独立可选功能 <span>与档位无关，爱配不配</span></h2>
+<div class="scroll">
+<table>
+  <thead><tr><th>功能</th><th>说明</th><th>唯一约束</th></tr></thead>
+  <tbody>
+    <tr>
+      <td data-tip="等保三级访问控制要求“由授权主体配置访问控制策略”。配置了基础 RBAC 就等于把这条落在平台里；不配置则由各业务方自建授权，责任在业务侧。
+两条路都成立，因此它不进档位。">基础 RBAC（角色 + 权限点）</td>
+      <td>提供开箱即用的角色与权限点管理，覆盖绝大多数场景。<b>配不配与你选哪一档无关</b>；不配则由业务方自建授权</td>
+      <td>无</td>
+    </tr>
+    <tr>
+      <td data-tip="受信设备会跳过第二因素，会实质降低保证级别。作用域是 <b>per-client</b>——在某一个业务系统信任了设备，不能豁免其他业务系统的第二因素。
+
+当门槛要求 AAL2 时，它与“最低保证级别”冲突，在该业务系统内自动禁用。这不是档位配置项，而是功能之间的一条约束。">受信设备（记住设备）</td>
+      <td>受信设备在 N 天内免第二因素，可显著减少验证次数，用户爱用不用</td>
+      <td>作用域为<b>单个业务系统</b>；该业务系统门槛要求 AAL2 时<b>自动禁用</b></td>
+    </tr>
+    <tr>
+      <td>审计看板与分析报表</td>
+      <td>在审计原始记录之上做趋势、Top 榜、异常聚合等可视化</td>
+      <td>无</td>
+    </tr>
+    <tr>
+      <td data-tip="登录页的品牌定制（Logo / 主题色 / 独立域名 / 多语言）。
+100 个业务系统面对不同用户群体，品牌一致性通常是刚需——但它是体验问题，不影响安全与合规。
+结论：<b>本期不做，后续按业务系统开放</b>。">登录页品牌与多语言</td>
+      <td>按业务系统定制登录页外观、独立域名与语言集</td>
+      <td>—（本期不做，已登记为后续项）</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<h2>五 · 四条工程原则</h2>
+<div class="scroll">
+<table>
+  <thead><tr><th>原则</th><th>含义</th><th>验收方式</th></tr></thead>
+  <tbody>
+    <tr>
+      <td>默认即合规</td>
+      <td>业务系统选定档位后，不做任何额外配置，就已满足该档位对标的全部合规要求</td>
+      <td>新建业务系统 → 选 L3 → 直接跑等保三级自查，应通过</td>
+    </tr>
+    <tr>
+      <td>能固定的不做开关</td>
+      <td>用户无感知、或轻微感知且能理解的安全，一律固定开启；变更需迁移的，直接按最高级实现</td>
+      <td>配置界面上不应出现这些开关；少一个开关就少一类误配</td>
+    </tr>
+    <tr>
+      <td data-tip="最易搞反的地方：下限类与上限类的“收紧”方向是相反的。
+实现时应产出一份「门槛项方向矩阵」，对第三节每一个门槛项标注允许方向，由统一的校验器拦截越界调整；“不限”这类特例要单独标注。">档位即门槛，只升不降</td>
+      <td>档位给出的是访问该业务系统的准入下限，只能往严的方向调整。功能本身不因档位被限制使用，且调整方向分四类、彼此相反</td>
+      <td>
+        <b>四类方向各抽查一项，越界调整必须被拒绝：</b><br>
+        ① 下限类（只能更大）——L2 口令 12 位，改 15 位<b>通过</b>，改 8 位<b>拒绝</b>；<br>
+        ② 上限类（只能更小）——L3 空闲超时 15 分钟，改 10 分钟<b>通过</b>，改 60 分钟<b>拒绝</b>；<br>
+        ③ 只能更严类——L2 图形验证码默认自适应，改为“关闭”<b>拒绝</b>；<br>
+        ④ 只能提高类——L2 最低保证级别 AAL1，改为 AAL2 <b>通过</b>，改回更低<b>拒绝</b>。<br>
+        另验证：L1 可自行配置三种因子（<b>不受档位限制</b>）；每一次越界尝试都写入审计。
+      </td>
+    </tr>
+    <tr>
+      <td data-tip="这是最容易实现错的一条：门槛按客户端，状态必须全局。
+反例（错误实现）：每个业务系统各存一份失败计数——攻击者在 A 试 9 次、B 试 9 次、C 试 9 次，永远触发不了任何阈值。">配置按客户端，状态全局共享</td>
+      <td>门槛值（口令多长、要几个因素、会话活多久）按客户端不同；但<b>失败计数、锁定状态、口令历史、会话总数、已访问记录必须跨客户端统一</b></td>
+      <td>在 A 失败到接近阈值后切到 B，应<b>立即触发锁定</b>而非重新计数；在 A 被锁后访问 B，应<b>同样被拒</b></td>
+    </tr>
+    <tr>
+      <td>无上下文按生效配置</td>
+      <td>没有业务系统上下文的操作（改口令、换绑、注销、会话续期、后台处置），按该用户<b>已访问过的业务系统中档位最高的那一个</b>计算</td>
+      <td>用户只访问过 L1 → 换绑按 L1；此后访问过一次 L3 → 换绑要求 AAL2</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<p class="note">
+  档位与门槛项的条文依据见同目录《合规要求横向对比矩阵》。<br>
+  第二节「平台固定实现」+ 第三节「客户端档位」= 完整开发范围；第四节为可选项。<br>
+  本期前提：不引入硬件密码模块，相关结论已直接体现在档位对标中。
+</p>
+
+<div id="tip"></div>
+<script>
+(function(){
+  var tip = document.getElementById('tip');
+  var cur = null;
+  function place(el){
+    var r = el.getBoundingClientRect();
+    tip.style.display = 'block';
+    tip.style.left = '0px'; tip.style.top = '0px';
+    var w = tip.offsetWidth, h = tip.offsetHeight, gap = 10;
+    var x = r.left, y = r.bottom + gap;
+    if (y + h > window.innerHeight - 8) {
+      y = r.top - h - gap;
+      if (y < 8) y = Math.max(8, window.innerHeight - h - 8);
+    }
+    if (x + w > window.innerWidth - 8) x = window.innerWidth - w - 8;
+    if (x < 8) x = 8;
+    tip.style.left = x + 'px';
+    tip.style.top = y + 'px';
+  }
+  function show(el){
+    var t = el.getAttribute('data-tip');
+    if (!t) return;
+    cur = el; tip.innerHTML = t; place(el);
+  }
+  function hide(){ cur = null; tip.style.display = 'none'; }
+  document.addEventListener('mouseover', function(e){
+    var el = e.target.closest ? e.target.closest('[data-tip]') : null;
+    if (!el || el === cur) return;
+    show(el);
+  });
+  document.addEventListener('mouseout', function(e){
+    var el = e.target.closest ? e.target.closest('[data-tip]') : null;
+    if (!el) return;
+    var to = e.relatedTarget;
+    if (to && to.closest && to.closest('[data-tip]') === el) return;
+    hide();
+  });
+  document.addEventListener('scroll', function(){ if (cur) place(cur); }, true);
+  window.addEventListener('resize', hide);
+  document.addEventListener('keydown', function(e){ if (e.key === 'Escape') hide(); });
+})();
+</script>
+
+</body>
+</html>
