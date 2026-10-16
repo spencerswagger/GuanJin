@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -81,6 +82,9 @@ func (r *SigningKeyRepo) EnsureKeypair(ctx context.Context, purpose string) (*mo
 
 		existing, err := getActiveByPurpose(tx, purpose)
 		if err == nil {
+			if _, derr := DecryptPrivateKey(r.masterKey, existing.PrivateKeyEnc); derr != nil {
+				return fmt.Errorf("signing key %q exists for purpose %q but cannot be decrypted with the current master key: %w", existing.Kid, purpose, derr)
+			}
 			out = existing
 			return nil
 		}

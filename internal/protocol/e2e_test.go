@@ -83,6 +83,7 @@ func setupE2E(t *testing.T) *e2eFixture {
 	ctx := context.Background()
 
 	keysRepo := store.NewSigningKeyRepo(db, masterKey)
+	require.NoError(t, db.Exec("DELETE FROM signing_keys").Error)
 	require.NoError(t, func() error {
 		if _, err := keysRepo.EnsureKeypair(ctx, crypto.PurposeOIDC); err != nil {
 			return err
