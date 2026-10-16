@@ -15,6 +15,13 @@ var (
 	ErrReferenceNotFound      = errors.New("REFERENCE_NOT_FOUND")
 	ErrInvalidParameter       = errors.New("INVALID_PARAMETER")
 	ErrConflict               = errors.New("CONFLICT")
+
+	ErrUserNotFound       = errors.New("USER_NOT_FOUND")
+	ErrClientNotFound     = errors.New("CLIENT_NOT_FOUND")
+	ErrSessionNotFound    = errors.New("SESSION_NOT_FOUND")
+	ErrIdentifierNotFound = errors.New("IDENTIFIER_NOT_FOUND")
+	ErrSigningKeyNotFound = errors.New("KEY_UNAVAILABLE")
+	ErrInvalidCredential  = errors.New("INVALID_CREDENTIAL")
 )
 
 func MapPgError(err error) error {

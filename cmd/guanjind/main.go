@@ -12,11 +12,15 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
+	"gorm.io/gorm"
 
 	"github.com/spencerswagger/GuanJin/internal/config"
 	"github.com/spencerswagger/GuanJin/internal/crypto"
 	"github.com/spencerswagger/GuanJin/internal/httpx"
+	"github.com/spencerswagger/GuanJin/internal/identifier"
 	"github.com/spencerswagger/GuanJin/internal/observability"
+	"github.com/spencerswagger/GuanJin/internal/protocol"
+	"github.com/spencerswagger/GuanJin/internal/session"
 	"github.com/spencerswagger/GuanJin/internal/store"
 )
 
@@ -104,9 +108,15 @@ func serve() error {
 		},
 	}}
 
+	if err := bootstrapSigningKeys(context.Background(), db, masterKey); err != nil {
+		return fmt.Errorf("bootstrap signing keys: %w", err)
+	}
+
+	protoServer := newProtocolServer(&env, logger, db, rdb, masterKey)
+
 	httpServer := &http.Server{
 		Addr:              env.HTTPAddr,
-		Handler:           newEngine(&env, logger, probes, metrics),
+		Handler:           newEngine(&env, logger, probes, metrics, protoServer),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      30 * time.Second,
@@ -155,7 +165,7 @@ func serve() error {
 	return nil
 }
 
-func newEngine(env *config.Env, logger *zap.Logger, probes *httpx.Probes, metrics *observability.Metrics) *gin.Engine {
+func newEngine(env *config.Env, logger *zap.Logger, probes *httpx.Probes, metrics *observability.Metrics, protoServer *protocol.Server) *gin.Engine {
 	if !env.IsDev() {
 		gin.SetMode(gin.ReleaseMode)
 	}
@@ -163,8 +173,43 @@ func newEngine(env *config.Env, logger *zap.Logger, probes *httpx.Probes, metric
 	engine.Use(httpx.Trace(), httpx.AccessLog(logger), httpx.Recovery(logger))
 	engine.GET("/healthz", gin.WrapH(probes.HealthzHandler()))
 	engine.GET("/readyz", gin.WrapH(probes.ReadyzHandler(metrics)))
+	if protoServer != nil {
+		protoServer.RegisterRoutes(engine)
+	}
 	engine.NoRoute(func(c *gin.Context) {
 		httpx.Error(c, httpx.New("NOT_FOUND", "route not found"))
 	})
 	return engine
+}
+
+func bootstrapSigningKeys(ctx context.Context, db *gorm.DB, masterKey []byte) error {
+	repo := store.NewSigningKeyRepo(db, masterKey)
+	for _, purpose := range []string{crypto.PurposeOIDC, crypto.PurposeGateway} {
+		if _, err := repo.EnsureKeypair(ctx, purpose); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func newProtocolServer(env *config.Env, logger *zap.Logger, db *gorm.DB, rdb *store.Redis, masterKey []byte) *protocol.Server {
+	return protocol.New(protocol.Deps{
+		Config: protocol.Config{
+			Issuer:        env.Issuer,
+			PublicBaseURL: env.PublicBaseURL,
+			SecureCookie:  !env.IsDev(),
+		},
+		Logger:         logger,
+		Redis:          rdb,
+		Users:          store.NewUserRepo(db),
+		Clients:        store.NewClientRepo(db, masterKey),
+		Identifiers:    store.NewIdentifierRepo(db),
+		Authenticators: store.NewAuthenticatorRepo(db),
+		Sessions:       store.NewSessionRepo(db),
+		Keys:           store.NewSigningKeyRepo(db, masterKey),
+		Policies:       store.NewLoginPolicyRepo(db),
+		Roles:          store.NewRoleBindingRepo(db),
+		SessionMgr:     session.NewManager(store.NewSessionRepo(db)),
+		Blind:          identifier.NewBlindIndexer(masterKey),
+	})
 }
