@@ -201,6 +201,9 @@ func newProtocolServer(env *config.Env, logger *zap.Logger, db *gorm.DB, rdb *st
 	if err := registry.Register(holding.NewPasswordProvider(authenticators, challenges, holding.DefaultFailThreshold, holding.DefaultLockDuration)); err != nil {
 		panic(err)
 	}
+	if err := registry.Register(holding.NewTotpProvider(authenticators, challenges, masterKey, holding.DefaultFailThreshold, holding.DefaultLockDuration)); err != nil {
+		panic(err)
+	}
 	return protocol.New(protocol.Deps{
 		Config: protocol.Config{
 			Issuer:        env.Issuer,
