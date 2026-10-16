@@ -16,6 +16,8 @@ import (
 
 	"github.com/spencerswagger/GuanJin/internal/config"
 	"github.com/spencerswagger/GuanJin/internal/crypto"
+	"github.com/spencerswagger/GuanJin/internal/factor"
+	"github.com/spencerswagger/GuanJin/internal/factor/holding"
 	"github.com/spencerswagger/GuanJin/internal/httpx"
 	"github.com/spencerswagger/GuanJin/internal/identifier"
 	"github.com/spencerswagger/GuanJin/internal/observability"
@@ -193,6 +195,12 @@ func bootstrapSigningKeys(ctx context.Context, db *gorm.DB, masterKey []byte) er
 }
 
 func newProtocolServer(env *config.Env, logger *zap.Logger, db *gorm.DB, rdb *store.Redis, masterKey []byte) *protocol.Server {
+	authenticators := store.NewAuthenticatorRepo(db)
+	challenges := store.NewChallengeRepo(db)
+	registry := factor.NewRegistry()
+	if err := registry.Register(holding.NewPasswordProvider(authenticators, challenges, holding.DefaultFailThreshold, holding.DefaultLockDuration)); err != nil {
+		panic(err)
+	}
 	return protocol.New(protocol.Deps{
 		Config: protocol.Config{
 			Issuer:        env.Issuer,
@@ -204,12 +212,14 @@ func newProtocolServer(env *config.Env, logger *zap.Logger, db *gorm.DB, rdb *st
 		Users:          store.NewUserRepo(db),
 		Clients:        store.NewClientRepo(db, masterKey),
 		Identifiers:    store.NewIdentifierRepo(db),
-		Authenticators: store.NewAuthenticatorRepo(db),
+		Authenticators: authenticators,
+		Challenges:     challenges,
 		Sessions:       store.NewSessionRepo(db),
 		Keys:           store.NewSigningKeyRepo(db, masterKey),
 		Policies:       store.NewLoginPolicyRepo(db),
 		Roles:          store.NewRoleBindingRepo(db),
 		SessionMgr:     session.NewManager(store.NewSessionRepo(db)),
 		Blind:          identifier.NewBlindIndexer(masterKey),
+		Registry:       registry,
 	})
 }

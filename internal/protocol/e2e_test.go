@@ -26,6 +26,8 @@ import (
 
 	"github.com/spencerswagger/GuanJin/internal/credential"
 	"github.com/spencerswagger/GuanJin/internal/crypto"
+	"github.com/spencerswagger/GuanJin/internal/factor"
+	"github.com/spencerswagger/GuanJin/internal/factor/holding"
 	"github.com/spencerswagger/GuanJin/internal/httpx"
 	"github.com/spencerswagger/GuanJin/internal/identifier"
 	"github.com/spencerswagger/GuanJin/internal/session"
@@ -94,19 +96,26 @@ func setupE2E(t *testing.T) *e2eFixture {
 
 	seedE2E(t, db, keysRepo, masterKey)
 
+	authenticators := store.NewAuthenticatorRepo(db)
+	challenges := store.NewChallengeRepo(db)
+	registry := factor.NewRegistry()
+	require.NoError(t, registry.Register(holding.NewPasswordProvider(authenticators, challenges, holding.DefaultFailThreshold, holding.DefaultLockDuration)))
+
 	protoServer := New(Deps{
 		Config:         Config{Issuer: "http://localhost:8080", PublicBaseURL: "http://localhost:8080", SecureCookie: false},
 		Redis:          rdb,
 		Users:          store.NewUserRepo(db),
 		Clients:        store.NewClientRepo(db, masterKey),
 		Identifiers:    store.NewIdentifierRepo(db),
-		Authenticators: store.NewAuthenticatorRepo(db),
+		Authenticators: authenticators,
+		Challenges:     challenges,
 		Sessions:       store.NewSessionRepo(db),
 		Keys:           keysRepo,
 		Policies:       store.NewLoginPolicyRepo(db),
 		Roles:          store.NewRoleBindingRepo(db),
 		SessionMgr:     session.NewManager(store.NewSessionRepo(db)),
 		Blind:          identifier.NewBlindIndexer(masterKey),
+		Registry:       registry,
 	})
 
 	gin.SetMode(gin.TestMode)
@@ -127,10 +136,12 @@ func seedE2E(t *testing.T, db *gorm.DB, keysRepo *store.SigningKeyRepo, masterKe
 	var existing model.User
 	if err := db.Where("username = ?", e2eUsername).First(&existing).Error; err == nil {
 		require.NoError(t, db.Exec("DELETE FROM sessions WHERE user_id = ?", existing.ID).Error)
+		require.NoError(t, db.Exec("DELETE FROM challenges WHERE user_id = ?", existing.ID).Error)
 		require.NoError(t, db.Exec("DELETE FROM authenticators WHERE user_id = ?", existing.ID).Error)
 		require.NoError(t, db.Exec("DELETE FROM identifiers WHERE user_id = ?", existing.ID).Error)
 		require.NoError(t, db.Exec("DELETE FROM users WHERE id = ?", existing.ID).Error)
 	}
+	require.NoError(t, db.Exec("DELETE FROM challenges WHERE client_id = ?", e2eClientID).Error)
 	require.NoError(t, db.Exec("DELETE FROM sessions WHERE client_id = ?", e2eClientID).Error)
 	require.NoError(t, db.Exec("DELETE FROM clients WHERE client_id = ?", e2eClientID).Error)
 
@@ -192,46 +203,95 @@ func TestE2EPasswordLoginAuthorizationCodeFlow(t *testing.T) {
 
 	authParams := authorizeQuery("state-abc")
 
-	// 1) /authorize 未登录 → 302 /login
+	// 1) GET /authorize（无会话）→ 302 /login?flow_id
 	resp, err := client.Get(srv.URL + "/authorize?" + authParams.Encode())
 	require.NoError(t, err)
 	require.Equal(t, http.StatusFound, resp.StatusCode)
 	location := resp.Header.Get("Location")
 	require.True(t, strings.HasPrefix(location, "/login?"), "location=%s", location)
+	loginURL, err := url.Parse(location)
+	require.NoError(t, err)
+	flowID := loginURL.Query().Get("flow_id")
+	require.NotEmpty(t, flowID)
 	resp.Body.Close()
+	defer func() { _ = fx.rdb.Client().Del(ctx, "guanjin:flow:"+flowID) }()
 
-	// 2) POST /login 正确口令 → 302 /authorize 且建立会话与 cookie
-	form := url.Values{}
-	form.Set("username", e2eUsername)
-	form.Set("password", e2ePassword)
-	for k, v := range authParams {
-		form.Set(k, v[0])
-	}
-	resp = postForm(t, client, srv.URL+"/login", form)
-	require.Equal(t, http.StatusFound, resp.StatusCode)
-	require.True(t, strings.HasPrefix(resp.Header.Get("Location"), "/authorize?"), "location=%s", resp.Header.Get("Location"))
+	// 2) GET /authorize/flow → Flow Descriptor（编排层驱动）
+	resp, err = client.Get(srv.URL + "/authorize/flow?flow_id=" + url.QueryEscape(flowID))
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	var desc map[string]any
+	require.NoError(t, json.Unmarshal(readBody(t, resp), &desc))
+	require.Equal(t, flowID, desc["flow_id"])
+	require.Equal(t, "AAL1", desc["target_acr"])
+	require.Equal(t, "AAL0", desc["current_acr"])
+	require.Equal(t, false, desc["satisfied"])
+	clientRef, ok := desc["client"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, e2eClientID, clientRef["id"])
+	require.Equal(t, "L2", clientRef["tier"])
+	steps, ok := desc["steps"].([]any)
+	require.True(t, ok)
+	require.NotEmpty(t, steps)
+	firstStep, ok := steps[0].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "password", firstStep["factor"])
+	require.Equal(t, "first", firstStep["role"])
+	require.Equal(t, "pending", firstStep["status"])
+	hint, ok := firstStep["challenge_hint"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "input_password", hint["next_action"])
+	available, ok := desc["available_factors"].([]any)
+	require.True(t, ok)
+	require.Contains(t, available, "password")
+	t.Logf("descriptor: flow_id=%s target=%v current=%v satisfied=%v steps=%d available=%v",
+		desc["flow_id"], desc["target_acr"], desc["current_acr"], desc["satisfied"], len(steps), available)
+
+	// 3) POST /auth/challenge/password → 开启挑战（编排行）
+	resp = postJSON(t, client, srv.URL+"/auth/challenge/password", map[string]any{
+		"flow_id": flowID, "purpose": "login", "user_hint": e2eUsername,
+	})
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	var ch map[string]any
+	require.NoError(t, json.Unmarshal(readBody(t, resp), &ch))
+	challengeID, _ := ch["challenge_id"].(string)
+	require.NotEmpty(t, challengeID)
+	require.Equal(t, "input_password", ch["next_action"])
+
+	// 4) POST /auth/verify/password → 校验并推进编排
+	resp = postJSON(t, client, srv.URL+"/auth/verify/password", map[string]any{
+		"challenge_id": challengeID, "response": e2ePassword, "flow_id": flowID,
+	})
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	var verified map[string]any
+	require.NoError(t, json.Unmarshal(readBody(t, resp), &verified))
+	require.Equal(t, true, verified["verified"])
+	require.Equal(t, "AAL1", verified["acr"])
+	amr, ok := verified["amr"].([]any)
+	require.True(t, ok)
+	require.Contains(t, amr, "pwd")
+
+	// 5) POST /authorize/submit（只补缺，已达标）→ completed 拿 code
+	resp = postJSON(t, client, srv.URL+"/authorize/submit", map[string]any{
+		"flow_id": flowID, "answers": []any{},
+	})
+	require.Equal(t, http.StatusOK, resp.StatusCode)
 	require.NotEmpty(t, resp.Header.Values("Set-Cookie"))
-	resp.Body.Close()
+	var submit map[string]any
+	require.NoError(t, json.Unmarshal(readBody(t, resp), &submit))
+	require.Equal(t, "completed", submit["status"])
+	code, _ := submit["code"].(string)
+	require.NotEmpty(t, code)
+	require.Equal(t, e2eRedirectURI, submit["redirect_uri"])
+	require.Equal(t, "state-abc", submit["state"])
 
 	var user model.User
 	require.NoError(t, fx.db.Where("username = ?", e2eUsername).First(&user).Error)
 	var sessionCount int64
 	require.NoError(t, fx.db.Model(&model.Session{}).Where("user_id = ? AND status = ?", user.ID, "active").Count(&sessionCount).Error)
-	require.EqualValues(t, 1, sessionCount, "登录后应建立会话")
+	require.EqualValues(t, 1, sessionCount, "完成编排后应建立会话")
 
-	// 3) 再 /authorize → 302 带 code
-	resp, err = client.Get(srv.URL + "/authorize?" + authParams.Encode())
-	require.NoError(t, err)
-	require.Equal(t, http.StatusFound, resp.StatusCode)
-	callback, err := url.Parse(resp.Header.Get("Location"))
-	require.NoError(t, err)
-	require.Equal(t, e2eRedirectURI, callback.Scheme+"://"+callback.Host+callback.Path)
-	code := callback.Query().Get("code")
-	require.NotEmpty(t, code)
-	require.Equal(t, "state-abc", callback.Query().Get("state"))
-	resp.Body.Close()
-
-	// 4) /oauth/token 授权码换令牌
+	// 6) /oauth/token 授权码换令牌
 	tokenForm := url.Values{}
 	tokenForm.Set("grant_type", "authorization_code")
 	tokenForm.Set("code", code)
@@ -251,7 +311,7 @@ func TestE2EPasswordLoginAuthorizationCodeFlow(t *testing.T) {
 	require.NotEmpty(t, refreshToken)
 	require.Equal(t, "Bearer", tokens["token_type"])
 
-	// 5) 断言 id_token 含 acr 且 amr 非空，且用 jwks 公钥验签成功
+	// 7) 断言 id_token 含 acr/amr，且用 jwks 公钥验签成功
 	jwksResp, err := client.Get(srv.URL + "/.well-known/jwks.json")
 	require.NoError(t, err)
 	jwksBody := readBody(t, jwksResp)
@@ -266,12 +326,12 @@ func TestE2EPasswordLoginAuthorizationCodeFlow(t *testing.T) {
 	require.True(t, parsed.Valid, "id_token 应通过 JWKS 公钥验签")
 	idClaims := parsed.Claims.(jwt.MapClaims)
 	require.Equal(t, "AAL1", idClaims["acr"])
-	amr, ok := idClaims["amr"].([]interface{})
+	idAMR, ok := idClaims["amr"].([]interface{})
 	require.True(t, ok)
-	require.NotEmpty(t, amr)
-	t.Logf("id_token 验签成功: kid=%s acr=%v amr=%v", parsed.Header["kid"], idClaims["acr"], amr)
+	require.Equal(t, []interface{}{"pwd"}, idAMR)
+	t.Logf("id_token 验签成功: kid=%s acr=%v amr=%v", parsed.Header["kid"], idClaims["acr"], idAMR)
 
-	// 6) /userinfo → 返回 sub
+	// 8) /userinfo → 返回 sub
 	req, err := http.NewRequest(http.MethodGet, srv.URL+"/userinfo", nil)
 	require.NoError(t, err)
 	req.Header.Set("Authorization", "Bearer "+accessToken)
@@ -283,7 +343,7 @@ func TestE2EPasswordLoginAuthorizationCodeFlow(t *testing.T) {
 	require.Equal(t, user.ID.String(), ui["sub"])
 	require.Equal(t, e2eUsername, ui["preferred_username"])
 
-	// 7) refresh_token 轮换一次成功
+	// 9) refresh_token 轮换一次成功
 	refreshForm := url.Values{}
 	refreshForm.Set("grant_type", "refresh_token")
 	refreshForm.Set("refresh_token", refreshToken)
@@ -297,7 +357,7 @@ func TestE2EPasswordLoginAuthorizationCodeFlow(t *testing.T) {
 	require.NotEqual(t, refreshToken, newRefresh, "refresh_token 应轮换")
 	require.NotEmpty(t, rotated["access_token"])
 
-	// 8) 重复使用旧 refresh_token → REFRESH_TOKEN_REUSED 且会话被撤销
+	// 10) 重复使用旧 refresh_token → REFRESH_TOKEN_REUSED 且会话被撤销
 	resp = postForm(t, client, srv.URL+"/oauth/token", refreshForm)
 	require.Equal(t, http.StatusUnauthorized, resp.StatusCode)
 	var errBody map[string]any
@@ -308,6 +368,52 @@ func TestE2EPasswordLoginAuthorizationCodeFlow(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, sessions, "重放后会话应被撤销")
 	t.Logf("refresh 重放被拒: code=%v 活动会话数=%d", errBody["code"], len(sessions))
+
+	// 11) 错误口令 → INVALID_CREDENTIAL（编排层 challenge/verify 路径）
+	badFlowID, err := createFlow(t, client, srv.URL, "state-bad")
+	require.NoError(t, err)
+	defer func() { _ = fx.rdb.Client().Del(ctx, "guanjin:flow:"+badFlowID) }()
+	resp = postJSON(t, client, srv.URL+"/auth/challenge/password", map[string]any{
+		"flow_id": badFlowID, "purpose": "login", "user_hint": e2eUsername,
+	})
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	var badCh map[string]any
+	require.NoError(t, json.Unmarshal(readBody(t, resp), &badCh))
+	badChallenge, _ := badCh["challenge_id"].(string)
+	resp = postJSON(t, client, srv.URL+"/auth/verify/password", map[string]any{
+		"challenge_id": badChallenge, "response": "definitely-wrong-pass", "flow_id": badFlowID,
+	})
+	require.Equal(t, http.StatusUnauthorized, resp.StatusCode)
+	var badErr map[string]any
+	require.NoError(t, json.Unmarshal(readBody(t, resp), &badErr))
+	require.Equal(t, "INVALID_CREDENTIAL", badErr["code"])
+	t.Logf("错误口令被拒: code=%v", badErr["code"])
+}
+
+func createFlow(t *testing.T, client *http.Client, baseURL, state string) (string, error) {
+	t.Helper()
+	params := authorizeQuery(state)
+	resp, err := client.Get(baseURL + "/authorize?" + params.Encode())
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	location := resp.Header.Get("Location")
+	parsed, err := url.Parse(location)
+	if err != nil {
+		return "", err
+	}
+	return parsed.Query().Get("flow_id"), nil
+}
+
+func postJSON(t *testing.T, client *http.Client, urlStr string, payload any) *http.Response {
+	t.Helper()
+	blob, err := json.Marshal(payload)
+	require.NoError(t, err)
+	req, err := http.NewRequest(http.MethodPost, urlStr, bytes.NewReader(blob))
+	require.NoError(t, err)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := client.Do(req)
+	require.NoError(t, err)
+	return resp
 }
 
 func publicKeyForIDToken(t *testing.T, idToken string, doc crypto.JWKSDocument) *sm2.PublicKey {

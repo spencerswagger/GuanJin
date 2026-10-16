@@ -12,6 +12,8 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 
+	"github.com/spencerswagger/GuanJin/internal/factor"
+	"github.com/spencerswagger/GuanJin/internal/flow"
 	"github.com/spencerswagger/GuanJin/internal/identifier"
 	"github.com/spencerswagger/GuanJin/internal/session"
 	"github.com/spencerswagger/GuanJin/internal/store"
@@ -24,10 +26,6 @@ const (
 
 	defaultAccessTokenTTL  = 600 * time.Second
 	defaultRefreshTokenTTL = 28800 * time.Second
-
-	acrAAL1 = "AAL1"
-	acrAAL2 = "AAL2"
-	acrAAL3 = "AAL3"
 )
 
 type Config struct {
@@ -44,12 +42,14 @@ type Deps struct {
 	Clients        *store.ClientRepo
 	Identifiers    *store.IdentifierRepo
 	Authenticators *store.AuthenticatorRepo
+	Challenges     *store.ChallengeRepo
 	Sessions       *store.SessionRepo
 	Keys           *store.SigningKeyRepo
 	Policies       *store.LoginPolicyRepo
 	Roles          *store.RoleBindingRepo
 	SessionMgr     *session.Manager
 	Blind          *identifier.BlindIndexer
+	Registry       *factor.Registry
 }
 
 type Server struct {
@@ -60,17 +60,26 @@ type Server struct {
 	users          *store.UserRepo
 	clients        *store.ClientRepo
 	authenticators *store.AuthenticatorRepo
+	challenges     *store.ChallengeRepo
 	sessions       *store.SessionRepo
 	keys           *store.SigningKeyRepo
 	policies       *store.LoginPolicyRepo
 	roles          *store.RoleBindingRepo
 	sessionMgr     *session.Manager
+
+	registry *factor.Registry
+	flows    *flow.Store
+	orch     *flow.Orchestrator
 }
 
 func New(deps Deps) *Server {
 	logger := deps.Logger
 	if logger == nil {
 		logger = zap.NewNop()
+	}
+	registry := deps.Registry
+	if registry == nil {
+		registry = factor.NewRegistry()
 	}
 	return &Server{
 		cfg:            deps.Config,
@@ -79,11 +88,15 @@ func New(deps Deps) *Server {
 		users:          deps.Users,
 		clients:        deps.Clients,
 		authenticators: deps.Authenticators,
+		challenges:     deps.Challenges,
 		sessions:       deps.Sessions,
 		keys:           deps.Keys,
 		policies:       deps.Policies,
 		roles:          deps.Roles,
 		sessionMgr:     deps.SessionMgr,
+		registry:       registry,
+		flows:          flow.NewStore(deps.Redis),
+		orch:           flow.NewOrchestrator(registry),
 	}
 }
 
@@ -91,6 +104,10 @@ func (s *Server) RegisterRoutes(engine *gin.Engine) {
 	engine.GET("/.well-known/openid-configuration", s.Discovery)
 	engine.GET("/.well-known/jwks.json", s.JWKS)
 	engine.GET("/authorize", s.Authorize)
+	engine.GET("/authorize/flow", s.AuthorizeFlow)
+	engine.POST("/authorize/submit", s.AuthorizeSubmit)
+	engine.POST("/auth/challenge/:factor", s.Challenge)
+	engine.POST("/auth/verify/:factor", s.Verify)
 	engine.POST("/oauth/token", s.Token)
 	engine.GET("/userinfo", s.UserInfo)
 	engine.POST("/userinfo", s.UserInfo)
@@ -147,33 +164,6 @@ func newOpaqueToken() (string, error) {
 	return base64.RawURLEncoding.EncodeToString(buf), nil
 }
 
-func acrRank(acr string) int {
-	switch acr {
-	case acrAAL3:
-		return 3
-	case acrAAL2:
-		return 2
-	case acrAAL1:
-		return 1
-	default:
-		return 0
-	}
-}
-
-func acrSatisfies(have, required string) bool {
-	return acrRank(have) >= acrRank(required)
-}
-
-func targetACR(tier string, policy *model.LoginPolicy) string {
-	if policy != nil && policy.MinACR != "" {
-		return policy.MinACR
-	}
-	if tier == "L3" {
-		return acrAAL2
-	}
-	return acrAAL1
-}
-
 func durationFromPolicy(seconds int32, fallback time.Duration) time.Duration {
 	if seconds <= 0 {
 		return fallback
@@ -210,37 +200,6 @@ func withQuery(rawURL string, params map[string]string) string {
 	}
 	u.RawQuery = q.Encode()
 	return u.String()
-}
-
-func queryString(params map[string]string) string {
-	values := url.Values{}
-	for k, v := range params {
-		if v != "" {
-			values.Set(k, v)
-		}
-	}
-	return values.Encode()
-}
-
-func authorizationRequestParams(c *gin.Context) map[string]string {
-	q := c.Request.URL.Query()
-	get := func(key string) string {
-		if v := c.PostForm(key); v != "" {
-			return v
-		}
-		return q.Get(key)
-	}
-	return map[string]string{
-		"response_type":         get("response_type"),
-		"client_id":             get("client_id"),
-		"redirect_uri":          get("redirect_uri"),
-		"scope":                 get("scope"),
-		"state":                 get("state"),
-		"nonce":                 get("nonce"),
-		"code_challenge":        get("code_challenge"),
-		"code_challenge_method": get("code_challenge_method"),
-		"acr_values":            get("acr_values"),
-	}
 }
 
 func trimBearer(header string) string {

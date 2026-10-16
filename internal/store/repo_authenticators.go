@@ -37,6 +37,18 @@ func (r *AuthenticatorRepo) GetActiveByUserType(ctx context.Context, userID uuid
 	return &row, nil
 }
 
+func (r *AuthenticatorRepo) GetByID(ctx context.Context, id uuid.UUID) (*model.Authenticator, error) {
+	var row model.Authenticator
+	err := r.db.WithContext(ctx).Where("id = ?", id).First(&row).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, ErrInvalidCredential
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &row, nil
+}
+
 func (r *AuthenticatorRepo) Update(ctx context.Context, authenticator *model.Authenticator) error {
 	return MapPgError(r.db.WithContext(ctx).Save(authenticator).Error)
 }
