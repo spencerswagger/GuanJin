@@ -7,7 +7,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/yourorg/guanjin-next/internal/observability"
+	"github.com/spencerswagger/GuanJin/internal/observability"
 )
 
 const CodeOK = "OK"

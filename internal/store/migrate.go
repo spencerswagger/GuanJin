@@ -10,7 +10,7 @@ import (
 	"github.com/golang-migrate/migrate/v4/source/iofs"
 	_ "github.com/jackc/pgx/v5/stdlib"
 
-	"github.com/yourorg/guanjin-next/migrations"
+	"github.com/spencerswagger/GuanJin/migrations"
 )
 
 func MigrateUp(databaseURL string) error {

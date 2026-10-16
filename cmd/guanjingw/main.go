@@ -12,11 +12,11 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/yourorg/guanjin-next/internal/config"
-	"github.com/yourorg/guanjin-next/internal/crypto"
-	"github.com/yourorg/guanjin-next/internal/httpx"
-	"github.com/yourorg/guanjin-next/internal/observability"
-	"github.com/yourorg/guanjin-next/internal/store"
+	"github.com/spencerswagger/GuanJin/internal/config"
+	"github.com/spencerswagger/GuanJin/internal/crypto"
+	"github.com/spencerswagger/GuanJin/internal/httpx"
+	"github.com/spencerswagger/GuanJin/internal/observability"
+	"github.com/spencerswagger/GuanJin/internal/store"
 )
 
 const serviceName = "guanjingw"

@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/yourorg/guanjin-next/internal/observability"
+	"github.com/spencerswagger/GuanJin/internal/observability"
 )
 
 type CheckFunc func(ctx context.Context) error

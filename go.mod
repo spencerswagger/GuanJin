@@ -1,4 +1,4 @@
-module github.com/yourorg/guanjin-next
+module github.com/spencerswagger/GuanJin
 
 go 1.25
 
