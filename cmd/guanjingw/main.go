@@ -11,9 +11,13 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+	"gorm.io/gorm"
 
 	"github.com/spencerswagger/GuanJin/internal/config"
 	"github.com/spencerswagger/GuanJin/internal/crypto"
+	"github.com/spencerswagger/GuanJin/internal/factor"
+	"github.com/spencerswagger/GuanJin/internal/factor/holding"
+	"github.com/spencerswagger/GuanJin/internal/gateway"
 	"github.com/spencerswagger/GuanJin/internal/httpx"
 	"github.com/spencerswagger/GuanJin/internal/observability"
 	"github.com/spencerswagger/GuanJin/internal/store"
@@ -81,13 +85,45 @@ func serve() error {
 		},
 	}}
 
+	keys := store.NewSigningKeyRepo(db, masterKey)
+	if _, err := keys.EnsureKeypair(context.Background(), crypto.PurposeGateway); err != nil {
+		return fmt.Errorf("ensure gateway signing keypair: %w", err)
+	}
+
+	router, err := buildRouter(context.Background(), db)
+	if err != nil {
+		return fmt.Errorf("load gateway routes: %w", err)
+	}
+
+	gw := gateway.New(gateway.Deps{
+		Logger:          logger,
+		Redis:           rdb,
+		Keys:            keys,
+		Clients:         store.NewClientRepo(db, masterKey),
+		Sessions:        store.NewSessionRepo(db),
+		Policies:        store.NewLoginPolicyRepo(db),
+		Roles:           store.NewRoleBindingRepo(db),
+		Users:           store.NewUserRepo(db),
+		Visited:         store.NewUserVisitedClientRepo(db),
+		AuthEvents:      store.NewAuthEventRepo(db),
+		Router:          router,
+		Notifier:        buildNotifier(keys),
+		Registry:        buildRegistry(db),
+		Issuer:          env.Issuer,
+		AssertionTTL:    gateway.AssertionTTL,
+		UpstreamTimeout: env.GatewayUpstreamTimeout,
+		DialTimeout:     env.GatewayDialTimeout,
+		RequireRedis:    true,
+	})
+
 	mux := http.NewServeMux()
 	mux.Handle("/healthz", probes.HealthzHandler())
 	mux.Handle("/readyz", probes.ReadyzHandler(metrics))
+	mux.Handle("/", gw)
 
 	handler := httpx.NetHTTPTrace(
 		httpx.NetHTTPRecovery(logger,
-			httpx.NetHTTPAccessLog(logger, gatewayPlaceholder(mux)),
+			httpx.NetHTTPAccessLog(logger, mux),
 		),
 	)
 
@@ -127,12 +163,33 @@ func serve() error {
 	return nil
 }
 
-func gatewayPlaceholder(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/healthz" || r.URL.Path == "/readyz" {
-			next.ServeHTTP(w, r)
-			return
+func buildRouter(ctx context.Context, db *gorm.DB) (gateway.Router, error) {
+	if raw := os.Getenv("GUANJIN_GATEWAY_ROUTES"); raw != "" {
+		routes, err := gateway.ParseRoutes([]byte(raw))
+		if err != nil {
+			return nil, err
 		}
-		httpx.WriteError(w, r, httpx.New("NOT_FOUND", "gateway proxy not implemented yet (phase 6)"))
-	})
+		return gateway.NewTableRouter(routes), nil
+	}
+	return gateway.RuntimeRoutes(ctx, db)
+}
+
+func buildNotifier(keys *store.SigningKeyRepo) gateway.LogoutNotifier {
+	base := os.Getenv("GUANJIN_GATEWAY_SLO_BASE_URL")
+	if base == "" {
+		return nil
+	}
+	return gateway.NewSM2HTTPNotifier(keys, base, nil)
+}
+
+func buildRegistry(db *gorm.DB) *factor.Registry {
+	registry := factor.NewRegistry()
+	provider := holding.NewPasswordProvider(
+		store.NewAuthenticatorRepo(db),
+		store.NewChallengeRepo(db),
+		holding.DefaultFailThreshold,
+		holding.DefaultLockDuration,
+	)
+	_ = registry.Register(provider)
+	return registry
 }

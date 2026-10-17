@@ -50,6 +50,15 @@ func upsertVisitedClient(tx *gorm.DB, userID uuid.UUID, clientID, tierAtVisit st
 	}).Create(row).Error)
 }
 
+func (r *UserVisitedClientRepo) ListByUser(ctx context.Context, userID uuid.UUID) ([]model.UserVisitedClient, error) {
+	var rows []model.UserVisitedClient
+	err := r.db.WithContext(ctx).
+		Where("user_id = ?", userID).
+		Order("last_seen_at DESC").
+		Find(&rows).Error
+	return rows, err
+}
+
 func (r *UserVisitedClientRepo) MaxTierForUser(ctx context.Context, userID uuid.UUID) (string, bool, error) {
 	var tier string
 	res := r.db.WithContext(ctx).Raw(`
