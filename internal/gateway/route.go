@@ -17,6 +17,9 @@ const (
 
 	MatchDomain = "domain"
 	MatchPrefix = "prefix"
+	MatchClient = "client"
+
+	gatewayPathPrefix = "/gw/"
 )
 
 type Route struct {
@@ -33,13 +36,17 @@ type Router interface {
 type TableRouter struct {
 	domains  []Route
 	prefixes []Route
+	byClient map[string]Route
 }
 
 func NewTableRouter(routes []Route) *TableRouter {
-	t := &TableRouter{}
+	t := &TableRouter{byClient: map[string]Route{}}
 	for _, r := range routes {
 		if r.Match == "" || r.ClientID == "" || r.Upstream == "" {
 			continue
+		}
+		if _, ok := t.byClient[r.ClientID]; !ok {
+			t.byClient[r.ClientID] = r
 		}
 		if strings.EqualFold(strings.TrimSpace(r.MatchType), MatchDomain) {
 			item := r
@@ -76,7 +83,31 @@ func (t *TableRouter) Resolve(host, path string) (Route, bool) {
 			return r, true
 		}
 	}
+	if clientID, ok := clientIDFromGatewayPath(path); ok {
+		if r, found := t.byClient[clientID]; found {
+			return Route{
+				MatchType: MatchClient,
+				Match:     gatewayPathPrefix + clientID,
+				ClientID:  clientID,
+				Upstream:  r.Upstream,
+			}, true
+		}
+	}
 	return Route{}, false
+}
+
+func clientIDFromGatewayPath(path string) (string, bool) {
+	if !strings.HasPrefix(path, gatewayPathPrefix) {
+		return "", false
+	}
+	rest := path[len(gatewayPathPrefix):]
+	if i := strings.IndexByte(rest, '/'); i >= 0 {
+		rest = rest[:i]
+	}
+	if rest == "" {
+		return "", false
+	}
+	return rest, true
 }
 
 func normalizeHost(host string) string {

@@ -54,8 +54,9 @@ type Gateway struct {
 }
 
 type proxyPayload struct {
-	target    *url.URL
-	assertion string
+	target      *url.URL
+	assertion   string
+	stripPrefix string
 }
 
 type proxyPayloadKey struct{}
@@ -160,7 +161,11 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	r.Header.Del(AssertionHeader)
-	ctx := context.WithValue(r.Context(), proxyPayloadKey{}, proxyPayload{target: target, assertion: token})
+	stripPrefix := ""
+	if route.MatchType == MatchClient {
+		stripPrefix = route.Match
+	}
+	ctx := context.WithValue(r.Context(), proxyPayloadKey{}, proxyPayload{target: target, assertion: token, stripPrefix: stripPrefix})
 	r = r.WithContext(ctx)
 
 	g.log.Info("gateway forward",
@@ -205,6 +210,12 @@ func newReverseProxy(deps Deps) *httputil.ReverseProxy {
 	return &httputil.ReverseProxy{
 		Director: func(req *http.Request) {
 			payload, _ := req.Context().Value(proxyPayloadKey{}).(proxyPayload)
+			if payload.stripPrefix != "" {
+				req.URL.Path = strings.TrimPrefix(req.URL.Path, payload.stripPrefix)
+				if req.URL.Path == "" {
+					req.URL.Path = "/"
+				}
+			}
 			if payload.target != nil {
 				req.URL.Scheme = payload.target.Scheme
 				req.URL.Host = payload.target.Host

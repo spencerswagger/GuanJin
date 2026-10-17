@@ -46,6 +46,7 @@ type upstreamRecorder struct {
 	mu         sync.Mutex
 	requests   int
 	assertions []string
+	paths      []string
 }
 
 func (u *upstreamRecorder) handler() http.HandlerFunc {
@@ -53,6 +54,7 @@ func (u *upstreamRecorder) handler() http.HandlerFunc {
 		u.mu.Lock()
 		u.requests++
 		u.assertions = append(u.assertions, r.Header.Values(gateway.AssertionHeader)...)
+		u.paths = append(u.paths, r.URL.Path)
 		u.mu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"ok":true}`))
@@ -63,6 +65,15 @@ func (u *upstreamRecorder) snapshot() (int, []string) {
 	u.mu.Lock()
 	defer u.mu.Unlock()
 	return u.requests, append([]string{}, u.assertions...)
+}
+
+func (u *upstreamRecorder) lastPath() string {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	if len(u.paths) == 0 {
+		return ""
+	}
+	return u.paths[len(u.paths)-1]
 }
 
 type fixture struct {
@@ -337,6 +348,80 @@ func TestGatewayUnauthenticated(t *testing.T) {
 	require.Equal(t, http.StatusUnauthorized, resp.StatusCode)
 	require.Equal(t, "TOKEN_INVALID", errorCode(t, body))
 	t.Logf("未认证: %d %s", resp.StatusCode, errorCode(t, body))
+}
+
+func TestGatewayForgedTokenRejected(t *testing.T) {
+	f := setup(t)
+	up := &upstreamRecorder{}
+	upstream := httptest.NewServer(up.handler())
+	defer upstream.Close()
+	f.rewireUpstream(t, upstream.URL)
+
+	sess := f.newSession(t, f.clientA, "AAL1", []string{"pwd"})
+	token := f.userToken(t, f.clientA, sess)
+	tampered := []byte(token)
+	mid := len(tampered) - 5
+	if tampered[mid] == 'A' {
+		tampered[mid] = 'B'
+	} else {
+		tampered[mid] = 'A'
+	}
+
+	resp, body := f.do(t, http.MethodGet, "/appA/orders", string(tampered), "")
+	require.Equal(t, http.StatusUnauthorized, resp.StatusCode)
+	require.Equal(t, "TOKEN_INVALID", errorCode(t, body))
+	t.Logf("伪造令牌: %d %s", resp.StatusCode, errorCode(t, body))
+}
+
+func TestGatewaySessionExpired(t *testing.T) {
+	f := setup(t)
+	up := &upstreamRecorder{}
+	upstream := httptest.NewServer(up.handler())
+	defer upstream.Close()
+	f.rewireUpstream(t, upstream.URL)
+
+	sess := f.newSession(t, f.clientA, "AAL1", []string{"pwd"})
+	token := f.userToken(t, f.clientA, sess)
+
+	resp, _ := f.do(t, http.MethodGet, "/appA/resource", token, "")
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	require.NoError(t, f.db.Exec("UPDATE sessions SET expires_at = now() - interval '1 hour', idle_expires_at = now() - interval '1 hour' WHERE id = ?", sess.ID).Error)
+
+	resp, body := f.do(t, http.MethodGet, "/appA/resource", token, "")
+	require.Equal(t, http.StatusUnauthorized, resp.StatusCode)
+	require.Equal(t, "TOKEN_EXPIRED", errorCode(t, body))
+	t.Logf("会话过期: %d %s", resp.StatusCode, errorCode(t, body))
+}
+
+func TestGatewayClientPathRouting(t *testing.T) {
+	f := setup(t)
+	up := &upstreamRecorder{}
+	upstream := httptest.NewServer(up.handler())
+	defer upstream.Close()
+	f.rewireUpstream(t, upstream.URL)
+
+	sess := f.newSession(t, f.clientA, "AAL1", []string{"pwd"})
+	token := f.userToken(t, f.clientA, sess)
+
+	resp, body := f.do(t, http.MethodGet, "/gw/"+f.clientA+"/echo", token, "")
+	require.Equal(t, http.StatusOK, resp.StatusCode, "body=%s", string(body))
+
+	requests, assertions := up.snapshot()
+	require.Equal(t, 1, requests)
+	require.Len(t, assertions, 1)
+	require.Equal(t, "/echo", up.lastPath(), "/gw/{client_id} 前缀应被剥离后转发")
+	claims := verifyAssertion(t, f.keys, assertions[0])
+	require.Equal(t, f.clientA, claims["aud"])
+	t.Logf("/gw/{client_id} 前缀路由: upstream path=%s aud=%v", up.lastPath(), claims["aud"])
+}
+
+func TestGatewayUnknownRoute(t *testing.T) {
+	f := setup(t)
+	resp, body := f.do(t, http.MethodGet, "/gw/no-such-client/echo", "", "")
+	require.Equal(t, http.StatusNotFound, resp.StatusCode)
+	require.Equal(t, "NOT_FOUND", errorCode(t, body))
+	t.Logf("未知路由: %d %s", resp.StatusCode, errorCode(t, body))
 }
 
 func TestGatewaySLOOnLogout(t *testing.T) {
