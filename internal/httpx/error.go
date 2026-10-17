@@ -57,14 +57,14 @@ var httpStatusByCode = map[string]int{
 	"INVALID_GRANT":            http.StatusUnauthorized,
 
 	// E3 授权 / 档位 (403)
-	"ACR_INSUFFICIENT":   http.StatusForbidden,
-	"MFA_REQUIRED":       http.StatusForbidden,
-	"INSUFFICIENT_SCOPE": http.StatusForbidden,
-	"INSUFFICIENT_ROLE":  http.StatusForbidden,
-	"SESSION_REVOKED":    http.StatusForbidden,
-	"SESSION_NOT_FOUND":  http.StatusForbidden,
-	"SESSION_NOT_OWNED":  http.StatusForbidden,
-	"RECOVER_DISABLED":   http.StatusForbidden,
+	"ACR_INSUFFICIENT":         http.StatusForbidden,
+	"MFA_REQUIRED":             http.StatusForbidden,
+	"INSUFFICIENT_SCOPE":       http.StatusForbidden,
+	"INSUFFICIENT_ROLE":        http.StatusForbidden,
+	"SESSION_REVOKED":          http.StatusForbidden,
+	"SESSION_NOT_FOUND":        http.StatusForbidden,
+	"SESSION_NOT_OWNED":        http.StatusForbidden,
+	"RECOVER_DISABLED":         http.StatusForbidden,
 	"REGISTRATION_NOT_ALLOWED": http.StatusForbidden,
 
 	// E4 资源 / 不变式 (404 / 409 / 422)

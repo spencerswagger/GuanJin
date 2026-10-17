@@ -36,20 +36,20 @@ type ChannelChallenger interface {
 }
 
 type RegisterContext struct {
-	Token         string    `json:"token"`
-	ClientID      string    `json:"client_id"`
-	ClientTier    string    `json:"client_tier"`
-	Type          string    `json:"type"`
-	Value         string    `json:"value"`
-	ValueMasked   string    `json:"value_masked"`
-	Username      string    `json:"username"`
-	StoreIdent    bool      `json:"store_identifier"`
-	ChallengeID   string    `json:"challenge_id"`
-	FactorType    string    `json:"factor_type"`
-	AMR           string    `json:"amr"`
-	Purpose       string    `json:"purpose"`
-	VerifyMethod  string    `json:"verify_method"`
-	ExpiresAt     time.Time `json:"expires_at"`
+	Token        string    `json:"token"`
+	ClientID     string    `json:"client_id"`
+	ClientTier   string    `json:"client_tier"`
+	Type         string    `json:"type"`
+	Value        string    `json:"value"`
+	ValueMasked  string    `json:"value_masked"`
+	Username     string    `json:"username"`
+	StoreIdent   bool      `json:"store_identifier"`
+	ChallengeID  string    `json:"challenge_id"`
+	FactorType   string    `json:"factor_type"`
+	AMR          string    `json:"amr"`
+	Purpose      string    `json:"purpose"`
+	VerifyMethod string    `json:"verify_method"`
+	ExpiresAt    time.Time `json:"expires_at"`
 }
 
 type RegisterStore struct {
