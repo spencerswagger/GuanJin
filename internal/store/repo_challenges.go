@@ -37,6 +37,21 @@ func (r *ChallengeRepo) GetByID(ctx context.Context, id uuid.UUID) (*model.Chall
 	return &row, nil
 }
 
+func (r *ChallengeRepo) LatestUnconsumedForIdentifier(ctx context.Context, identifierID uuid.UUID) (*model.Challenge, error) {
+	var row model.Challenge
+	err := r.db.WithContext(ctx).
+		Where("identifier_id = ? AND consumed_at IS NULL", identifierID).
+		Order("created_at DESC").
+		First(&row).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, ErrChallengeNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &row, nil
+}
+
 func (r *ChallengeRepo) IncrementAttempts(ctx context.Context, id uuid.UUID) error {
 	return MapPgError(r.db.WithContext(ctx).Model(&model.Challenge{}).
 		Where("id = ? AND attempts < max_attempts", id).

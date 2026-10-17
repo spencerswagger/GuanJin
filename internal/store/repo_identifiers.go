@@ -44,3 +44,23 @@ func (r *IdentifierRepo) GetByTypeValue(ctx context.Context, typ string, value [
 	}
 	return &row, nil
 }
+
+func (r *IdentifierRepo) GetByID(ctx context.Context, id uuid.UUID) (*model.Identifier, error) {
+	var row model.Identifier
+	err := r.db.WithContext(ctx).Where("id = ?", id).First(&row).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, ErrIdentifierNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &row, nil
+}
+
+func (r *IdentifierRepo) Update(ctx context.Context, identifier *model.Identifier) error {
+	return MapPgError(r.db.WithContext(ctx).Save(identifier).Error)
+}
+
+func (r *IdentifierRepo) DeleteByID(ctx context.Context, id uuid.UUID) error {
+	return MapPgError(r.db.WithContext(ctx).Where("id = ?", id).Delete(&model.Identifier{}).Error)
+}

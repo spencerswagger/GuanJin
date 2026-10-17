@@ -11,10 +11,12 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
+	"gorm.io/gorm"
 
 	"github.com/spencerswagger/GuanJin/internal/factor"
 	"github.com/spencerswagger/GuanJin/internal/flow"
 	"github.com/spencerswagger/GuanJin/internal/identifier"
+	"github.com/spencerswagger/GuanJin/internal/notify"
 	"github.com/spencerswagger/GuanJin/internal/session"
 	"github.com/spencerswagger/GuanJin/internal/store"
 	"github.com/spencerswagger/GuanJin/internal/store/model"
@@ -38,6 +40,7 @@ type Deps struct {
 	Config         Config
 	Logger         *zap.Logger
 	Redis          *store.Redis
+	DB             *gorm.DB
 	Users          *store.UserRepo
 	Clients        *store.ClientRepo
 	Identifiers    *store.IdentifierRepo
@@ -47,9 +50,12 @@ type Deps struct {
 	Keys           *store.SigningKeyRepo
 	Policies       *store.LoginPolicyRepo
 	Roles          *store.RoleBindingRepo
+	Visited        *store.UserVisitedClientRepo
+	AuthEvents     *store.AuthEventRepo
 	SessionMgr     *session.Manager
 	Blind          *identifier.BlindIndexer
 	Registry       *factor.Registry
+	Notifier       notify.Notifier
 }
 
 type Server struct {
@@ -59,6 +65,7 @@ type Server struct {
 
 	users          *store.UserRepo
 	clients        *store.ClientRepo
+	identifiers    *store.IdentifierRepo
 	authenticators *store.AuthenticatorRepo
 	challenges     *store.ChallengeRepo
 	sessions       *store.SessionRepo
@@ -66,10 +73,16 @@ type Server struct {
 	policies       *store.LoginPolicyRepo
 	roles          *store.RoleBindingRepo
 	sessionMgr     *session.Manager
+	blind          *identifier.BlindIndexer
 
 	registry *factor.Registry
 	flows    *flow.Store
 	orch     *flow.Orchestrator
+
+	registrar  *flow.Registrar
+	visited    *store.UserVisitedClientRepo
+	authEvents *store.AuthEventRepo
+	notifier   notify.Notifier
 }
 
 func New(deps Deps) *Server {
@@ -81,12 +94,30 @@ func New(deps Deps) *Server {
 	if registry == nil {
 		registry = factor.NewRegistry()
 	}
+	notifier := deps.Notifier
+	if notifier == nil {
+		notifier = notify.NoopNotifier{}
+	}
+	registrar := flow.NewRegistrar(flow.RegistrarDeps{
+		DB:          deps.DB,
+		Clients:     deps.Clients,
+		Users:       deps.Users,
+		Identifiers: deps.Identifiers,
+		Challenges:  deps.Challenges,
+		Policies:    deps.Policies,
+		Visited:     deps.Visited,
+		AuthEvents:  deps.AuthEvents,
+		Registry:    registry,
+		Blind:       deps.Blind,
+		State:       flow.NewRegisterStore(deps.Redis),
+	})
 	return &Server{
 		cfg:            deps.Config,
 		log:            logger,
 		state:          NewStateStore(deps.Redis),
 		users:          deps.Users,
 		clients:        deps.Clients,
+		identifiers:    deps.Identifiers,
 		authenticators: deps.Authenticators,
 		challenges:     deps.Challenges,
 		sessions:       deps.Sessions,
@@ -94,9 +125,14 @@ func New(deps Deps) *Server {
 		policies:       deps.Policies,
 		roles:          deps.Roles,
 		sessionMgr:     deps.SessionMgr,
+		blind:          deps.Blind,
 		registry:       registry,
 		flows:          flow.NewStore(deps.Redis),
 		orch:           flow.NewOrchestrator(registry),
+		registrar:      registrar,
+		visited:        deps.Visited,
+		authEvents:     deps.AuthEvents,
+		notifier:       notifier,
 	}
 }
 
@@ -109,12 +145,19 @@ func (s *Server) RegisterRoutes(engine *gin.Engine) {
 	engine.POST("/auth/challenge/:factor", s.Challenge)
 	engine.POST("/auth/verify/:factor", s.Verify)
 	engine.POST("/oauth/token", s.Token)
+	engine.POST("/auth/register/start", s.RegisterStart)
+	engine.POST("/auth/register/complete", s.RegisterComplete)
 	engine.GET("/userinfo", s.UserInfo)
 	engine.POST("/userinfo", s.UserInfo)
 	engine.GET("/logout", s.Logout)
 	engine.POST("/logout", s.Logout)
 	engine.GET("/login", s.LoginPage)
 	engine.POST("/login", s.Login)
+	me := engine.Group("/api/v1/me", s.UserAuth())
+	me.GET("/identifiers", s.ListIdentifiers)
+	me.POST("/identifiers", s.BindIdentifier)
+	me.POST("/identifiers/:id/verify", s.VerifyIdentifier)
+	me.DELETE("/identifiers/:id", s.UnbindIdentifier)
 }
 
 func (s *Server) issuer() string {

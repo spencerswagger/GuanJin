@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"time"
@@ -156,4 +157,20 @@ func (s *StateStore) RevokeRefreshFamily(ctx context.Context, sessionID string) 
 		return redisUnavailable()
 	}
 	return nil
+}
+
+func (s *StateStore) CooldownUntil(ctx context.Context, typ string, blind []byte) (string, error) {
+	client := s.client()
+	if client == nil {
+		return "", redisUnavailable()
+	}
+	key := identifierCooldownKeyPrefix + typ + ":" + hex.EncodeToString(blind)
+	ttl, err := client.TTL(ctx, key).Result()
+	if err != nil {
+		return "", redisUnavailable()
+	}
+	if ttl <= 0 {
+		return "", nil
+	}
+	return time.Now().UTC().Add(ttl).Format(time.RFC3339), nil
 }

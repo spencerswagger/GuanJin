@@ -65,6 +65,7 @@ var httpStatusByCode = map[string]int{
 	"SESSION_NOT_FOUND":  http.StatusForbidden,
 	"SESSION_NOT_OWNED":  http.StatusForbidden,
 	"RECOVER_DISABLED":   http.StatusForbidden,
+	"REGISTRATION_NOT_ALLOWED": http.StatusForbidden,
 
 	// E4 资源 / 不变式 (404 / 409 / 422)
 	"IDENTIFIER_ALREADY_BOUND":         http.StatusConflict,
@@ -78,6 +79,8 @@ var httpStatusByCode = map[string]int{
 	"IDENTIFIER_INVALID_FORMAT":        http.StatusUnprocessableEntity,
 	"PASSWORD_POLICY_VIOLATION":        http.StatusUnprocessableEntity,
 	"PASSWORD_REUSED":                  http.StatusUnprocessableEntity,
+	"WEAK_PASSWORD":                    http.StatusUnprocessableEntity,
+	"INVITE_CODE_INVALID":              http.StatusUnprocessableEntity,
 	"FACTOR_NOT_SUPPORTED":             http.StatusUnprocessableEntity,
 	"FACTOR_DISABLED":                  http.StatusUnprocessableEntity,
 	"NO_ELIGIBLE_FACTOR":               http.StatusUnprocessableEntity,
@@ -147,6 +150,7 @@ var defaultMessages = map[string]string{
 	"ACR_INSUFFICIENT":              "认证档位不足",
 	"INSUFFICIENT_ROLE":             "权限不足",
 	"SESSION_REVOKED":               "会话已撤销",
+	"REGISTRATION_NOT_ALLOWED":      "该业务系统未开放自助注册",
 	"IDENTIFIER_ALREADY_BOUND":      "该标识符已被绑定",
 	"LAST_IDENTIFIER_CANNOT_UNBIND": "不能解绑最后一个标识符",
 	"RATE_LIMITED":                  "请求过于频繁",

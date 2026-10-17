@@ -52,3 +52,11 @@ func (r *AuthenticatorRepo) GetByID(ctx context.Context, id uuid.UUID) (*model.A
 func (r *AuthenticatorRepo) Update(ctx context.Context, authenticator *model.Authenticator) error {
 	return MapPgError(r.db.WithContext(ctx).Save(authenticator).Error)
 }
+
+func (r *AuthenticatorRepo) CountActiveByUser(ctx context.Context, userID uuid.UUID) (int64, error) {
+	var count int64
+	err := r.db.WithContext(ctx).Model(&model.Authenticator{}).
+		Where("user_id = ? AND status = ?", userID, "active").
+		Count(&count).Error
+	return count, err
+}
