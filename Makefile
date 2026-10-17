@@ -3,7 +3,7 @@ GO ?= go
 GOLANGCI_LINT ?= golangci-lint
 BIN_DIR := bin
 
-.PHONY: help build test lint fmt-check check-no-automigrate migrate-up migrate-down migrate-version run-guanjind run-guanjingw tidy vet govulncheck
+.PHONY: help build test test-integration lint fmt-check check-no-automigrate migrate-up migrate-down migrate-version run-guanjind run-guanjingw tidy vet govulncheck
 
 help: ## 显示可用目标
 	@grep -hE '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-22s\033[0m %s\n", $$1, $$2}'
@@ -13,8 +13,16 @@ build: ## 构建 guanjind / guanjingw 两个二进制到 bin/
 	CGO_ENABLED=0 $(GO) build -trimpath -o $(BIN_DIR)/guanjind ./cmd/guanjind
 	CGO_ENABLED=0 $(GO) build -trimpath -o $(BIN_DIR)/guanjingw ./cmd/guanjingw
 
-test: ## 单元测试（-race，默认不依赖 docker/PG/Redis）
+test: ## 单元测试（-race，不依赖 PG/Redis；集成测试自动跳过）
+	@unset GUANJIN_TEST_DATABASE_URL GUANJIN_TEST_REDIS_URL; \
 	$(GO) test ./... -race
+
+test-integration: ## 集成测试（需本地 PG16+Redis7；串行 -p 1，避免共享库竞争）
+	guanjin_test_database_url="$${GUANJIN_TEST_DATABASE_URL:-postgres://guanjin:guanjin@127.0.0.1:5432/guanjin?sslmode=disable}"; \
+	guanjin_test_redis_url="$${GUANJIN_TEST_REDIS_URL:-redis://127.0.0.1:6379/0}"; \
+	GUANJIN_TEST_DATABASE_URL="$$guanjin_test_database_url" \
+	GUANJIN_TEST_REDIS_URL="$$guanjin_test_redis_url" \
+	$(GO) test ./... -p 1 -count=1
 
 lint: ## golangci-lint 静态检查
 	$(GOLANGCI_LINT) run ./...
