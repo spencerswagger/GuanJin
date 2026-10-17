@@ -1,0 +1,6 @@
+/workspace/sdk/guanjin-core/src/test/java/com/guanjin/sdk/AssertionVerifierVectorTest.java
+/workspace/sdk/guanjin-core/src/test/java/com/guanjin/sdk/JwksProviderTest.java
+/workspace/sdk/guanjin-core/src/test/java/com/guanjin/sdk/NoFrameworkDependencyTest.java
+/workspace/sdk/guanjin-core/src/test/java/com/guanjin/sdk/agent/AgentClientTest.java
+/workspace/sdk/guanjin-core/src/test/java/com/guanjin/sdk/authz/AuthzEngineTest.java
+/workspace/sdk/guanjin-core/src/test/java/com/guanjin/sdk/replay/JtiReplayStoreTest.java
