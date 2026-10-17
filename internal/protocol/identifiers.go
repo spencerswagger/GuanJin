@@ -380,9 +380,19 @@ func (s *Server) UnbindIdentifier(c *gin.Context) {
 
 	recipients := s.notificationRecipients(ctx, rows)
 
-	if err := s.identifiers.DeleteByID(ctx, row.ID); err != nil {
+	wasPrimary := row.IsPrimary
+	if err := s.identifiers.Disable(ctx, row.ID); err != nil {
 		httpx.Error(c, err)
 		return
+	}
+	if wasPrimary {
+		for _, other := range rows {
+			if other.ID == row.ID {
+				continue
+			}
+			_ = s.identifiers.SetPrimary(ctx, other.ID, true)
+			break
+		}
 	}
 	hours := 24
 	if provider, ok := s.providerForIdentifierType(row.Type); ok {

@@ -25,7 +25,7 @@ func (r *IdentifierRepo) Create(ctx context.Context, identifier *model.Identifie
 func (r *IdentifierRepo) ListByUser(ctx context.Context, userID uuid.UUID) ([]model.Identifier, error) {
 	var rows []model.Identifier
 	err := r.db.WithContext(ctx).
-		Where("user_id = ?", userID).
+		Where("user_id = ? AND status = ?", userID, "active").
 		Order("created_at ASC").
 		Find(&rows).Error
 	return rows, err
@@ -63,4 +63,16 @@ func (r *IdentifierRepo) Update(ctx context.Context, identifier *model.Identifie
 
 func (r *IdentifierRepo) DeleteByID(ctx context.Context, id uuid.UUID) error {
 	return MapPgError(r.db.WithContext(ctx).Where("id = ?", id).Delete(&model.Identifier{}).Error)
+}
+
+func (r *IdentifierRepo) Disable(ctx context.Context, id uuid.UUID) error {
+	return MapPgError(r.db.WithContext(ctx).Model(&model.Identifier{}).
+		Where("id = ?", id).
+		Updates(map[string]any{"status": "disabled", "is_primary": false}).Error)
+}
+
+func (r *IdentifierRepo) SetPrimary(ctx context.Context, id uuid.UUID, primary bool) error {
+	return MapPgError(r.db.WithContext(ctx).Model(&model.Identifier{}).
+		Where("id = ?", id).
+		Updates(map[string]any{"is_primary": primary}).Error)
 }

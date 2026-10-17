@@ -203,8 +203,8 @@ func newProtocolServer(env *config.Env, logger *zap.Logger, db *gorm.DB, rdb *st
 	blind := identifier.NewBlindIndexer(masterKey)
 
 	senders := map[string]channel.Sender{
-		"sms":   channel.NewLoggingSender(logger, "sms"),
-		"email": channel.NewLoggingSender(logger, "email"),
+		"sms":   channel.NewUnconfiguredSender("sms"),
+		"email": channel.NewUnconfiguredSender("email"),
 	}
 	channelDeps := channel.Deps{Challenges: challenges, Redis: rdb, ChannelSenders: senders}
 	channelDeps.Resolver = channel.NewIdentifierResolver(identifiersRepo, blind, identifier.TypePhone)

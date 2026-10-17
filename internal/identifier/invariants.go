@@ -5,6 +5,7 @@ import "errors"
 var (
 	ErrLastIdentifierCannotUnbind    = errors.New("LAST_IDENTIFIER_CANNOT_UNBIND")
 	ErrLastAuthenticatorCannotRemove = errors.New("LAST_AUTHENTICATOR_CANNOT_REMOVE")
+	ErrLastPrimaryCannotDemote       = errors.New("IAM_IDENT_LAST_PRIMARY")
 )
 
 type UnbindCounts struct {
@@ -29,6 +30,13 @@ func UsableAuthCapability(activeHoldingAuthenticators, verifiedAuthIdentifiers i
 func CheckUsableCapability(activeHoldingAuthenticators, verifiedAuthIdentifiers int) error {
 	if UsableAuthCapability(activeHoldingAuthenticators, verifiedAuthIdentifiers) < 1 {
 		return ErrLastAuthenticatorCannotRemove
+	}
+	return nil
+}
+
+func CheckPrimaryChange(primaryAfter int) error {
+	if primaryAfter < 1 {
+		return ErrLastPrimaryCannotDemote
 	}
 	return nil
 }
