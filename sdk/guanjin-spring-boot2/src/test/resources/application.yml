@@ -1,0 +1,32 @@
+spring:
+  main:
+    banner-mode: off
+
+guanjin:
+  enabled: true
+  platform:
+    base-url: http://127.0.0.1:9
+  client:
+    id: order-service
+    hmac-secret: order-service-agent-secret
+  gateway:
+    issuer: guanjin-gateway
+    aud: order-service
+    clock-skew: 60s
+    jwks-uri: http://127.0.0.1:9/api/v1/jwks
+    jwks-cache-ttl: 10m
+  authz:
+    enabled: true
+    default-role: user
+    replay-store: memory
+  agent:
+    report:
+      enabled: false
+      on-startup: false
+    pull:
+      enabled: false
+  security:
+    inject-security-context: true
+    role-prefix: ROLE_
+  startup:
+    print-public-paths: false

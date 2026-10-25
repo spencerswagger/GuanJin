@@ -12,7 +12,7 @@ public class GuanjinProperties {
     private Platform platform = new Platform();
     private Client client = new Client();
     private Gateway gateway = new Gateway();
-    private Authz authz = new Authz();
+    private GuanjinAuthz authz = new GuanjinAuthz();
     private Agent agent = new Agent();
     private Security security = new Security();
     private Startup startup = new Startup();
@@ -57,11 +57,11 @@ public class GuanjinProperties {
         this.gateway = gateway;
     }
 
-    public Authz getAuthz() {
+    public GuanjinAuthz getAuthz() {
         return authz;
     }
 
-    public void setAuthz(Authz authz) {
+    public void setAuthz(GuanjinAuthz authz) {
         this.authz = authz;
     }
 
@@ -186,6 +186,9 @@ public class GuanjinProperties {
     }
 
     public String effectiveAgentSecret() {
+        if (agent.hmacSecret != null) {
+            return agent.hmacSecret;
+        }
         return agent.secret != null ? agent.secret : client.hmacSecret;
     }
 
@@ -326,7 +329,7 @@ public class GuanjinProperties {
         }
     }
 
-    public static class Authz {
+    public static class GuanjinAuthz {
 
         private boolean enabled = true;
         private String defaultRole = "user";
@@ -419,6 +422,7 @@ public class GuanjinProperties {
 
         private String clientId;
         private String secret;
+        private String hmacSecret;
         private String baseUrl;
         private Report report = new Report();
         private Pull pull = new Pull();
@@ -437,6 +441,14 @@ public class GuanjinProperties {
 
         public void setSecret(String secret) {
             this.secret = secret;
+        }
+
+        public String getHmacSecret() {
+            return hmacSecret;
+        }
+
+        public void setHmacSecret(String hmacSecret) {
+            this.hmacSecret = hmacSecret;
         }
 
         public String getBaseUrl() {

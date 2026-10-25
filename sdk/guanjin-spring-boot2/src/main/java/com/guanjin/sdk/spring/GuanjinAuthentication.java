@@ -1,6 +1,6 @@
 package com.guanjin.sdk.spring;
 
-import com.guanjin.sdk.GuanjinPrincipal;
+import com.guanjin.sdk.GuanjinIdentity;
 import java.util.Collection;
 import java.util.List;
 import org.springframework.security.authentication.AbstractAuthenticationToken;
@@ -8,9 +8,9 @@ import org.springframework.security.core.GrantedAuthority;
 
 public class GuanjinAuthentication extends AbstractAuthenticationToken {
 
-    private final GuanjinPrincipal principal;
+    private final GuanjinIdentity principal;
 
-    public GuanjinAuthentication(GuanjinPrincipal principal, Collection<? extends GrantedAuthority> authorities) {
+    public GuanjinAuthentication(GuanjinIdentity principal, Collection<? extends GrantedAuthority> authorities) {
         super(authorities);
         this.principal = principal;
         setAuthenticated(true);
@@ -26,7 +26,7 @@ public class GuanjinAuthentication extends AbstractAuthenticationToken {
         return principal;
     }
 
-    public GuanjinPrincipal getGuanjinPrincipal() {
+    public GuanjinIdentity getGuanjinPrincipal() {
         return principal;
     }
 

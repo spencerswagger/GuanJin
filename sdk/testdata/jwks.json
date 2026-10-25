@@ -1,0 +1,13 @@
+{
+  "keys": [
+    {
+      "kty": "EC",
+      "use": "sig",
+      "kid": "gw:sdk-vector-0001",
+      "alg": "SM2",
+      "crv": "SM2",
+      "x": "Dj0Mm_drfoiK9-PU9_y12ix8r4bTAVsKXOV2Jigl8gw",
+      "y": "cdHaXUIkYyekrZwoglKU01jaceXs8Exi0MN2hBGtLb4"
+    }
+  ]
+}

@@ -1,10 +1,9 @@
 package com.guanjin.sdk.spring;
 
-import com.guanjin.sdk.AssertionVerifier;
+import com.guanjin.sdk.GuanjinAssertionVerifier;
 import com.guanjin.sdk.GuanjinDependencyException;
 import com.guanjin.sdk.GuanjinException;
-import com.guanjin.sdk.GuanjinPrincipal;
-import com.guanjin.sdk.replay.JtiReplayStore;
+import com.guanjin.sdk.GuanjinIdentity;
 import java.io.IOException;
 import java.util.Collections;
 import java.util.Enumeration;
@@ -26,22 +25,19 @@ import org.springframework.security.core.context.SecurityContextHolder;
 public class GuanjinAssertionFilter implements Filter {
 
     private static final Logger log = LoggerFactory.getLogger(GuanjinAssertionFilter.class);
-    private static final String PROCESSED = GuanjinAssertionFilter.class.getName() + ".PROCESSED";
+    private static final String IDENTITY_ATTRIBUTE = GuanjinAssertionFilter.class.getName() + ".IDENTITY";
 
     private final GuanjinProperties properties;
-    private final AssertionVerifier verifier;
-    private final JtiReplayStore replayStore;
+    private final GuanjinAssertionVerifier verifier;
     private final GuanjinAuthenticationConverter authenticationConverter;
-    private final PublicPathMatcher publicPathMatcher;
+    private final GuanjinPublicPathMatcher publicPathMatcher;
 
     public GuanjinAssertionFilter(GuanjinProperties properties,
-                                  AssertionVerifier verifier,
-                                  JtiReplayStore replayStore,
+                                  GuanjinAssertionVerifier verifier,
                                   GuanjinAuthenticationConverter authenticationConverter,
-                                  PublicPathMatcher publicPathMatcher) {
+                                  GuanjinPublicPathMatcher publicPathMatcher) {
         this.properties = properties;
         this.verifier = verifier;
-        this.replayStore = replayStore;
         this.authenticationConverter = authenticationConverter;
         this.publicPathMatcher = publicPathMatcher;
     }
@@ -61,39 +57,35 @@ public class GuanjinAssertionFilter implements Filter {
         HttpServletResponse httpResponse = (HttpServletResponse) response;
 
         if (!properties.isEnabled()
-                || publicPathMatcher.isPublic(httpRequest.getRequestURI(), httpRequest.getMethod())
-                || httpRequest.getAttribute(PROCESSED) != null) {
+                || publicPathMatcher.isPublic(httpRequest.getRequestURI(), httpRequest.getMethod())) {
             chain.doFilter(request, response);
             return;
         }
-        httpRequest.setAttribute(PROCESSED, Boolean.TRUE);
+
+        Object existing = httpRequest.getAttribute(IDENTITY_ATTRIBUTE);
+        if (existing instanceof GuanjinIdentity) {
+            install((GuanjinIdentity) existing);
+            try {
+                chain.doFilter(request, response);
+            } finally {
+                clearContexts();
+            }
+            return;
+        }
 
         final String headerName = properties.effectiveAssertionHeader();
-
-        // 1) 读 header；缺失 → 401（deny-by-default）
         String raw = httpRequest.getHeader(headerName);
         if (raw == null || raw.isEmpty()) {
             reject(httpResponse, HttpServletResponse.SC_UNAUTHORIZED, "missing " + headerName);
             return;
         }
 
-        // 2) 转发前剥离：从进入 SDK 的第一刻起，下游再也拿不到该 header
         HttpServletRequest sanitized = new HeaderStrippingRequestWrapper(httpRequest, headerName);
 
         try {
-            // 3) 验签（SM2，公钥来自 JWKS）+ 校验 iss/aud/exp/nbf
-            GuanjinPrincipal principal = verifier.verify(raw);
-
-            // 4) 重放检测：jti 在窗口内唯一
-            replayStore.checkAndStore(principal.getJti(), principal.getExp());
-
-            // 5) 身份写入请求上下文 + Spring Security
-            GuanjinContextHolder.set(principal);
-            if (properties.getSecurity().isInjectSecurityContext()) {
-                SecurityContextHolder.getContext()
-                        .setAuthentication(authenticationConverter.toAuthentication(principal));
-            }
-
+            GuanjinIdentity identity = verifier.verify(raw);
+            httpRequest.setAttribute(IDENTITY_ATTRIBUTE, identity);
+            install(identity);
             try {
                 chain.doFilter(sanitized, response);
             } finally {
@@ -107,6 +99,14 @@ public class GuanjinAssertionFilter implements Filter {
             log.warn("关津内部令牌校验失败: {}", e.getMessage());
             clearContexts();
             reject(httpResponse, HttpServletResponse.SC_UNAUTHORIZED, e.getMessage());
+        }
+    }
+
+    private void install(GuanjinIdentity identity) {
+        GuanjinContextHolder.set(identity);
+        if (properties.getSecurity().isInjectSecurityContext()) {
+            SecurityContextHolder.getContext()
+                    .setAuthentication(authenticationConverter.toAuthentication(identity));
         }
     }
 

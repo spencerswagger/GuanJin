@@ -1,6 +1,7 @@
-/workspace/sdk/guanjin-core/src/test/java/com/guanjin/sdk/AssertionVerifierVectorTest.java
-/workspace/sdk/guanjin-core/src/test/java/com/guanjin/sdk/JwksProviderTest.java
+/workspace/sdk/guanjin-core/src/test/java/com/guanjin/sdk/GuanjinInteropVectorTest.java
+/workspace/sdk/guanjin-core/src/test/java/com/guanjin/sdk/GuanjinJwksCacheTest.java
 /workspace/sdk/guanjin-core/src/test/java/com/guanjin/sdk/NoFrameworkDependencyTest.java
-/workspace/sdk/guanjin-core/src/test/java/com/guanjin/sdk/agent/AgentClientTest.java
-/workspace/sdk/guanjin-core/src/test/java/com/guanjin/sdk/authz/AuthzEngineTest.java
-/workspace/sdk/guanjin-core/src/test/java/com/guanjin/sdk/replay/JtiReplayStoreTest.java
+/workspace/sdk/guanjin-core/src/test/java/com/guanjin/sdk/TestVectors.java
+/workspace/sdk/guanjin-core/src/test/java/com/guanjin/sdk/agent/GuanjinAgentHmacClientTest.java
+/workspace/sdk/guanjin-core/src/test/java/com/guanjin/sdk/authz/GuanjinAuthzEngineTest.java
+/workspace/sdk/guanjin-core/src/test/java/com/guanjin/sdk/replay/GuanjinJtiReplayStoreTest.java

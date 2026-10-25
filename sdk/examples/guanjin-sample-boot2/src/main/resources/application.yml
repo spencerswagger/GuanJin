@@ -1,0 +1,43 @@
+spring:
+  application:
+    name: order-service
+
+guanjin:
+  enabled: true
+  platform:
+    base-url: ${GUANJIN_PLATFORM_URL:http://127.0.0.1:8080}
+    connect-timeout: 2s
+    read-timeout: 3s
+  client:
+    id: order-service
+    hmac-secret: ${GUANJIN_HMAC_SECRET:change-me}
+  gateway:
+    assertion-header: X-GuanJin-Assertion
+    issuer: guanjin-gateway
+    aud: order-service
+    clock-skew: 60s
+    replay-window: 60s
+    jwks-uri: ${guanjin.platform.base-url}/api/v1/jwks
+    jwks-cache-ttl: 10m
+    jwks-unknown-kid-force-refresh: true
+  authz:
+    enabled: true
+    default-role: user
+    replay-store: ${GUANJIN_REPLAY_STORE:memory}
+  agent:
+    report:
+      enabled: true
+      on-startup: true
+      on-change: true
+    pull:
+      enabled: false
+      interval: 30s
+  public-paths:
+    - /health
+    - /actuator/**
+    - /error
+  security:
+    inject-security-context: true
+    role-prefix: ROLE_
+  startup:
+    print-public-paths: true

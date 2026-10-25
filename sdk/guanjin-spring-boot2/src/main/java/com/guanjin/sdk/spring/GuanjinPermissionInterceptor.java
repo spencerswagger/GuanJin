@@ -1,30 +1,44 @@
 package com.guanjin.sdk.spring;
 
-import com.guanjin.sdk.authz.AuthzEngine;
-import org.aopalliance.intercept.MethodInterceptor;
-import org.aopalliance.intercept.MethodInvocation;
+import com.guanjin.sdk.authz.GuanjinAuthzEngine;
+import java.io.IOException;
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
 import org.springframework.core.annotation.AnnotatedElementUtils;
-import org.springframework.security.access.AccessDeniedException;
+import org.springframework.web.method.HandlerMethod;
+import org.springframework.web.servlet.HandlerInterceptor;
 
-public class GuanjinPermissionInterceptor implements MethodInterceptor {
+public class GuanjinPermissionInterceptor implements HandlerInterceptor {
 
-    private final AuthzEngine authzEngine;
+    private final GuanjinAuthzEngine authzEngine;
 
-    public GuanjinPermissionInterceptor(AuthzEngine authzEngine) {
+    public GuanjinPermissionInterceptor(GuanjinAuthzEngine authzEngine) {
         this.authzEngine = authzEngine;
     }
 
     @Override
-    public Object invoke(MethodInvocation invocation) throws Throwable {
+    public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler)
+            throws IOException {
+        if (!(handler instanceof HandlerMethod)) {
+            return true;
+        }
+        HandlerMethod handlerMethod = (HandlerMethod) handler;
         RequirePermission annotation = AnnotatedElementUtils.findMergedAnnotation(
-                invocation.getMethod(), RequirePermission.class);
+                handlerMethod.getMethod(), RequirePermission.class);
         if (annotation == null) {
-            return invocation.proceed();
+            annotation = AnnotatedElementUtils.findMergedAnnotation(
+                    handlerMethod.getBeanType(), RequirePermission.class);
         }
-        if (!authzEngine.check(annotation.resource(), annotation.action())) {
-            throw new AccessDeniedException(
-                    "无权访问 " + annotation.resource() + ":" + annotation.action());
+        if (annotation == null) {
+            return true;
         }
-        return invocation.proceed();
+        if (authzEngine.check(annotation.resource(), annotation.action())) {
+            return true;
+        }
+        response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+        response.setContentType("application/json;charset=UTF-8");
+        response.getWriter().write("{\"error\":\"forbidden\",\"resource\":\""
+                + annotation.resource() + "\",\"action\":\"" + annotation.action() + "\"}");
+        return false;
     }
 }

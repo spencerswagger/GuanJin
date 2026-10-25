@@ -17,3 +17,6 @@ deploy/secrets/*.txt
 # editor / OS
 .DS_Store
 *.swp
+
+# maven build output
+target/
