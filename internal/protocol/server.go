@@ -20,6 +20,9 @@ import (
 	"github.com/spencerswagger/GuanJin/internal/session"
 	"github.com/spencerswagger/GuanJin/internal/store"
 	"github.com/spencerswagger/GuanJin/internal/store/model"
+
+	"github.com/spencerswagger/GuanJin/internal/admin"
+	"github.com/spencerswagger/GuanJin/internal/agent"
 )
 
 const (
@@ -56,6 +59,8 @@ type Deps struct {
 	Blind          *identifier.BlindIndexer
 	Registry       *factor.Registry
 	Notifier       notify.Notifier
+	Agent          *agent.Service
+	Admin          *admin.Server
 }
 
 type Server struct {
@@ -83,6 +88,8 @@ type Server struct {
 	visited    *store.UserVisitedClientRepo
 	authEvents *store.AuthEventRepo
 	notifier   notify.Notifier
+	agent      *agent.Service
+	admin      *admin.Server
 }
 
 func New(deps Deps) *Server {
@@ -133,6 +140,8 @@ func New(deps Deps) *Server {
 		visited:        deps.Visited,
 		authEvents:     deps.AuthEvents,
 		notifier:       notifier,
+		agent:          deps.Agent,
+		admin:          deps.Admin,
 	}
 }
 
@@ -158,6 +167,12 @@ func (s *Server) RegisterRoutes(engine *gin.Engine) {
 	me.POST("/identifiers", s.BindIdentifier)
 	me.POST("/identifiers/:id/verify", s.VerifyIdentifier)
 	me.DELETE("/identifiers/:id", s.UnbindIdentifier)
+	if s.agent != nil {
+		s.agent.RegisterRoutes(engine)
+	}
+	if s.admin != nil {
+		s.admin.RegisterRoutes(engine)
+	}
 }
 
 func (s *Server) issuer() string {

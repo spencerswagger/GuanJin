@@ -243,15 +243,22 @@ func (s *Server) issueTokens(ctx context.Context, p tokenIssueParams) (*tokenRes
 	}
 
 	var username, displayName string
-	if user, err := s.users.GetByID(ctx, p.UserID); err == nil {
-		username = user.Username
-		if user.DisplayName != nil {
-			displayName = *user.DisplayName
+	var user *model.User
+	if fetched, err := s.users.GetByID(ctx, p.UserID); err == nil {
+		user = fetched
+		username = fetched.Username
+		if fetched.DisplayName != nil {
+			displayName = *fetched.DisplayName
 		}
 	}
-	roles, err := s.roles.ActiveRolesForUser(ctx, p.UserID, p.Client.ClientID)
-	if err != nil {
-		return nil, err
+	var roles []string
+	if user != nil && user.IsAdmin {
+		roles = adminRoles()
+	} else {
+		roles, err = s.roles.ActiveRolesForUser(ctx, p.UserID, p.Client.ClientID)
+		if err != nil {
+			return nil, err
+		}
 	}
 	if roles == nil {
 		roles = []string{}
@@ -339,6 +346,10 @@ func signJWT(claims jwt.MapClaims, kid string, priv *crypto.SM2PrivateKey) (stri
 	token := jwt.NewWithClaims(crypto.SigningMethodSM3WithSM2, claims)
 	token.Header["kid"] = kid
 	return token.SignedString(priv)
+}
+
+func adminRoles() []string {
+	return []string{"sys_admin", "sec_admin", "auditor"}
 }
 
 func pkceS256(verifier string) string {

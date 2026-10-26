@@ -52,5 +52,10 @@ func (s *Server) UserInfo(c *gin.Context) {
 	if scope != "" {
 		resp["scope"] = scope
 	}
+	roles := claimStrings(claims["roles"])
+	if roles == nil {
+		roles = []string{}
+	}
+	resp["roles"] = roles
 	c.JSON(http.StatusOK, resp)
 }

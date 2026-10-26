@@ -14,6 +14,10 @@ import (
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 
+	"github.com/spencerswagger/GuanJin/internal/admin"
+	"github.com/spencerswagger/GuanJin/internal/agent"
+	"github.com/spencerswagger/GuanJin/internal/audit"
+	"github.com/spencerswagger/GuanJin/internal/authz"
 	"github.com/spencerswagger/GuanJin/internal/config"
 	"github.com/spencerswagger/GuanJin/internal/crypto"
 	"github.com/spencerswagger/GuanJin/internal/factor"
@@ -114,6 +118,15 @@ func serve() error {
 
 	if err := bootstrapSigningKeys(context.Background(), db, masterKey); err != nil {
 		return fmt.Errorf("bootstrap signing keys: %w", err)
+	}
+	if err := admin.Bootstrap(context.Background(), admin.BootstrapDeps{
+		DB:             db,
+		Users:          store.NewUserRepo(db),
+		Authenticators: store.NewAuthenticatorRepo(db),
+		Username:       env.BootstrapAdminUsername,
+		Password:       env.BootstrapAdminPassword,
+	}); err != nil {
+		return fmt.Errorf("bootstrap admin: %w", err)
 	}
 
 	protoServer := newProtocolServer(&env, logger, db, rdb, masterKey)
@@ -224,6 +237,36 @@ func newProtocolServer(env *config.Env, logger *zap.Logger, db *gorm.DB, rdb *st
 	if err := registry.Register(channel.NewEmailOtpProvider(emailDeps)); err != nil {
 		panic(err)
 	}
+
+	rolesRepo := store.NewRoleBindingRepo(db)
+	snapshotsRepo := store.NewPolicySnapshotRepo(db)
+	keysRepo := store.NewSigningKeyRepo(db, masterKey)
+	clientsRepo := store.NewClientRepo(db, masterKey)
+	auditChain := audit.NewChain(db, masterKey)
+	authzService := authz.New(authz.Deps{
+		DB:        db,
+		Users:     store.NewUserRepo(db),
+		Clients:   clientsRepo,
+		Snapshots: snapshotsRepo,
+		Audit:     auditChain,
+	})
+	adminServer := admin.New(admin.Deps{
+		Keys:      keysRepo,
+		Users:     store.NewUserRepo(db),
+		Clients:   clientsRepo,
+		Snapshots: snapshotsRepo,
+		Bindings:  rolesRepo,
+		Authz:     authzService,
+	})
+	agentService := agent.New(agent.Deps{
+		DB:        db,
+		Clients:   clientsRepo,
+		Redis:     rdb,
+		Snapshots: snapshotsRepo,
+		Bindings:  rolesRepo,
+		MasterKey: masterKey,
+	})
+
 	return protocol.New(protocol.Deps{
 		Config: protocol.Config{
 			Issuer:        env.Issuer,
@@ -234,19 +277,21 @@ func newProtocolServer(env *config.Env, logger *zap.Logger, db *gorm.DB, rdb *st
 		Redis:          rdb,
 		DB:             db,
 		Users:          store.NewUserRepo(db),
-		Clients:        store.NewClientRepo(db, masterKey),
+		Clients:        clientsRepo,
 		Identifiers:    identifiersRepo,
 		Authenticators: authenticators,
 		Challenges:     challenges,
 		Sessions:       store.NewSessionRepo(db),
-		Keys:           store.NewSigningKeyRepo(db, masterKey),
+		Keys:           keysRepo,
 		Policies:       store.NewLoginPolicyRepo(db),
-		Roles:          store.NewRoleBindingRepo(db),
+		Roles:          rolesRepo,
 		Visited:        store.NewUserVisitedClientRepo(db),
 		AuthEvents:     store.NewAuthEventRepo(db),
 		SessionMgr:     session.NewManager(store.NewSessionRepo(db)),
 		Blind:          blind,
 		Registry:       registry,
 		Notifier:       notify.NewSenderNotifier(senders),
+		Agent:          agentService,
+		Admin:          adminServer,
 	})
 }

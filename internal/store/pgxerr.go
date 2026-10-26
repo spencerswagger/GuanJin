@@ -22,6 +22,10 @@ var (
 	ErrIdentifierNotFound = errors.New("IDENTIFIER_NOT_FOUND")
 	ErrSigningKeyNotFound = errors.New("KEY_UNAVAILABLE")
 	ErrInvalidCredential  = errors.New("INVALID_CREDENTIAL")
+	ErrSnapshotNotFound   = errors.New("SNAPSHOT_NOT_FOUND")
+	ErrBindingNotFound    = errors.New("BINDING_NOT_FOUND")
+
+	ErrClientSecretUnavailable = errors.New("AGENT_SECRET_DISABLED")
 )
 
 func MapPgError(err error) error {

@@ -24,6 +24,25 @@ func clientSecretKey(masterKey []byte) []byte {
 	return crypto.Derive(masterKey, "guanjin/hmac/client-secret", 32)
 }
 
+func clientSecretEncKey(masterKey []byte) []byte {
+	return crypto.Derive(masterKey, "guanjin/sm4/client-secret", crypto.SM4KeySize)
+}
+
+func EncryptClientSecret(masterKey []byte, secret string) ([]byte, error) {
+	return crypto.SM4Encrypt(clientSecretEncKey(masterKey), []byte(secret))
+}
+
+func (r *ClientRepo) DecryptSecret(client *model.Client) (string, error) {
+	if client == nil || len(client.SecretEnc) == 0 {
+		return "", ErrClientSecretUnavailable
+	}
+	plain, err := crypto.SM4Decrypt(clientSecretEncKey(r.masterKey), client.SecretEnc)
+	if err != nil {
+		return "", ErrClientSecretUnavailable
+	}
+	return string(plain), nil
+}
+
 func HashClientSecret(masterKey []byte, secret string) []byte {
 	return crypto.HMACSM3(clientSecretKey(masterKey), []byte(secret))
 }
