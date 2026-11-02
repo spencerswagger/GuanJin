@@ -23,21 +23,46 @@ hits=$(grep -rn --include='*.go' 'STEP_ALREADY_SATISFIED' . 2>/dev/null \
 [ -n "$hits" ] && report "STEP_ALREADY_SATISFIED 只允许出现在 internal/flow（D3-F）" "$hits"
 
 # ③④ 密级写法：只许 withClearance(level)；dataLabel( 与裸 clearance( 均作废（D11 C1）
-scan_paths() {
-  local target="$1"
-  [ -e "$target" ] || return 0
-  local hits
-  # 无 lookbehind 的等价写法：(^|非单词字符) + clearance( —— withClearance( 的 c 前是 h，不会命中
-  # 范围（D11/AC-ENG-08③）：SDK 三语言仓 + examples/ + README* + 仓内 docs/。
-  #   例外：**台账类文件必须能写出旧名**（否则作废声明自己被门禁点红）——
-  #   排除 docs/decisions.md、docs/m1-slices.md、docs/acceptance-criteria.md、qa/（判据正文要引用禁词）。
-  #   基线 `/docs/baseline/` 不在仓内 SDK 树里，本脚本不扫它。
-  hits=$(grep -rnE 'dataLabel\(|(^|[^A-Za-z0-9_])clearance\(' "$target" 2>/dev/null \
-    | grep -v '^./scripts/' \
-    | grep -vE '^\./docs/(decisions|m1-slices|acceptance-criteria)\.md' \
-    | grep -vE '^\./qa/' || true)
-  [ -n "$hits" ] && report "密级唯一写法是 withClearance(level)：$target 出现 dataLabel( 或裸 clearance(（D11）" "$hits"
+#
+# 范围（D11 / AC-ENG-08③）：SDK 三语言仓 + examples/ + README* + 仓内 docs/。
+# 例外（**登记处必须写得出旧名**，否则"作废声明"自己就被门禁点红）：
+#   docs/baseline/**            基线原文（只读，含 .clearance(3) / dataLabel(...) 原始示例）
+#   docs/adr/**                 ADR 里要指名道姓说明"哪个方法作废"
+#   docs/decisions.md           D11 的作废登记
+#   docs/m1-slices.md           切片文档引用 D11
+#   docs/acceptance-criteria.md AC-ENG-08③ 判据正文要点出禁词
+#   docs/sdk-contract.md        Nova 契约里的"作废"条目
+#   qa/**                       Gate 判据/预检清单要引用禁词
+# 注意：路径前缀可能是 `docs/...`（grep 传目录）或 `./docs/...`（grep 传 .），**必须前缀无关**。
+is_exempt_path() {
+  local p="${1#./}"
+  case "$p" in
+    docs/baseline/*|docs/adr/*) return 0 ;;
+    docs/decisions.md|docs/m1-slices.md|docs/acceptance-criteria.md|docs/sdk-contract.md) return 0 ;;
+    qa/*) return 0 ;;
+    scripts/*) return 0 ;;
+  esac
+  return 1
 }
+
+scan_paths() {
+  local target="$1" line file
+  [ -e "$target" ] || return 0
+  # 无 lookbehind 的等价写法：(^|非单词字符) + clearance( —— withClearance( 的 c 前是 h，不会命中
+  local hits
+  hits=$(grep -rnE 'dataLabel\(|(^|[^A-Za-z0-9_])clearance\(' "$target" 2>/dev/null || true)
+  [ -z "$hits" ] && return 0
+  local kept=""
+  while IFS= read -r line; do
+    file="${line%%:*}"
+    is_exempt_path "$file" && continue
+    kept+="$line"$'\n'
+  done <<< "$hits"
+  if [ -n "${kept//[$'\n']/}" ]; then
+    report "密级唯一写法是 withClearance(level)：$target 出现 dataLabel( 或裸 clearance(（D11）" "$kept"
+  fi
+}
+
 for d in sdk/go sdk/java sdk/node sdk examples docs; do scan_paths "$d"; done
 # 仓根 README（SDK 示例常贴在这里）
 for f in README.md README; do [ -f "$f" ] && scan_paths "$f"; done
