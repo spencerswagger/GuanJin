@@ -5,7 +5,7 @@
 | 文档类型 | 实现前契约（语言无关）——22 条能力 + **29 项**配置的等价定义与冻结命名 |
 | 主笔 | 关津 SDK · Nova（HBZ8HT） |
 | 校对 | Spec（W87AB0）：命名冻结、条数、与基线 / `decisions.md` 的一致性 |
-| 编写日期 | 2026-11-02（**v7**：按 P0-1 交付格式补「能力 → 端点 → fail-closed → 关系」与「29 项安全约束」两节，见 E22） |
+| 编写日期 | 2026-11-02（**v8**：按 PR #1 Owl 评审一次性修完 2 个 P2 + 4 个 P3，见 §8.4 E26–E32） |
 | 上游权威 | ① `/docs/decisions.md`（**D1 / D6(3)(4)(5) / D8-C′ / D10 / D11 / P4** + 契约变更清单 CH-4/CH-5）→ ② 索引 §2 → ③ `GuanJin-SDK契约.md` 正文 → ④ 接口清单 §5.2/§5.3/§5.4 |
 | 作用 | **三份实现（Java 8 / Node / Go）的唯一共同真值**：能力 ID、配置键、错误码、canonical 串、fail-closed 行为、一致性向量 |
 | 约束 | 只写契约与命名，**不含任何源文件**；`/docs/baseline/` 一字未改；不含迁移相关能力（P1） |
@@ -17,12 +17,12 @@
 
 ## 0. 一页结论
 
-1. **22 条能力一个不多一个不少**，ID 为 `GJ-CAP-01..22`；三语言对外命名机械可转（§1.1），语义与判据完全一致（§4.1）。
+1. **22 条能力一个不多一个不少**，ID 为 `GJ-CAP-01..22`；三语言对外命名按**两层规则**（§1.5）：概念层逐字符相同、API 层逐格冻结，语义与判据完全一致（§4.1）。
 2. **配置交付集 = 29 项，连续编号 1..29**（`decisions.md` D6-1）。原「32 项」作废：缺号 #7/#16/#17 **不补 key**。一句话交代来历——基线 §3.1 的编号是按 `GuanJinProperties` 字段声明顺序排的，缺的三个号正好是 direct 形态的 3 个键（`mode` + `Direct.userTokenJwksUri` + `Direct.userTokenIssuer`），索引 §2 定「只保留网关形态」后这 3 项失去存在理由、被从表中删掉但编号未重排，于是「号到 32、行剩 29」。**作废依据 = D6-1（禁编造契约）**，故本文不新增 key 补齐编号。
 3. **三语言只允许两处差异**：打包物与宿主接入点。验签算法、canonical 串、能力 ID、错误码、model.conf 三层、JWKS 缓存、fail-closed、配置键名 **必须逐字节一致**（§4）。Go 的 module path 已定稿为 **`github.com/spencerswagger/guanjin`**（P4）；「SDK 是否另起独立 module」留 **Q10 交 spencer**（§5.3.2 给建议案 A）。
 4. **一致性由「黄金向量」而非口头承诺保证**：同一批 JSON 向量 + 同一 runner 契约，三语言各跑一遍、CI 比对（§2.4、附录 C）。
 5. **Java 8 裁决的真实代价**：基线 §4.4/§5.4 示例用了 JDK 11+ API（`java.net.http.HttpClient`、`String.isBlank()`、`var`），**Java 8 下不可编译**——禁用清单见 §5.1.1。
-6. **交付结构（本版补齐）**：§2.1 能力表（语义 + 三语言命名）＋ **§2.1.1 能力 → 冻结端点 → fail-closed → 依赖关系**；§3.2 配置表（编号/键/类型/默认/必填/三语言等价）＋ **「安全约束」列**；**§1.4 命名原则单列**。三节合起来即「22 能力 + 29 配置」的完整等价定义，Java 8 / Node / Go 三份实现只许照抄。
+6. **交付结构（本版补齐）**：§2.1 能力表（语义 + 三语言命名）＋ **§2.1.1 能力 → 冻结端点 → fail-closed → 依赖关系**＋ **§2.1.2 密级唯一写法与取值词表**；§3.2 配置表（编号/键/类型/默认/必填/三语言等价）＋ **「安全约束」列**；**§1.4 命名原则 + §1.5 命名分层与 R-1..R-5 形态规则**。合起来即「22 能力 + 29 配置」的完整等价定义，Java 8 / Node / Go 三份实现**照表抄**即可，不许自行推导。
 
 ---
 
@@ -33,8 +33,9 @@
 | 对象 | 规范形态 | Java 8 | Node | Go |
 |---|---|---|---|---|
 | 能力 ID | `GJ-CAP-NN`（2 位，01..22） | 同（`Capabilities.CAP_01`） | 同（`CAP_01`） | 同（`Capability01`） |
-| 配置键 | 点分小写 kebab：`guanjin.<段>.<键>`，**连续编号 1..29** | 原样作 `@ConfigurationProperties` 键 | 去 `guanjin.` → camelCase 路径 + 环境变量 | 去 `guanjin.` → 结构体字段 + 环境变量 |
+| 配置键 | 点分小写 kebab：`guanjin.<段>.<键>`，**连续编号 1..29** | 原样作 `@ConfigurationProperties` 键 | 去 `guanjin.` → **点分 camelCase**（`security.injectSecurityContext`），与 Java 逐字符相同 | 去 `guanjin.` → 结构体字段，**每段首字母大写、点号保留**（`Security.InjectSecurityContext`） |
 | 环境变量 | 配置键去 `guanjin.`，`.`→`_`，`-`→`_`，全大写，加前缀 `GUANJIN_` | 同名 | 同名 | 同名 |
+| **Go 缩写大小写（封闭白名单）** | 只允许这 5 个缩写全大写，其余单词**只有首字母大写**：`ID` / `URI` / `URL` / `TTL` / `HMAC`。故 `client.id`→`Client.ID`、`gateway.jwks-uri`→`Gateway.JwksURI`、`jwks-cache-ttl`→`JwksCacheTTL`；**`jwks` 一律写 `Jwks`（不是 `JWKS`）** | — | — | 由键名**机械推导**，不得手写特例 |
 | 枚举值 | 小写 snake（`memory`/`redis`） | 枚举 + 小写序列化 | 字符串字面量联合 | 自定义类型 + `Validate()` |
 | 错误码 | 接口清单 §5.4（含 D3-F 新增 `STEP_ALREADY_SATISFIED`、D8-C′ 废弃 `SERVICE_DEGRADED`），**SDK 只消费不新增** | 常量类 | 常量对象 | 常量 + `error` 实现 |
 | 时长 | 字符串 `<n><unit>`（`60s`/`10m`/`300s`），**规范形态是字符串** | `java.time.Duration` | 毫秒 `number`（内部） | `time.Duration` |
@@ -58,12 +59,43 @@
 |:--:|---|---|---|
 | N1 | **概念名照抄冻结名** | 表名（14 张）、端点名（65 个具名 + 1 条数据面通配转发）、概念名（`X-GuanJin-Assertion`、`role_bindings`、`policy_snapshots`、`user_visited_clients`、`acr`/`amr`、档位 L1/L2/L3、AAL1/AAL2）**逐字照抄**，SDK 文档与 API 注释里都用基线写法 | 把 `X-GuanJin-Assertion` 改叫 `Assertion`/`AssertToken`；把 `role_bindings` 写成 `roleBindings` 表 |
 | N2 | **端点名不得改名/加别名** | 契约里出现的端点一律写全路径原文（`POST /api/v1/agent/report`、`GET /api/v1/agent/policies`、`GET /.well-known/jwks.json`）；大小写、复数、前缀 `/api/v1` 一字不改；不提「别名端点」「兼容端点」 | `/api/v1/agent/reportPolicy`、`/api/v1/sdk/report`、`/api/v1/jwks`（后者**全库不存在**，见 C-2） |
-| N3 | **能力名动词+对象，PascalCase，三语言同词** | 能力对外名固定为 §2.1「语言无关名」列（`VerifyAssertion`/`ReplayGuard`/`CheckLabel`…）；Java 方法小驼峰、Node 小驼峰、Go 大驼峰，**词根不许变**（不许 `Validate`/`Check`/`Verify` 三语言各挑一个） | Java `verifyToken()` 对 Node `checkAssertion()` 对 Go `Validate()` |
+| N3 | **两层命名，各管一段** | **概念层**（跨语言**逐字符相同**）：能力 ID、配置键、环境变量、claim / 传输字段、错误码、端点路径、canonical 段名、枚举值。**API 层**（逐格冻结）：每条能力在三语言的主入口标识符，**以 §2.1 三列为唯一真值**；形态差异只许落在 **R-1..R-5** 五类（§1.5），**不许各队自行推导** | 概念层改名（`GJ_TOKEN_INVALID`、`guanjin.platform.baseUrl`）；API 层"按规则自己推"推出表里没有的名字 |
 | N4 | **配置键固定 `guanjin.` + 小写 kebab** | 29 个键逐字照抄（§3.2）；环境变量按 §1.1 机械转换（`GUANJIN_` + 大写 + `_`）；**不提供别名键、不提供旧键兼容、不提供驼峰变体** | `guanjin.platform.baseUrl`、`guanjin.jwks`、`GUANJIN_BASE_URL` |
 | N5 | **claim / 字段名 snake_case 照抄** | JWT claim（`sub`/`uname`/`roles`/`acr`/`amr`/`cid`/`iss`/`aud`/`iat`/`exp`/`jti`）与跨语言传值（`Principal`/`Decision`/`Snapshot`/`BindingSet`）序列化**一律 snake_case**（§1.2）；Go 结构体字段是 Go 语法外壳，**JSON tag 必须还是 snake_case** | `principal.userName`、Go `json:"userName"` |
 | N6 | **错误码只消费不改写** | 三语言都直接返回接口清单 §5.4 的字面码（`TOKEN_INVALID`、`KEY_UNAVAILABLE`…），**不自造前缀、不做语言化改写**；`message` 可本地化，`code` 不可 | `GJ_TOKEN_INVALID`、`invalidToken`、`TOKEN_INVALID_CN` |
 | N7 | **避免同义词扩散** | 同一动作只许一个词（`verify`/`pull`·`report`/`strip` 已冻结）；新增 API 必须先在本文登记再实现 | 同时存在 `pull`/`fetch`/`load` 三种拉取 |
 | N8 | **改名流程** | 任何改名 = 改契约 → 走 ADR + Spec 校对 + `decisions.md` 记录；**不许在实现里先改、文档后追** | 「代码里已经叫 xxx 了，文档改一下」 |
+
+### 1.5 命名分层与形态规则（R-1..R-5，机械可执行）
+
+> 这一节回答 Owl 的追问：**哪些位置必须逐字符相同、哪些允许语言惯用差异、三队怎么保证"照表能得到唯一答案"。** 结论：**表即真值（逐格冻结）+ 差异只许来自 R-1..R-5 五类 + CI 反射比对**，三者缺一不可。
+
+| 层 | 覆盖对象 | 要求 | 机械校验 |
+|---|---|---|---|
+| **概念层** | 能力 ID `GJ-CAP-01..22`、29 个配置键、环境变量、JWT claim、跨语言传输字段、错误码、端点路径、canonical 段名、枚举值（`memory`/`redis`）、表名（在文档与快照字段里出现时） | **逐字符相同**：大小写、连字符、下划线、前缀一律不许变 | 三仓 grep + 反射比对，逐字命中 |
+| **API 层** | 每条能力的对外类型名 / 方法名 / 函数名（§2.1 的 Java / Node / Go 三列） | **以 §2.1 表格为唯一真值（逐格 `FROZEN`）**；差异必须能归到 R-1..R-5 之一 | Java 反射取方法名、Node 取导出符号、Go 取 `go doc` 符号，逐格比对 |
+
+**形态规则（封闭枚举：新增第六类必须走 ADR，不得在实现里就地发明）**
+
+| 规则 | 内容 | 适用范围 |
+|---|---|---|
+| **R-1 大小写与接收者** | Java / Node 方法名**小驼峰**；Go 导出方法**大驼峰** + 显式接收者 `(*T)`；同一格内**词序不得调整** | 全部 22 条 |
+| **R-2 构造器（builder / factory）** | Java `<Type>.builder()`；Node `build<Type>()`（Node 无静态 builder 惯例）；Go `New<Type>Builder()`（Go 的 `New*` 构造惯例） | `GJ-CAP-13`（`AuthzModel` → `AuthzModel.builder()` / `buildAuthzModel()` / `authz.NewModelBuilder()`） |
+| **R-3 Go 的 context 写入口** | 写入 `context.Context` 的能力，Go 一律 `With<Concept>(ctx, ...)`（Go 惯例） | `GJ-CAP-10`（`WithPrincipal`） |
+| **R-4 Java 宿主接口限定词** | 能力落在 Spring Security 既有概念上时，允许带 `Granted` 限定词（Spring 的 `GrantedAuthority`）；**仅此一处**，且必须逐格写在表里 | `GJ-CAP-11`（`GrantedAuthoritiesResolver`） |
+| **R-5 宿主适配入口** | 「把身份交给宿主框架」的入口，三语言用各宿主惯用名；**概念名仍是 `InjectHostContext`**，且该入口必须在代码里以常量或注释回指 `GJ-CAP-10`（可机械校验） | `GJ-CAP-10`（Java `toAuthentication` = 产出 Spring `Authentication`；Node `injectPrincipal`；Go `WithPrincipal`） |
+
+**三处"看起来打架"的地方，差异类别与理由（一次定死，不再讨论）**
+
+| 能力 | 语言无关名 | Java / Node / Go（表内原样） | 差异类别 | 为什么必须这样，而不是改成同一词根 |
+|---|---|---|---|---|
+| `GJ-CAP-10` | `InjectHostContext` | `toAuthentication` / `injectPrincipal` / `WithPrincipal` | R-5 + R-3 | Java 侧"注入"的产物就是 Spring 的 `Authentication`，业务方要在 `SecurityContext` 里看到它；Go 侧写 `context.Context` 的惯例是 `With*`。强行统一成 `injectHostContext` 会得到一个"名字像注入、返回却是 `Authentication`"的 API，反而更难用 |
+| `GJ-CAP-11` | `AuthoritiesResolver` | `GrantedAuthoritiesResolver.resolve` / `authoritiesResolver` / `AuthoritiesResolver func(...)` | R-4 + R-1 | Java 侧是 Spring Security 的扩展点，`Granted` 是 Spring 概念前缀；Node/Go 没有这个前缀，去掉才对 |
+| `GJ-CAP-13` | `AuthzModelBuilder` | `AuthzModel.builder()` / `buildAuthzModel()` / `authz.NewModelBuilder()` | R-2 + R-1 | Java 用静态 `builder()` 链、Node 无静态方法故用工厂函数、Go 用 `New*` 构造；三者都是"造一个 `AuthzModel`"，语义同一 |
+
+> **裁定与理由（回应 Owl P2-2：改 N3 措辞，不改表）**：①**表里的 22 格是宿主 API 的真实形态**，硬改成同一词根会迫使其中两语言写出反惯用名的 API（例如 Java 叫 `injectHostContext` 却返回 `Authentication`、Go 叫 `injectPrincipal` 却写 context），可读性和可维护性都更差；②**表已逐格冻结**，对三队来说"照表抄"就是唯一答案，比"照规则推"更少歧义（规则会诱使实现者自己外推）；③**差异来源被封闭在 R-1..R-5**，新增第六类必须 ADR，因此不会退化成"各队各写各的"；④**配套 CI 反射比对**，把"照表"从口头约定变成可执行校验（不一致即 FAIL）。**代价**：R-2..R-5 这四条规则本身要维护——所以它们只允许覆盖上表这 3 条能力（CAP-10/11/13），别处出现同类差异即视为违规。
+
+
 
 ---
 
@@ -87,10 +119,10 @@
 | `GJ-CAP-10` | `InjectHostContext` | 注入宿主身份上下文（Java `SecurityContext`；Node `req`；Go `context.Context`） | 必须 | `GuanjinAuthenticationConverter.toAuthentication(p)` | `injectPrincipal(req, p)` | `WithPrincipal(ctx, p)` |
 | `GJ-CAP-11` | `AuthoritiesResolver` | 扩展点：业务方把身份属性映射为业务权限 | 可选 | `GrantedAuthoritiesResolver.resolve(p)` | `authoritiesResolver(p)` | `AuthoritiesResolver func(Principal) []string` |
 | `GJ-CAP-12` | `AuthzEngine` | 三层 `model.conf`（RBAC / 行级 ABAC / 密级 BLP）逐层生效 | 必须 | `Authz`（静态门面） | `Authz`（对象） | `(*Authz)` |
-| `GJ-CAP-13` | `AuthzModelBuilder` | **完整签名按索引 §4.2-25（D11 冻结）**：`role(name).can(resource, ...actions)`、`role(name).withClearance(level)`、`resourceGroup(name).contains(resource)`、`defaultRole(name).can(...)`、`build()`；**`dataLabel()` 已作废**（D11） | 必须 | `AuthzModel.builder()` | `buildAuthzModel()` | `authz.NewModelBuilder()` |
+| `GJ-CAP-13` | `AuthzModelBuilder` | **完整签名按索引 §4.2-25（D11 冻结）**：`role(name).can(resource, ...actions)`、`role(name).withClearance(level)`、`resourceGroup(name).contains(resource)`、`defaultRole(name).can(...)`、`build()`；**`dataLabel()` 与裸 `clearance()` 同属作废**（D11 补口 C1，两者均不得作别名），密级取值与唯一写法见 **§2.1.2** | 必须 | `AuthzModel.builder()` | `buildAuthzModel()` | `authz.NewModelBuilder()` |
 | `GJ-CAP-14` | `RequirePermission` | 一行保护接口；**不提供** `RequireRole` | 必须 | `@RequirePermission(resource, action)` | `requirePermission(res, act)` | `RequirePermission(res, act)` |
 | `GJ-CAP-15` | `CheckRow` / `CheckOwner` | 行级 / 数据实例级判定，`auditor` 自动豁免 | 必须 | `Authz.checkRow()` / `Authz.checkOwner()` | `authz.checkRow()` / `authz.checkOwner()` | `(*Authz).CheckRow()` / `.CheckOwner()` |
-| `GJ-CAP-16` | `CheckLabel` | 密级判定：主体密级 ≥ 客体密级 | 必须 | `Authz.checkLabel(level)` | `authz.checkLabel(level)` | `(*Authz).CheckLabel(level)` |
+| `GJ-CAP-16` | `CheckLabel` | 密级判定：主体密级 ≥ 客体密级。**形参名固定 `objLevel`**（D11 补口 C2：客体侧叫 `objLevel`，主体侧才叫 `level`） | 必须 | `Authz.checkLabel(objLevel)` | `authz.checkLabel(objLevel)` | `(*Authz).CheckLabel(objLevel)` |
 | `GJ-CAP-17` | `Scope` | 行级条件下推为查询过滤，避免全量捞出再过滤 | 必须 | `Authz.scope(resource)` | `authz.scope(resource)` | `(*Authz).Scope(resource)` |
 | `GJ-CAP-18` | `DefaultRole` | 未绑角色时的兜底角色，**权限最小**，不得「已登录即全部」 | 必须 | `AuthzModel.builder().defaultRole(n)` | `defaultRole: name` | `builder.DefaultRole(name)` |
 | `GJ-CAP-19` | `PublicPathDeclare` | `@PublicApi` + `public-paths` 显式声明；deny-by-default | 必须 | `@PublicApi` + 配置 #24 | `publicPaths` + `isPublic(path)` | `PublicPaths` + `IsPublic(path)` |
@@ -139,6 +171,32 @@
 | `X-GuanJin-Assertion`（入站 header，非端点） | 数据面 → SDK | 数据面逐请求注入 | 平台 SM2 签名，SDK 验签 |
 
 > **SDK 不得调用**：`/oauth/introspect`（硬规则「禁止每请求校验」，接口 §5.8）、`/userinfo`（SDK 拿不到用户令牌）、`/api/v1/*` 管理面。出现即越界（§1.3）。
+
+### 2.1.2 密级的唯一写法与取值词表（D11 补口 C1/C2 + B1，转写）
+
+> 为什么要单列：基线 SDK 示例里同一个"密级"出现过**三个名字**（`dataLabel()`、裸 `.clearance(n)`、`withClearance(level)`）与**一个自相矛盾的取值注释**（`.clearance(3) // 秘密` 而 `dataLabel(...,2) // 秘密`）。三语言若各挑一个写法，M5 的「主体 ≥ 客体」判定就无法唯一。故本节把写法与取值都**闭死**。
+
+| 项 | 冻结内容 | 依据 |
+|---|---|---|
+| **主体密级（唯一写法）** | `role(name).withClearance(level)`（builder 链上，`level` 为整数） | 索引 §4.2-25 + D11 |
+| **客体密级（唯一入口）** | `Authz.checkLabel(objLevel)` —— 业务在**调用点**把值传进来；**不声明式打标** | D11 方案① + 补口 C2 |
+| **两个作废名** | `dataLabel(resource, level)`、**裸 `clearance(n)`** 一并作废，**均不得留别名、不得另造替代名**（`withClearance` 不是"别名"，它是唯一名） | D11 补口 C1 |
+| **取值词表** | `1 = 内部`、`2 = 秘密`、`3 = 机密`（数值越大越敏感）；**「公开」不占级**：资源不声明 label → **跳过**密级判定，**不存在 0 级** | D11 补口 B1 + 权限模型 §3.4「未声明即不判定」 |
+| **判定规则** | 主体密级 **≥** 客体密级放行；主体未声明密级视为最低（只能访问"公开"资源） | `GJ-CAP-16` |
+| **基线示例怎么办** | 基线 §4.2 的 `.clearance(3) // 秘密` 注释属**笔误**（3 = 机密），与 `dataLabel("order_items", 2) // 秘密` 的矛盾由此消解；**基线只读、不回写**，靠本节 + 门禁表达 | D11 |
+| **门禁口径（给三语言 CI）** | 禁词正则 **`(?<![A-Za-z0-9_])clearance\(`**（大小写敏感）→ `withClearance(` 不命中，`.clearance(3)`、`clearance(` 命中；`dataLabel` 同样禁。**扫描范围只限 SDK 三语言仓**（源码 + `examples/` + `README*` + 仓内 `docs/`），**不含 `/.octop`、`/docs/baseline/`**（作废声明本身必须能写出旧名）。**本文件例外**：`docs/sdk-contract.md` 是作废声明与词表登记处，扫描时**整体排除**——否则登记处被自己的门禁点红（与 D11「作废声明必须能写出旧名」同源） | D11 补口 C1 + Gate v9 `AC-ENG-08`③ |
+
+**三语言落点（同义同形，只有语法外壳差异）**：
+
+| 语言 | 主体密级 | 客体密级调用 | 禁出现 |
+|---|---|---|---|
+| Java 8 | `role(n).withClearance(level)` | `Authz.checkLabel(objLevel)` | `dataLabel(`、`clearance(`（不带 `with`） |
+| Node | `role(n).withClearance(level)` | `authz.checkLabel(objLevel)` | 同上 |
+| Go | `Role(n).WithClearance(level)` | `(*Authz).CheckLabel(objLevel)` | 同上 |
+
+> 本条**不影响 M1**（`GJ-CAP-13/16` 只在 M5 生效）；**能力仍 22 条、配置仍 29 项**。
+>
+> **给门禁实现的提醒**：本节必然出现旧名（作废声明要写得出旧名），因此扫 SDK 仓时**整体排除本文件**，并同步在 `examples/` 与 `README` 里保持零旧名——否则"登记处免税、实现处零容忍"这条会反过来变成漏洞。
 
 ### 2.2 能力的三语言语义锚点（同构判据，Gate 可直接断言）
 
@@ -211,7 +269,7 @@
 | 23 | `guanjin.agent.pull.interval` | duration | `30s` | 否 | `agent.pull.interval` | `agent.pull.interval` | `Agent.Pull.Interval` | 过密 = 100 系统轮询放大；过疏 = 绑定变更延迟；**撤销实时性不依赖它**（撤销在数据面） |
 | 24 | `guanjin.public-paths` | list | `[]` | 否 | `publicPaths` | `publicPaths` | `PublicPaths` | **放行即声明**：禁把受保护业务接口写进白名单；启动打印供评审；空值 = 只有内置白名单（最保守） |
 | 25 | `guanjin.public-paths-include-builtin` | bool | `true` | 否 | `publicPathsIncludeBuiltin` | `publicPathsIncludeBuiltin` | `PublicPathsIncludeBuiltin` | 关掉只是把 `/healthz` 等也纳入登录（可用性代价），**不降低安全性**；内置白名单本身不含业务接口 |
-| 26 | `guanjin.security.inject-security-context` | bool | `true` | 否 | `security.injectSecurityContext` | `security.injectContext`（Node 恒等价） | `Security.InjectContext` | 关掉只影响宿主取身份的方式（`GuanjinContextHolder`/`req.guanjin`/`context` 仍可用），**不跳过验签、不影响判定** |
+| 26 | `guanjin.security.inject-security-context` | bool | `true` | 否 | `security.injectSecurityContext` | `security.injectSecurityContext` | `Security.InjectSecurityContext` | 关掉只影响宿主取身份的方式（`GuanjinContextHolder`/`req.guanjin`/`context` 仍可用），**不跳过验签、不影响判定** |
 | 27 | `guanjin.security.authorities-resolver` | string(bean/符号名) | — | 否 | `security.authoritiesResolver`（Bean 名） | `security.authoritiesResolver`（函数） | `Security.AuthoritiesResolver`（函数） | 只做「身份属性 → 业务权限」映射；**不得在此做放行决策、不得回源平台**；抛异常 → 请求失败（fail-closed） |
 | 28 | `guanjin.security.role-prefix` | string | `ROLE_` | 否 | `security.rolePrefix` | `security.rolePrefix` | `Security.RolePrefix` | 只影响 Spring Security 的 `hasRole` 前缀；**不改变角色事实**，不得用它伪造角色 |
 | 29 | `guanjin.startup.print-public-paths` | bool | `true` | 否 | `startup.printPublicPaths` | `startup.printPublicPaths` | `Startup.PrintPublicPaths` | 生产建议保持 `true`（放行清单可审计）；日志只打路径，**不得打完整令牌/secret** |
@@ -272,8 +330,8 @@
 | M1 | **Agent 面 HMAC canonical 串** | §4.3 一字不差；同一向量三语言签名**逐字节相同** |
 | M2 | **断言验签算法** | `SM3withSM2`（JWT 形态），`kid` 选键，`alg` 不做协商降级；失败一律拒 |
 | M3 | **能力 ID** | `GJ-CAP-01..22` 与语义一一对应，不得增删改 |
-| M4 | **错误码** | 只消费接口 §5.4（含 D3-F 新增 `STEP_ALREADY_SATISFIED` E4/409，仅平台 `internal/flow` 产生，**SDK 不得产生也不得吞**）；**`SERVICE_DEGRADED` 已废弃（D8-C′⑤），SDK 永不返回**；SDK 本地拒绝（缺 header / 验签失败 / 重放 / `iss`·`aud` 不符 / `exp`·`iat` 越界）统一映射 **401 `TOKEN_INVALID`**，不自造新码 |
-| M5 | **model.conf 三层语义** | 同一份 `model.conf` + 同一策略 → 同 allow/deny；`auditor` 豁免、`defaultRole` 兜底、密级 `≥` 判定一致。**客体密级入口 `✅ 已定`（D11 补选方案①，标「Spec 终校（2026-11-02）」）**：**不做声明式打标**，客体密级由**业务在调用点**把值传给既有能力 `Authz.checkLabel(objLevel)`（`GJ-CAP-16` 语义不变）；**不新增 builder 方法、不新增配置、不新增 SDK API**；`dataLabel()` 作废且**不留别名、不另造替代名**（索引 §4.2-25 冻结的五项里没有客体声明入口）。判定**不进 CH**（不改 key、能力仍 22、不改既有签名），作**设计选择**登记 **ADR-004**（见附录 A 注） |
+| M4 | **错误码** | 只消费接口 §5.4（含 D3-F 新增 `STEP_ALREADY_SATISFIED` E4/409，仅平台 `internal/flow` 产生，**SDK 不得产生也不得吞**）；**`SERVICE_DEGRADED` 已废弃（D8-C′⑤），SDK 永不返回**；SDK 本地拒绝（缺 header / 验签失败 / 重放 / `iss`·`aud` 不符 / `exp`·`iat` 越界）统一映射 **401 `TOKEN_INVALID`**，不自造新码。**`TOKEN_EXPIRED` 属平台对用户令牌（`access_token`）的响应，SDK 永不返回**——界分见 §4.4 末表 |
+| M5 | **model.conf 三层语义** | 同一份 `model.conf` + 同一策略 → 同 allow/deny；`auditor` 豁免、`defaultRole` 兜底、密级 `≥` 判定一致。**客体密级入口 `✅ 已定`（D11 补选方案①，标「Spec 终校（2026-11-02）」）**：**不做声明式打标**，客体密级由**业务在调用点**把值传给既有能力 `Authz.checkLabel(objLevel)`（`GJ-CAP-16` 语义不变）；**不新增 builder 方法、不新增配置、不新增 SDK API**；`dataLabel()` 作废（**裸 `clearance()` 同属作废**，见 §2.1.2）且**不留别名、不另造替代名**（索引 §4.2-25 冻结的五项里没有客体声明入口）。判定**不进 CH**（不改 key、能力仍 22、不改既有签名），作**设计选择**登记 **ADR-004**（见附录 A 注） |
 | M6 | **JWKS 缓存与 fail-closed** | TTL、未知 `kid` 强刷一次、拉取失败沿用旧缓存、无缓存则拒（§4.4） |
 | M7 | **配置键名** | 29 个规范键 + 环境变量映射，不得各语言改名或加别名 |
 | M8 | **剥离时机与剥离对象** | 剥离**对象 = 交给宿主的请求视图**，不是"进入 SDK 就丢头"：按 **D10 唯一六步**（读 → 验签 → 校验 claim（含 `jti` 重放）→ 注入上下文 → **替换视图** → handler），**禁止换序**；替换后 handler、下游转发、日志三类消费者**都取不到**（详见 §4.5）。**"验签前剥离"已被 D10 明确否决** |
@@ -324,6 +382,15 @@ X-GuanJin-Signature = Base64( HMAC-SM3( K, canonical ) )
 | `platform.base-url` 未配置 / 非法 | **启动失败**（fail-fast，非静默放行） | 进程退出非 0 | ✅ |
 
 **永不发生**（三语言共同红线）：① 因验签失败或依赖不可用而**放行**；② 提供任何「跳过验签 / 关闭 fail-closed」的生产开关；③ 返回 `SERVICE_DEGRADED`（D8-C′ 已废弃）。
+
+**`TOKEN_INVALID` vs `TOKEN_EXPIRED` 的界分（消除 §5.4 双码二义，回应 Owl P3-3）**：两者都在接口清单 §5.4 的 E2 分级里，但**归属不同主体、语义不同**，SDK 只产前者：
+
+| 场景 | 谁返回 | 码 | 为什么 |
+|---|---|---|---|
+| SDK 校验**内部断言**（`X-GuanJin-Assertion`，60s 短令牌）失败——含签名错、缺 header、`iss`/`aud` 不符、`iat` 越界、`jti` 重放、以及 **`exp` 已过** | **SDK** | `401 TOKEN_INVALID` | 故意**不区分"过期"与"伪造"**：对外区分等于告诉攻击者"这张票只是旧了"，且内部断言只有 60s 生命、过期几乎总伴随重放或时钟异常，可诊断性由**日志**（含 `requestId`）承担，不由响应码承担 |
+| 平台对**用户访问令牌**（`access_token`）判定过期——`/userinfo`、`/oauth/introspect` 等端点 | **平台** | `401 TOKEN_EXPIRED` | 用户令牌是会话级凭证、过期是**正常业务事件**（前端要引导刷新），必须可区分；SDK 既不签发也不验用户令牌（§1.3 越界清单），**因此 SDK 永不返回 `TOKEN_EXPIRED`** |
+
+> 一句话记法：**`TOKEN_EXPIRED` 属于用户令牌（平台说），`TOKEN_INVALID` 属于内部断言（SDK 说）**；三语言实现不得把内部断言的 `exp` 越界映射成 `TOKEN_EXPIRED`，也不得在日志之外暴露具体失败原因。
 
 ---
 
@@ -563,6 +630,24 @@ M1 的 S9 **只交付 Java 8 两份产物**；Node / Go 随 M2+ 落地。但**�
 | E24 | 命名原则单列一节 | 只有 §1.1 的「命名规则（机械可转）」表，讲的是**转换规则**，没有讲「与冻结表名/端点名/概念名一致」的原则 | 新增 **§1.4 命名原则 N1–N8**：概念名唯一来源＝基线冻结名；端点名逐字照抄、不得加别名；能力名三语言同词；配置键固定 `guanjin.` + kebab；claim 与传值 snake_case；错误码只消费不改写；禁同义词扩散；改名必须走 ADR + Spec 校对 |
 | E25 | 编号缺口 / jwks 路径 / `enabled` 暗开关（三个已知问题）复核 | v6 已收口（§3.1 复算 `32 = 29 + 3`、§3.2 #12 改 `.well-known/jwks.json`、C-1 定义 `enabled` profile 门控） | **原文保留、只做交叉引用校验**：三个问题的结论与 `decisions.md` **D6(1)(3)(4)(5)** 逐字一致，本轮未产生新裁定；#12 与「`/api/v1/jwks` 全库不存在」的取证仍成立（接口清单 §3.1.2 只有 `/.well-known/jwks.json`） |
 
+### 8.4 v7 → v8 修订点（PR #1 Owl 评审：2 个 P2 + 4 个 P3，一次性改完）
+
+> Owl 原话：0 阻断 / 0 个 P1，2 个 P2 + 4 个 P3。本轮**只改文档、不写代码**，29 项配置与 22 条能力**一条未增删**。
+>
+> **读法**：本节「原（v7）」列会**引用旧写法/旧键名**（如 `checkLabel(level)`、`security.injectContext`），那是变更记录、**不构成契约**；契约以正文 §1–§7 为准，扫描与评审一律以正文为准（与 §2.1.2「登记处可写旧名、实现处零容忍」同一条原则）。
+
+| # | Owl 意见 | 原（v7） | 现（v8） |
+|---|---|---|---|
+| **E26（P2-1）** | 命名自相矛盾：能力表还有三处 `checkLabel(level)`，D11 补口 C2 已要求 `objLevel` | §2.1 `GJ-CAP-16` 三语言三格都写 `checkLabel(level)` | **全文统一 `objLevel`**：§2.1 三格改为 `checkLabel(objLevel)`，并在语义列写明「形参名固定 `objLevel`，主体侧才叫 `level`」（D11 补口 C2）。`grep -c 'checkLabel(level)' = 0`。M5/附录 A/§2.1.2 原本已是 `objLevel`，现四处一致 |
+| **E27（P2-2）** | N3 写「词根不许变」，但 CAP-10 / 11 / 13 三格明显不同词根 → 原则与表打架 | N3 一句「词根不许变」，无例外定义，三队可各写各的 | **选「改 N3 措辞、不改表」**：N3 重写为**两层命名**（概念层逐字符相同 / API 层逐格冻结），并新增 **§1.5**：分层定义 + **R-1..R-5 五类封闭形态规则**（大小写与接收者 / 构造器 / Go 的 `With*` context 写入口 / Java 的 `Granted*` 宿主限定词 / 宿主适配入口）+ **三处冲突的差异类别与理由表** + **CI 反射比对**（Java 反射方法名、Node 导出符号、Go `go doc` 逐格比对，不一致即 FAIL）+ 裁定理由。差异只许来自这五类，**新增第六类必须 ADR** |
+| **E28（P3-1）** | `#26` Node 侧字段名不机械 | Node `security.injectContext`（自定义简化）+「（Node 恒等价）」；Go `Security.InjectContext` | 改为**机械推导**：Node `security.injectSecurityContext`（点分 camelCase，与 Java 逐字符相同）、Go `Security.InjectSecurityContext`；并在 §1.1 增补 **「Go 缩写封闭白名单」**（`ID`/`URI`/`URL`/`TTL`/`HMAC` 全大写、`jwks`→`Jwks` 不写 `JWKS`），使 29 个 Go 字段名全部可由键名机械生成、无手写特例 |
+| **E29（P3-2）** | D11 的「裸 `clearance()` 作废 + 密级 1/2/3 词表」没进契约 | 只写了 `dataLabel()` 作废，未提裸 `clearance()`，也没有取值词表 | 新增 **§2.1.2**：唯一写法 `role(n).withClearance(level)` / 客体入口 `checkLabel(objLevel)` / **两个作废名**（`dataLabel`、裸 `clearance`）/ **词表 `1=内部 2=秘密 3=机密`、公开不占级** / 判定 `主体 ≥ 客体` / 基线示例 `.clearance(3) // 秘密` 判为笔误 / **禁词正则与扫描范围**（`(?<![A-Za-z0-9_])clearance\(`，只扫 SDK 三语言仓，不含 `/docs/`）。§2.1 `GJ-CAP-13` 行同步标注 |
+| **E30（P3-3）** | `exp` 越界返回 `TOKEN_INVALID` 与 §5.4 `TOKEN_EXPIRED` 并存，二义 | M4 只说本地拒绝统一 `TOKEN_INVALID`，未提 `TOKEN_EXPIRED` 归属 | §4.4 末尾加**界分表 + 一句话记法**：内部断言（60s）任何失败含 `exp` 越界 → **SDK** 返回 `TOKEN_INVALID`（故意不区分过期/伪造，可诊断性交给日志的 `requestId`）；`TOKEN_EXPIRED` 是**平台**对用户访问令牌（`access_token`）的响应，**SDK 永不返回**（SDK 不验用户令牌）。M4 同步加指向 |
+| **E31（P3-4）** | `docs/` 被 gitignore 导致「回写即缺陷」无法自动校验 | 我 v7 用 `git add -f` 单文件绕过 | **只确认、不重复改**：Ark 已在 `feat/docs-decisions-m1` 里删掉 `.gitignore` 的 `docs/` 规则（实测该分支 `.gitignore` 已无 `docs/`），**`origin/main` 目前仍是旧规则**——等他 PR 合入即生效。我**不动 `.gitignore`**（避免与他撞车），并在 PR 描述里同步这条状态 |
+| **E32** | 复核红线 | — | 29 项配置、22 条能力、冻结表名/端点名/概念名**一处未改**；`/docs/baseline/` 零写入；零代码；未执行 `git worktree`；未改 `.gitignore` |
+| **E33** | 自查补充（E29 带出的连带问题） | 契约落入仓内 `docs/` 后，D11 的禁词扫描范围（含仓内 `docs/`）会把**作废声明本身**点红 | §2.1.2 与门禁口径行明确 **`docs/sdk-contract.md` 整体排除扫描**（登记处免税），同时要求 `examples/` 与 `README` 保持零旧名——否则"登记处免税"会变成实现侧的漏洞 |
+
+
 
 ---
 
@@ -609,7 +694,7 @@ M1 的 S9 **只交付 Java 8 两份产物**；Node / Go 随 M2+ 落地。但**�
 | A-4 | `defaultRole(name).can(resource, ...actions)` | **默认（兜底）角色的权限**；权限最小，不得「已登录即全部」（能力 `GJ-CAP-18`） | Java `defaultRole(n).can(r, acts...)`；Node `defaultRole(n).can(r, ...acts)`；Go `DefaultRole(n).Can(r, acts...)` |
 
 > ⛔ **`dataLabel()` 已作废、不得实现**（`decisions.md` **D11**：与索引 §4.2-25 的 `withClearance(level)` 冲突，同一能力不许两套写法，也不许留别名）。
-> ✅ **客体密级入口 `已定`（D11 补选方案①，标「Spec 终校（2026-11-02）」，已回读对齐）**：**不做声明式打标**。客体密级由**业务在调用点**把值传给既有能力 `Authz.checkLabel(objLevel)`（`GJ-CAP-16` 语义不变：主体密级 ≥ 客体密级）；**不新增任何 builder 方法、不新增配置、不新增 SDK API**——本表就停在 A-1~A-4，**不设 A-5**。`dataLabel()` 作废后**不得留别名、也不得另造替代名**（依据：索引 §4.2-25 冻结的五项里没有客体声明入口，`dataLabel()` 是自造的第六项）。
+> ✅ **客体密级入口 `已定`（D11 补选方案①，标「Spec 终校（2026-11-02）」，已回读对齐）**：**不做声明式打标**。客体密级由**业务在调用点**把值传给既有能力 `Authz.checkLabel(objLevel)`（`GJ-CAP-16` 语义不变：主体密级 ≥ 客体密级）；**不新增任何 builder 方法、不新增配置、不新增 SDK API**——本表就停在 A-1~A-4，**不设 A-5**。`dataLabel()` 作废后**不得留别名、也不得另造替代名**（裸 `clearance()` 同属作废，写法与取值口径见 §2.1.2；依据：索引 §4.2-25 冻结的五项里没有客体声明入口，`dataLabel()` 是自造的第六项）。
 > **是否进 CH：不进**。按三分判据——不改 key、不改能力数量（22 条不变）、不改既有方法签名，业务方不能用基线原本不允许的方式调用 SDK（`checkLabel` 本就是允许的本地判定）→ 故不列入契约变更清单；但它是**设计选择而非纠错**，因此走「团队收口 + **ADR-004**（`docs/adr/ADR-004-客体密级由调用点传值.md`，随 S0 入库）」，不是追认。
 
 **校验方式**：22 行对读基线 §2 即可核「条数与顺序」；A-1~A-4 对读索引 §4.2-25 即可核「签名完整」。三者（能力表 §2.1 / 本附录 A / 基线 §2）**必须逐行一致**。
@@ -642,5 +727,5 @@ M1 的 S9 **只交付 Java 8 两份产物**；Node / Go 随 M2+ 落地。但**�
 
 ---
 
-**校对快照（v7，供 Spec 抽查）**：`sdk-contract.md` / 行数 **646** 行（`wc -l`） / md5 **`0882e9a97b3afbf9d6dd87e34fdb9bcb`**（md5 覆盖范围 = **本节 4 行以外、即第 1..642 行**，避免自引用；行数含本节）。上一快照 = v6 577 行 / md5 `023b4021`。本轮：**按 P0-1 交付格式补齐三项呈现**——新增 **§2.1.1**（22 条能力 × 冻结端点 / fail-closed / 关系 + 端点汇总表）、**§3.2 第 9 列「安全约束」**（29 项逐条）、**§1.4 命名原则 N1–N8**；另修两处表格分隔线/转义符导致的渲染断裂（§2.1、§8.1 R4 行）；§8 新增 **E22–E25** 记录。**能力仍 22 条、配置仍 29 项，键名/编号/默认值/必填性/判据一处未改；基线未动、无源码。**
+**校对快照（v8，供 Spec 抽查）**：`sdk-contract.md` / 行数 **731** 行（`wc -l`） / md5 **`a317c9455a3510c3c55c0fd1e647a45f`**（md5 覆盖范围 = **本节 4 行以外、即第 1..727 行**，避免自引用；行数含本节）。上一快照 = v7 646 行 / md5 `0882e9a9`。本轮：**按 PR #1 Owl 评审一次性修完 2 个 P2 + 4 个 P3**——E26 `checkLabel(objLevel)` 全文统一（原三处仍写 `level`）；E27 命名原则重写为**两层命名 + §1.5 的 R-1..R-5 封闭形态规则 + 三处冲突的差异类别与理由 + CI 反射比对**（选「改 N3 措辞、不改表」）；E28 配置 #26 的 Node/Go 字段名改为机械可推导（并补 Go 缩写白名单）；E29 新增 **§2.1.2**（`withClearance` 唯一写法、裸 `clearance()` 与 `dataLabel()` 一并作废、密级 1/2/3 词表、公开不占级、禁词正则与扫描范围）；E30 补 `TOKEN_INVALID` vs `TOKEN_EXPIRED` 界分表；E31 确认 Ark 已在他分支放开 `.gitignore` 的 `docs/`（`origin/main` 尚未生效，我不重复改）。**能力仍 22 条、配置仍 29 项，键名/编号/默认值/必填性/判据一处未改；基线未动、无源码。**
 
