@@ -24,9 +24,11 @@ func TestDBSessionsAcrCheckMapsTo400(t *testing.T) {
 		t.Cleanup(func() {
 			_ = db.Exec(`DELETE FROM sessions WHERE id = ?`, id).Error
 		})
-		return db.Exec(`INSERT INTO sessions (id, user_id, client_id, acr, expires_at, idle_expires_at)
+		// 必须显式过 MapError：GORM 的 Exec 原样返回 *pgconn.PgError，
+		// 映射是仓储层每个写操作的义务（技术栈 §5.3「不得把原始 DB 错误抛到 HTTP 层」）。
+		return MapError(db.Exec(`INSERT INTO sessions (id, user_id, client_id, acr, expires_at, idle_expires_at)
 			VALUES (?, ?, ?, ?, now() + interval '1 hour', now() + interval '30 min')`,
-			id, f.userID, f.clientID, acr).Error
+			id, f.userID, f.clientID, acr).Error)
 	}
 
 	// 1) 越界取值 → 23514，必须映射成 400（D12：acr 取值域；不得静默降级、不得当 500）。

@@ -84,6 +84,22 @@ func mustV7(t *testing.T) uuid.UUID {
 	return id
 }
 
+// newSession 建一条真实会话（flows.session_id 有 FK 指向 sessions，
+// 用随机 uuid 当会话 id 会撞 flows_session_id_fkey → SESSION_NOT_FOUND（404），
+// 这也是外键双键映射在真库上的正面证据）。
+func (f *fixture) newSession(t *testing.T, db *gorm.DB) uuid.UUID {
+	t.Helper()
+	id := mustV7(t)
+	err := MapError(db.Exec(`INSERT INTO sessions (id, user_id, client_id, acr, expires_at, idle_expires_at)
+		VALUES (?, ?, ?, 'AAL1', now() + interval '1 hour', now() + interval '30 min')`,
+		id, f.userID, f.clientID).Error)
+	if err != nil {
+		t.Fatalf("insert session: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Exec(`DELETE FROM sessions WHERE id = ?`, id).Error })
+	return id
+}
+
 func (f *fixture) newFlow(t *testing.T) *model.Flow {
 	t.Helper()
 	return &model.Flow{
@@ -246,31 +262,38 @@ func TestDBTwoPhaseCleanup(t *testing.T) {
 	repo := NewFlowRepo(db)
 	ctx := context.Background()
 
-	expired := f.newFlow(t)
-	expired.ExpiresAt = time.Now().UTC().Add(-time.Minute)
-	if err := repo.Create(ctx, expired); err != nil {
-		t.Fatalf("create expired flow: %v", err)
+	// 两条过期流：一条验"触发器把时间戳改回 now()"，另一条验"满 7 天被删"。
+	// 分开是必须的 —— 触发器会用 now() 覆盖 updated_at，做完触发器校验那条就"变新"了，
+	// 再拿它验删除会永远删不掉。
+	triggerProbe := f.newFlow(t)
+	triggerProbe.ExpiresAt = time.Now().UTC().Add(-time.Minute)
+	doomed := f.newFlow(t)
+	doomed.ExpiresAt = time.Now().UTC().Add(-time.Minute)
+	for _, fl := range []*model.Flow{triggerProbe, doomed} {
+		if err := repo.Create(ctx, fl); err != nil {
+			t.Fatalf("create expired flow: %v", err)
+		}
 	}
 
 	n, err := repo.MarkExpired(ctx)
 	if err != nil {
 		t.Fatalf("MarkExpired: %v", err)
 	}
-	if n < 1 {
-		t.Fatalf("MarkExpired rows = %d, want >= 1", n)
+	if n < 2 {
+		t.Fatalf("MarkExpired rows = %d, want >= 2", n)
 	}
 
-	// 行还在（第一阶段不删）。
+	// 第一阶段只置 status，行必须还在（否则 FLOW_EXPIRED 会时隐时现，AC-FLOW-10③）。
 	var count int64
-	if err := db.Raw(`SELECT count(*) FROM flows WHERE id = ? AND status = 'expired'`, expired.ID).
-		Scan(&count).Error; err != nil {
+	if err := db.Raw(`SELECT count(*) FROM flows WHERE id IN (?, ?) AND status = 'expired'`,
+		triggerProbe.ID, doomed.ID).Scan(&count).Error; err != nil {
 		t.Fatalf("count: %v", err)
 	}
-	if count != 1 {
-		t.Fatalf("expired row must still exist after phase 1, got count=%d", count)
+	if count != 2 {
+		t.Fatalf("expired rows must survive phase 1, got count=%d", count)
 	}
 
-	// 第二阶段：cutoff 未到 → 不删。
+	// 第二阶段：cutoff 未到 → 一条都不删。
 	deleted, err := repo.DeleteExpiredBefore(ctx, time.Now().UTC().Add(-ExpiredRetention))
 	if err != nil {
 		t.Fatalf("DeleteExpiredBefore(now-7d): %v", err)
@@ -279,19 +302,48 @@ func TestDBTwoPhaseCleanup(t *testing.T) {
 		t.Fatalf("must not delete rows newer than the retention window, deleted=%d", deleted)
 	}
 
-	// cutoff 已过（假装 8 天前就过期了）→ 删掉。
-	if err := db.Exec(`UPDATE flows SET updated_at = now() - interval '8 days' WHERE id = ?`, expired.ID).
-		Error; err != nil {
+	// 触发器语义：普通 UPDATE 之后 updated_at 必须是 now()（时间戳归 DB，应用写不进去）。
+	if err := db.Exec(`UPDATE flows SET status = 'expired' WHERE id = ?`, triggerProbe.ID).Error; err != nil {
+		t.Fatalf("touch row: %v", err)
+	}
+	var stale bool
+	if err := db.Raw(`SELECT updated_at < now() - interval '1 hour' FROM flows WHERE id = ?`,
+		triggerProbe.ID).Scan(&stale).Error; err != nil {
+		t.Fatalf("check trigger: %v", err)
+	}
+	if stale {
+		t.Fatal("flows_set_updated_at 没生效：普通 UPDATE 后 updated_at 仍是旧值")
+	}
+
+	// 造"8 天前就过期"：只能临时停触发器（它会把 updated_at 改回 now()），改完立刻恢复。
+	// 这不是绕过约束，是为了把"时间流逝"这个外部条件造出来；生产里 updated_at 天然由 DB 维护。
+	if err := db.Exec(`ALTER TABLE flows DISABLE TRIGGER flows_set_updated_at`).Error; err != nil {
+		t.Fatalf("disable trigger: %v", err)
+	}
+	if err := db.Exec(`UPDATE flows SET updated_at = now() - interval '8 days' WHERE id = ?`,
+		doomed.ID).Error; err != nil {
 		t.Fatalf("age the row: %v", err)
 	}
+	if err := db.Exec(`ALTER TABLE flows ENABLE TRIGGER flows_set_updated_at`).Error; err != nil {
+		t.Fatalf("enable trigger: %v", err)
+	}
+
+	// 到期的删掉、没到期的那条（刚被触发器刷新过）留着。
 	if _, err := repo.DeleteExpiredBefore(ctx, time.Now().UTC().Add(-ExpiredRetention)); err != nil {
 		t.Fatalf("DeleteExpiredBefore: %v", err)
 	}
-	if err := db.Raw(`SELECT count(*) FROM flows WHERE id = ?`, expired.ID).Scan(&count).Error; err != nil {
-		t.Fatalf("count after delete: %v", err)
+	var doomedCount, probeCount int64
+	if err := db.Raw(`SELECT count(*) FROM flows WHERE id = ?`, doomed.ID).Scan(&doomedCount).Error; err != nil {
+		t.Fatalf("count doomed: %v", err)
 	}
-	if count != 0 {
-		t.Fatalf("expired row past retention must be deleted, got count=%d", count)
+	if err := db.Raw(`SELECT count(*) FROM flows WHERE id = ?`, triggerProbe.ID).Scan(&probeCount).Error; err != nil {
+		t.Fatalf("count probe: %v", err)
+	}
+	if doomedCount != 0 {
+		t.Fatalf("expired row past retention must be deleted, got count=%d", doomedCount)
+	}
+	if probeCount != 1 {
+		t.Fatalf("row inside the retention window must be kept, got count=%d", probeCount)
 	}
 }
 
@@ -302,7 +354,7 @@ func TestDBAbandonBySession(t *testing.T) {
 	repo := NewFlowRepo(db)
 	ctx := context.Background()
 
-	sessionID := mustV7(t)
+	sessionID := f.newSession(t, db)
 	flow := f.newFlow(t)
 	flow.UserID = &f.userID
 	flow.SessionID = &sessionID
