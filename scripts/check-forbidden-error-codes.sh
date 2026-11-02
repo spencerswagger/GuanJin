@@ -32,12 +32,13 @@ hits=$(grep -rn --include='*.go' 'STEP_ALREADY_SATISFIED' . 2>/dev/null \
 #   docs/m1-slices.md           切片文档引用 D11
 #   docs/acceptance-criteria.md AC-ENG-08③ 判据正文要点出禁词
 #   docs/sdk-contract.md        Nova 契约里的"作废"条目
-#   qa/**                       Gate 判据/预检清单要引用禁词
+#   qa/** 与 docs/qa/**         Gate 判据/预检清单要引用禁词（#3 合入后 qa/ 会迁到 docs/qa/）
 # 注意：路径前缀可能是 `docs/...`（grep 传目录）或 `./docs/...`（grep 传 .），**必须前缀无关**。
 is_exempt_path() {
   local p="${1#./}"
   case "$p" in
     docs/baseline/*|docs/adr/*) return 0 ;;
+    docs/qa/*) return 0 ;;   # #3 的 qa 文档合入后会迁到 docs/qa/，不排除就会被自家门禁点红
     docs/decisions.md|docs/m1-slices.md|docs/acceptance-criteria.md|docs/sdk-contract.md) return 0 ;;
     qa/*) return 0 ;;
     scripts/*) return 0 ;;

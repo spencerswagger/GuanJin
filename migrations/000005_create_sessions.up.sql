@@ -24,8 +24,9 @@ CREATE TABLE sessions (
     created_at      timestamptz NOT NULL DEFAULT now(),
     updated_at      timestamptz NOT NULL DEFAULT now(),
 
-    -- 显式命名：不依赖 PG 自动名，否则 23514 映射与判据会随 PG 版本漂移
-    CONSTRAINT sessions_acr_valid CHECK (acr IN ('AAL1','AAL2','AAL3')),
+    -- 显式命名且名字必须与契约一致：D12 要求 Edge 按 `sessions_acr_check` 把 23514 映射成 400；
+    -- 换名字会让映射静默失效、错误码退化成 500。
+    CONSTRAINT sessions_acr_check CHECK (acr IN ('AAL1','AAL2','AAL3')),
     CONSTRAINT sessions_revoked_consistency
         CHECK ((status = 'revoked') = (revoked_at IS NOT NULL)),
     CONSTRAINT sessions_time_order

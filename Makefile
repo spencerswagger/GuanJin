@@ -68,8 +68,8 @@ test: ## 单元测试（主闸）：-count=1 不吃缓存、-v 可数 PASS/SKIP�
 coverage: ## 覆盖率门禁（复用 test 的 coverprofile，不重复跑）
 	@COVERAGE_PROFILE=$(TEST_LOG_DIR)/cover.out COVERAGE_MIN=$(COVERAGE_MIN) ./scripts/coverage-gate.sh
 
-test-race: ## 竞态检测（独立目标：-race 需要 cgo，故必须 CGO_ENABLED=1，不进主闸）
-	CGO_ENABLED=1 go test ./... -race
+test-race: ## 竞态检测（独立目标：-race 需要 cgo，故必须 CGO_ENABLED=1，不进主闸；同样 -count=1 不吃缓存）
+	CGO_ENABLED=1 go test ./... -count=1 -race
 
 gates: ## 工程红线门禁（禁 AutoMigrate / 禁废弃错误码；脚本存在不算通过，变异注入必须红）
 	@./scripts/check-no-automigrate.sh
