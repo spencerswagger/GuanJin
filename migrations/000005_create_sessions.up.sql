@@ -7,7 +7,7 @@ CREATE TABLE sessions (
     user_id         uuid        NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
     -- 会话归属的业务系统（登录一定有客户端上下文；管理后台本身也是一个 client）
     client_id       text        NOT NULL REFERENCES clients(client_id) ON DELETE RESTRICT,
-    acr             text        NOT NULL CHECK (acr IN ('AAL1','AAL2','AAL3')),
+    acr             text        NOT NULL,
     amr             text[]      NOT NULL DEFAULT '{}',       -- ['pwd','totp',...]
     status          text        NOT NULL DEFAULT 'active'
                                 CHECK (status IN ('active','revoked','expired')),
@@ -24,6 +24,8 @@ CREATE TABLE sessions (
     created_at      timestamptz NOT NULL DEFAULT now(),
     updated_at      timestamptz NOT NULL DEFAULT now(),
 
+    -- 显式命名：不依赖 PG 自动名，否则 23514 映射与判据会随 PG 版本漂移
+    CONSTRAINT sessions_acr_valid CHECK (acr IN ('AAL1','AAL2','AAL3')),
     CONSTRAINT sessions_revoked_consistency
         CHECK ((status = 'revoked') = (revoked_at IS NOT NULL)),
     CONSTRAINT sessions_time_order

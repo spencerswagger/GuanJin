@@ -49,9 +49,12 @@ docs/                       # 设计基线（只读）+ 裁定台账 + M1 切片
 make migrate-up     DATABASE_URL="$GUANJIN_DEV_DSN"
 make migrate-down   DATABASE_URL="$GUANJIN_DEV_DSN"
 # 3) 三闸（**只读判定**：gofmt 只列不改，红就是红）
-make ci             # = fmt-check(gofmt -l) + vet + gates + test + vue-tsc
+make ci             # = fmt-check + vet + gates + test(-count=1 -v) + coverage + vue-tsc
 # 4) 竞态检测单跑（-race 需要 cgo，与主闸的 CGO_ENABLED=0 口径分开）
 make test-race
+# 5) 证据留档（不入库）：每跑一次 test 会产出可核对的测试计数与覆盖率
+#    artifacts/local/gate/{go-test.log,summary.txt,cover.out}
+#    summary.txt 形如：tests_run=19 tests_pass=19 tests_skip=0 tests_fail=0 packages_ok=5 cached=no
 ```
 
 启动（需要 `GUANJIN_MASTER_KEY` = base64、≥32 字节；缺失即非 0 退出，fail-closed）：

@@ -23,15 +23,24 @@ hits=$(grep -rn --include='*.go' 'STEP_ALREADY_SATISFIED' . 2>/dev/null \
 [ -n "$hits" ] && report "STEP_ALREADY_SATISFIED 只允许出现在 internal/flow（D3-F）" "$hits"
 
 # ③④ 密级写法：只许 withClearance(level)；dataLabel( 与裸 clearance( 均作废（D11 C1）
-scan_sdk() {
-  local dir="$1"
-  [ -d "$dir" ] || return 0
+scan_paths() {
+  local target="$1"
+  [ -e "$target" ] || return 0
   local hits
   # 无 lookbehind 的等价写法：(^|非单词字符) + clearance( —— withClearance( 的 c 前是 h，不会命中
-  hits=$(grep -rnE 'dataLabel\(|(^|[^A-Za-z0-9_])clearance\(' "$dir" 2>/dev/null || true)
-  [ -n "$hits" ] && report "密级唯一写法是 withClearance(level)：$dir 出现 dataLabel( 或裸 clearance(（D11）" "$hits"
+  # 范围（D11/AC-ENG-08③）：SDK 三语言仓 + examples/ + README* + 仓内 docs/。
+  #   例外：**台账类文件必须能写出旧名**（否则作废声明自己被门禁点红）——
+  #   排除 docs/decisions.md、docs/m1-slices.md、docs/acceptance-criteria.md、qa/（判据正文要引用禁词）。
+  #   基线 `/docs/baseline/` 不在仓内 SDK 树里，本脚本不扫它。
+  hits=$(grep -rnE 'dataLabel\(|(^|[^A-Za-z0-9_])clearance\(' "$target" 2>/dev/null \
+    | grep -v '^./scripts/' \
+    | grep -vE '^\./docs/(decisions|m1-slices|acceptance-criteria)\.md' \
+    | grep -vE '^\./qa/' || true)
+  [ -n "$hits" ] && report "密级唯一写法是 withClearance(level)：$target 出现 dataLabel( 或裸 clearance(（D11）" "$hits"
 }
-for d in sdk/go sdk/java sdk/node; do scan_sdk "$d"; done
+for d in sdk/go sdk/java sdk/node sdk examples docs; do scan_paths "$d"; done
+# 仓根 README（SDK 示例常贴在这里）
+for f in README.md README; do [ -f "$f" ] && scan_paths "$f"; done
 
 if [ "$fail" -eq 0 ]; then
   echo "[OK] forbidden codes / deprecated clearance names absent"

@@ -29,8 +29,12 @@ jobs:
           if [ -n "$out" ]; then echo "[FAIL] gofmt needed:"; echo "$out"; exit 1; fi
       - name: go vet
         run: go vet ./...
-      - name: go test（主闸，不带 -race）
-        run: go test ./... -coverprofile=cover.out
+      - name: go test（主闸，不带 -race；-count=1 不吃缓存、-v 可数 PASS/SKIP）
+        run: go test ./... -count=1 -v -coverprofile=cover.out | tee go-test.log
+      - name: test summary（证据行 tests_run/skips）
+        run: ./scripts/test-summary.sh go-test.log | tee summary.txt
+      - name: coverage gate
+        run: COVERAGE_PROFILE=cover.out COVERAGE_MIN=60 ./scripts/coverage-gate.sh
       - name: gates (forbidden patterns)
         run: |
           ./scripts/check-no-automigrate.sh
@@ -48,8 +52,8 @@ jobs:
         with:
           go-version-file: go.mod
           cache: false
-      - name: go test -race
-        run: go test ./... -race
+      - name: go test -race（独立 job；同样 -count=1 不吃缓存）
+        run: go test ./... -count=1 -race
 
   web:
     runs-on: ubuntu-latest
@@ -61,6 +65,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - run: npm install --no-audit --no-fund
+      - run: npm ci --no-audit --no-fund
       - name: vue-tsc --noEmit（只读）
         run: npx vue-tsc --noEmit
