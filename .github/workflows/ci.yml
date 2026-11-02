@@ -1,0 +1,46 @@
+name: ci
+
+# 门禁即承诺：三闸（go vet / go test / vue-tsc）任何一项红都不许合入。
+# 说明：迁移不在此跑 —— 项目未上线，schema 由本地/发布 Job 手动 `migrate up`（decisions.md P1）。
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+    branches: [main]
+
+jobs:
+  go:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: gofmt
+        run: |
+          out="$(gofmt -l .)"
+          if [ -n "$out" ]; then echo "gofmt needed:"; echo "$out"; exit 1; fi
+      - name: go vet
+        run: go vet ./...
+      - name: go test
+        run: go test ./... -race -coverprofile=cover.out
+      - name: gates (forbidden patterns)
+        run: |
+          ./scripts/check-no-automigrate.sh
+          ./scripts/check-forbidden-error-codes.sh
+
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --no-audit --no-fund
+      - name: vue-tsc --noEmit
+        run: npx vue-tsc --noEmit

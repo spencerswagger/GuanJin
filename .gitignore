@@ -1,1 +1,26 @@
-docs/
+# 构建产物
+bin/
+dist/
+*.exe
+*.test
+*.out
+
+# 前端依赖与产物
+node_modules/
+web/dist/
+web/node_modules/
+*.tsbuildinfo
+
+# 本地环境
+.env
+.env.local
+
+# 编辑器 / 系统
+.idea/
+.vscode/
+.DS_Store
+
+# 证据留档（按 AC-ID 存放，不入库）
+artifacts/
+
+# 注意：docs/ 必须入库（P7）；migrations/ 必须入库（schema 唯一权威）
