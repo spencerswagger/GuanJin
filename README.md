@@ -6,7 +6,7 @@
 ## 这是什么
 
 只做认证：账号 / 因子 / 编排 / 令牌 / 会话 / 审计 / 数据面。**不做**授权策略、组织人事、业务逻辑。
-规模目标：100 个业务系统 / 千万级 C 端用户 / 峰值登录 200 QPS。合规目标：等保三级；密评整体后置（本期不判定、不出证）。
+规模目标：100 个业务系统 / 千万级 C 端用户 / 峰值登录 200 QPS。合规目标：**等保三级**；**密评口径以预检清单为准，等级待追认**（本期不判定、不出证，也不进契约强制项）。
 
 ## 当前进度（S1 骨架）
 
@@ -41,12 +41,17 @@ docs/                       # 设计基线（只读）+ 裁定台账 + M1 切片
 ## 本地跑
 
 ```bash
-# 1) 依赖：PostgreSQL 17（三库）+ Redis 7，DSN 见环境变量 GUANJIN_DB_DSN / GUANJIN_REDIS_ADDR
-# 2) 迁移（手动，**不随应用启动**）
-make migrate-up        DATABASE_URL="$GUANJIN_DB_DSN"
-make migrate-down      DATABASE_URL="$GUANJIN_DB_DSN"
-# 3) 三闸
-make ci                # = fmt-check + vet + gates + test + vue-tsc
+# 1) 依赖：PostgreSQL 17（三库）+ Redis 7
+#    DSN 只能来自环境变量（GUANJIN_DEV_DSN / GUANJIN_TEST_DSN / GUANJIN_STAGING_DSN），
+#    Makefile **故意不内置默认口令** —— 猜一个默认值只会让新人第一次就跑出
+#    「password authentication failed」。没注入时 make 会直接报错并给出可照抄的示例。
+# 2) 迁移（手动，**不随应用启动**；缺 DATABASE_URL 会当场失败，不会静默连错库）
+make migrate-up     DATABASE_URL="$GUANJIN_DEV_DSN"
+make migrate-down   DATABASE_URL="$GUANJIN_DEV_DSN"
+# 3) 三闸（**只读判定**：gofmt 只列不改，红就是红）
+make ci             # = fmt-check(gofmt -l) + vet + gates + test + vue-tsc
+# 4) 竞态检测单跑（-race 需要 cgo，与主闸的 CGO_ENABLED=0 口径分开）
+make test-race
 ```
 
 启动（需要 `GUANJIN_MASTER_KEY` = base64、≥32 字节；缺失即非 0 退出，fail-closed）：
@@ -72,6 +77,11 @@ go run ./cmd/guanjingw   # 数据面；GUANJIN_UPSTREAM 指向业务系统时透
 - SDK 三语言 **Java 8 / Node / Go**（共用 `docs/sdk-contract.md` 一份语言无关契约：22 条能力 + 29 项配置）
 - 全链路国密固定最高级：口令 **PBKDF2-SM3**、摘要 **SM3**、审计 **HMAC-SM3**、敏感字段 **SM4**、网关断言 **SM2**、对外令牌 **SM3withSM2**；主密钥只从环境变量注入、经 **HKDF-SM3** 派生子密钥、**不落库**
 - 迁移**不随应用启动**；TLS / WAF / 负载均衡 / 灰度 / 熔断**不属本平台范围**（前置 nginx / Kong）
+
+## 闸的两条纪律
+
+- **判定只读**：检查目标只用 `gofmt -l`（列出即失败）；`make fmt-write` 只给人手动跑，**不得**出现在 `lint` / `ci` / CI 里——否则就是"一键把红改绿"。
+- **race 独立**：`-race` 需要 cgo，与项目 `CGO_ENABLED=0` 口径冲突，故单列 `make test-race` 与独立 CI job，**不塞进主闸**。
 
 ## 协作
 

@@ -1,7 +1,10 @@
 name: ci
 
 # 门禁即承诺：三闸（go vet / go test / vue-tsc）任何一项红都不许合入。
-# 说明：迁移不在此跑 —— 项目未上线，schema 由本地/发布 Job 手动 `migrate up`（decisions.md P1）。
+# 说明：
+#   - 迁移不在此跑 —— 项目未上线，schema 由本地/发布 Job 手动 `migrate up`（decisions.md P1）；
+#   - **判定类 job 一律只读**：gofmt 只用 `-l` 列出、绝不 `-w`（否则一键把红改绿，闸失效）；
+#   - **-race 不进主闸**：`-race` 需要 cgo，与项目 `CGO_ENABLED=0` 口径冲突，单列 `race` job。
 
 on:
   push:
@@ -12,24 +15,41 @@ on:
 jobs:
   go:
     runs-on: ubuntu-latest
+    env:
+      CGO_ENABLED: '0'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
           cache: false
-      - name: gofmt
+      - name: gofmt（只读，列出即失败）
         run: |
           out="$(gofmt -l .)"
-          if [ -n "$out" ]; then echo "gofmt needed:"; echo "$out"; exit 1; fi
+          if [ -n "$out" ]; then echo "[FAIL] gofmt needed:"; echo "$out"; exit 1; fi
       - name: go vet
         run: go vet ./...
-      - name: go test
-        run: go test ./... -race -coverprofile=cover.out
+      - name: go test（主闸，不带 -race）
+        run: go test ./... -coverprofile=cover.out
       - name: gates (forbidden patterns)
         run: |
           ./scripts/check-no-automigrate.sh
           ./scripts/check-forbidden-error-codes.sh
+
+  race:
+    # 独立的竞态检测 job：-race 需要 cgo，故这里显式 CGO_ENABLED=1；
+    # **不并入**上面的主闸，避免「主闸要求 CGO_ENABLED=0」与「-race 要 cgo」互相打架。
+    runs-on: ubuntu-latest
+    env:
+      CGO_ENABLED: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: go test -race
+        run: go test ./... -race
 
   web:
     runs-on: ubuntu-latest
@@ -42,5 +62,5 @@ jobs:
         with:
           node-version: '22'
       - run: npm install --no-audit --no-fund
-      - name: vue-tsc --noEmit
+      - name: vue-tsc --noEmit（只读）
         run: npx vue-tsc --noEmit
