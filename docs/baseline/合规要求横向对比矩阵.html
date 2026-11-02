@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>合规要求横向对比矩阵</title>
+<style>
+  :root{
+    --bd:#e5e7eb; --bd2:#d1d5db;
+    --tx:#111827; --tx2:#4b5563; --tx3:#6b7280;
+    --bg:#ffffff; --bg2:#f9fafb; --bg3:#f3f4f6;
+    --eb:#1d4ed8; --eb-bg:#eff6ff;
+    --mp:#0f766e; --mp-bg:#f0fdfa;
+    --in:#6d28d9; --in-bg:#f5f3ff;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; padding:24px 20px 64px;
+    font:14px/1.6 -apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+    color:var(--tx); background:var(--bg);
+  }
+  h1{font-size:17px; font-weight:500; margin:0 0 6px}
+  .sub{font-size:13px; color:var(--tx3); margin:0 0 18px}
+  .legend{display:flex; gap:16px; flex-wrap:wrap; font-size:12px; color:var(--tx2); margin-bottom:14px}
+  .legend i{display:inline-block; width:9px; height:9px; border-radius:2px; margin-right:5px; vertical-align:1px}
+  .scroll{overflow:auto; border:1px solid var(--bd); border-radius:10px; max-height:78vh}
+  table{border-collapse:separate; border-spacing:0; width:100%; font-size:12.5px}
+  thead th{
+    position:sticky; top:0; z-index:3;
+    background:var(--bg3); color:var(--tx); font-weight:500; text-align:left;
+    padding:9px 10px; border-bottom:1px solid var(--bd2); border-right:1px solid var(--bd);
+    white-space:nowrap;
+  }
+  thead th:first-child{left:0; z-index:4}
+  thead th small{display:block; font-weight:400; color:var(--tx3); font-size:11px}
+  tbody td{
+    padding:9px 10px; border-bottom:1px solid var(--bd); border-right:1px solid var(--bd);
+    vertical-align:top; background:var(--bg);
+  }
+  tbody tr:last-child td{border-bottom:none}
+  th:last-child, td:last-child{border-right:none}
+  tbody th{
+    position:sticky; left:0; z-index:2; text-align:left; font-weight:500;
+    padding:9px 10px; border-bottom:1px solid var(--bd); border-right:1px solid var(--bd2);
+    white-space:nowrap; background:var(--bg2);
+  }
+  tr[data-cat="eb"] th{background:var(--eb-bg); color:#1e3a8a; border-left:3px solid var(--eb)}
+  tr[data-cat="mp"] th{background:var(--mp-bg); color:#115e59; border-left:3px solid var(--mp)}
+  tr[data-cat="in"] th{background:var(--in-bg); color:#4c1d95; border-left:3px solid var(--in)}
+  tr[data-cat="eb"] td{background:#fdfdff}
+  tr[data-cat="mp"] td{background:#fdfffe}
+  tr[data-cat="in"] td{background:#fffdfd}
+  td .dash{color:var(--tx3)}
+  [data-tip]{cursor:help; text-decoration:underline dotted #9ca3af; text-underline-offset:3px; text-decoration-thickness:1px}
+  [data-tip]:hover{background:#fef9c3}
+  b,strong{font-weight:500; color:#b91c1c}
+  #tip{
+    position:fixed; z-index:99; display:none; max-width:420px;
+    padding:10px 12px; border-radius:8px;
+    background:#1f2937; color:#f9fafb; font-size:12.5px; line-height:1.7;
+    white-space:pre-line; box-shadow:0 8px 24px rgba(0,0,0,.22);
+    pointer-events:none;
+  }
+  #tip b{color:#fca5a5; font-weight:500}
+  h2{font-size:14px; font-weight:500; margin:34px 0 10px; padding-top:18px; border-top:1px solid var(--bd)}
+  .plain{border-collapse:separate; border-spacing:0; width:100%; font-size:12.5px; border:1px solid var(--bd); border-radius:10px; overflow:hidden}
+  .plain th{background:var(--bg3); text-align:left; font-weight:500; padding:9px 10px; border-bottom:1px solid var(--bd2); border-right:1px solid var(--bd); white-space:nowrap}
+  .plain td{padding:9px 10px; border-bottom:1px solid var(--bd); border-right:1px solid var(--bd); vertical-align:top}
+  .plain tr:last-child td{border-bottom:none}
+  .plain th:last-child,.plain td:last-child{border-right:none}
+  ol.refs{margin:0; padding-left:20px}
+  ol.refs li{margin-bottom:11px; font-size:13px}
+  ol.refs .name{font-weight:500}
+  ol.refs .org{color:var(--tx2)}
+  ol.refs a{color:#1d4ed8; text-decoration:none; word-break:break-all}
+  ol.refs a:hover{text-decoration:underline}
+  .note{color:var(--tx3); font-size:12px; margin-top:14px; line-height:1.7}
+</style>
+</head>
+<body>
+
+<h1>合规要求横向对比矩阵</h1>
+<p class="sub">行 = 要求来源 &nbsp;·&nbsp; 列 = 能力维度 &nbsp;·&nbsp; <b>红色</b>为相对上一级新增或升级的要求 &nbsp;·&nbsp; 带点线下划线的单元格可悬停查看条文原文与说明</p>
+
+<div class="legend">
+  <span><i style="background:#1d4ed8"></i>等保 2.0（GB/T 22239-2019）</span>
+  <span><i style="background:#0f766e"></i>密评（GB/T 39786-2021）</span>
+  <span><i style="background:#6d28d9"></i>国际标准与最佳实践</span>
+</div>
+
+<div class="scroll">
+<table>
+  <thead>
+    <tr>
+      <th>要求来源</th>
+      <th>① 身份标识与账号</th>
+      <th>② 鉴别因素</th>
+      <th>③ 鉴别信息（口令）</th>
+      <th>④ 失败处理与会话</th>
+      <th>⑤ 访问控制（鉴权）</th>
+      <th>⑥ 安全审计</th>
+      <th>⑦ 密码技术</th>
+      <th>⑧ 配套与工程</th>
+    </tr>
+  </thead>
+  <tbody>
+
+    <tr data-cat="eb">
+      <th>等保 2.0 · 二级</th>
+      <td data-tip="【GB/T 22239-2019 第二级 · 安全计算环境】
+身份鉴别 a) 应对登录的用户进行身份标识和鉴别，身份标识具有唯一性，身份鉴别信息具有复杂度要求并定期更换。
+
+访问控制 b) 应重命名或删除默认账户，修改默认账户的默认口令。
+访问控制 c) 应及时删除或停用多余的、过期的账户，避免共享账户的存在。">标识唯一 · 清默认账户</td>
+
+      <td data-tip="第二级「身份鉴别」仅有 a) b) c) 三条，没有“两种或以上组合鉴别技术”这一条——该条自第三级起才出现。
+因此用户名 + 口令即可满足二级要求。">单因素即可</td>
+
+      <td data-tip="【原文】身份鉴别 a) …身份鉴别信息具有复杂度要求并定期更换。">复杂度 + 定期更换</td>
+
+      <td data-tip="【原文】身份鉴别
+b) 应具有登录失败处理功能，应配置并启用结束会话、限制非法登录次数和当登录连接超时自动退出等相关措施；
+c) 当进行远程管理时，应采取必要措施防止鉴别信息在网络传输过程中被窃听。">失败锁定 · 超时退出</td>
+
+      <td data-tip="【原文】访问控制
+a) 应对登录的用户分配账户和权限；
+d) 应授予管理用户所需的最小权限，实现管理用户的权限分离。">最小权限 · 权限分离</td>
+
+      <td data-tip="【原文】安全审计
+a) 应启用安全审计功能，审计覆盖到每个用户，对重要的用户行为和重要安全事件进行审计；
+b) 审计记录应包括事件的日期和时间、用户、事件类型、事件是否成功及其他与审计相关的信息；
+c) 应对审计记录进行保护，定期备份，避免受到未预期的删除、修改或覆盖等。
+
+注意：第二级没有 d)“应对审计进程进行保护”，该条自第三级起出现。">覆盖主要操作</td>
+
+      <td data-tip="第二级「数据完整性」仅要求：应采用校验技术保证重要数据在传输过程中的完整性。
+对比第三级：范围扩展到“传输 + 存储”，且允许“校验技术或密码技术”。
+即二级只覆盖传输环节，且未强制使用密码技术。">校验技术即可</td>
+
+      <td data-tip="第二级无强制渗透测试、无强制密评、无集中管控要求。
+（二级系统建议每两年测评一次，备案为“建议”而非强制。）"><span class="dash">—</span></td>
+    </tr>
+
+    <tr data-cat="eb">
+      <th>等保 2.0 · 三级</th>
+      <td data-tip="身份标识与账号的要求与第二级一致：标识唯一；重命名或删除默认账户；及时删除或停用多余、过期账户，避免共享账户。">同二级</td>
+
+      <td data-tip="【GB/T 22239-2019 第三级 · 身份鉴别 d)】
+应采用口令、密码技术、生物技术等两种或两种以上组合的鉴别技术对用户进行身份鉴别，且其中一种鉴别技术至少应使用密码技术来实现。
+
+⚠️ 这是第三级相对第二级在“身份鉴别”上唯一新增的一条，也是“双因素”的合规依据。
+⚠️ 注意：部分测评实践中，该条会与“特权账户 / 管理用户”绑定认定，实际判定存在弹性——不要把“系统定级”之外的因素当作赌注。"><b>双因素（至少一种用密码技术）</b></td>
+
+      <td data-tip="【原文】身份鉴别 a) …身份鉴别信息具有复杂度要求并定期更换。与第二级一致。">同二级</td>
+
+      <td data-tip="【原文】身份鉴别
+b) 应具有登录失败处理功能，应配置并启用结束会话、限制非法登录次数和当登录连接超时自动退出等相关措施；
+c) 当进行远程管理时，应采取必要措施防止鉴别信息在网络传输过程中被窃听。
+与第二级一致。">同二级</td>
+
+      <td data-tip="【第三级新增三条，是三级与二级在访问控制上的分水岭】
+e) 应由授权主体配置访问控制策略，访问控制策略规定主体对客体的访问规则；
+f) 访问控制的粒度应达到主体为用户级或进程级，客体为文件、数据库表级；
+g) 应对重要主体和客体设置安全标记，并控制主体对有安全标记信息资源的访问。
+
+⚠️ e) f) g) 由应用层难以独立满足，通常需主机 / OS 加固层承担——需在建设方案中明确责任边界。
+（不同二手资料对三级 g) 的表述略有差异，以标准原文为准。）"><b>+ 策略 · 粒度 · 安全标记</b></td>
+
+      <td data-tip="【第三级新增 d)】应对审计进程进行保护，防止未经授权的中断。
+
+留存要求：第三级审计日志留存不少于 6 个月（源自安全区域边界与安全管理中心相关要求），远高于二级的约 30 天。"><b>全量 · 进程保护 · ≥6 个月</b></td>
+
+      <td data-tip="第三级「数据完整性」：应采用校验技术或密码技术保证重要数据在传输和存储过程中的完整性（范围含鉴别数据、重要业务数据、重要审计数据、重要配置数据、重要个人信息）。
+第三级「数据保密性」：应采用密码技术保证重要数据在传输和存储过程中的保密性。
+
+第三级系统密码应用须使用国密算法，并须通过商用密码应用安全性评估（密评）。"><b>须国密 + 须密评</b></td>
+
+      <td data-tip="第三级新增：
+· 安全管理中心 / 集中管控——划分特定管理区域，对分散的安全组件集中管控，集中收集与分析审计数据；
+· 系统管理员 / 安全管理员 / 审计管理员 三权分立，不得一人兼任；
+· 每年至少一次渗透测试，出具 CNAS 认可机构报告；
+· 漏洞扫描后，高危漏洞需在 1 个月内修复；
+· 每年至少一次等级测评，并须通过密评。"><b>渗透(年) · 三权分立 · 集中管控</b></td>
+    </tr>
+
+    <tr data-cat="eb">
+      <th>等保 2.0 · 四级</th>
+      <td data-tip="身份标识与账号要求与第三级一致。">同三级</td>
+
+      <td data-tip="第四级同样要求“两种或以上组合鉴别技术，且至少一种使用密码技术”。
+整体上第四级还要求：应采用主动免疫可信验证机制及时识别入侵和病毒行为并有效阻断；可信验证需在应用程序的所有执行环节进行动态验证，并进行动态关联感知。
+即“多因素 + 硬件级可信根”的方向。"><b>多因素 · 硬件可信根</b></td>
+
+      <td data-tip="第四级对默认账户口令的复杂度更严：修改后的口令需满足——字母大小写、数字、符号两种及以上混合，最小口令长度 10 位。"><b>复杂度更严（≥10 位）</b></td>
+
+      <td data-tip="失败处理与会话要求与第三级一致。">同三级</td>
+
+      <td data-tip="【第四级访问控制 g)】
+应对主体、客体设置安全标记，并依据安全标记和强制访问控制规则确定主体对客体的访问。
+
+对比：第三级 g) 仅要求对“重要主体和客体”设置安全标记并控制访问；第四级将标记范围扩展到全部主体与客体，并明确要求“强制访问控制”。"><b>+ 强制访问控制</b></td>
+
+      <td data-tip="【第四级 安全审计 b)】
+审计记录应包括事件的日期和时间、事件类型、主体标识、客体标识和结果等。
+
+对比第三级 b)：应包括事件的日期和时间、用户、事件类型、事件是否成功及其他与审计相关的信息。
+即第四级明确要求记录“主体标识、客体标识”。"><b>+ 主体 / 客体标识</b></td>
+
+      <td data-tip="【第四级 数据完整性】
+a) 应采用密码技术保证重要数据在传输过程中的完整性（不再是“校验技术或密码技术”，改为必须是密码技术）；
+b) 应采用密码技术保证重要数据在存储过程中的完整性；
+c) 在可能涉及法律责任认定的应用中，应采用密码技术提供数据原发证据和数据接收证据，实现数据原发行为的抗抵赖和数据接收行为的抗抵赖。
+
+⚠️ 要点：抗抵赖（不可否认性）在等保体系中只有第四级是“应”；
+在密评三级中该项是“宜”。"><b>必须用密码技术 + 抗抵赖</b></td>
+
+      <td data-tip="第四级新增：
+· 应建立异地灾难备份中心，提供业务应用的实时切换；
+· 重要数据处理系统的热冗余，保证高可用；
+· 应采用主动免疫可信验证机制及时识别入侵和病毒行为；
+· 在网络边界通过通信协议转换或隔离方式进行数据交换；
+· 可按业务重要程度分配带宽，优先保障重要业务；
+· 对非授权设备私自联入内网等行为可有效阻断。"><b>灾备 · 热冗余 · 主动免疫</b></td>
+    </tr>
+
+    <tr data-cat="mp">
+      <th>密评 · 二级</th>
+      <td data-tip="GB/T 39786-2021 第二级的“应用和数据安全”章节未对身份标识与账号管理提出密码应用要求。"><span class="dash">—</span></td>
+
+      <td data-tip="【GB/T 39786-2021 第 7 章（第二级）7.4 a)】
+宜采用密码技术对登录用户进行身份鉴别，保证应用系统用户身份的真实性。
+
+强度为“宜”——即建议而非强制。">宜用密码做鉴别</td>
+
+      <td data-tip="第二级未对鉴别信息的密码保护提出单独要求。"><span class="dash">—</span></td>
+
+      <td data-tip="密评标准不涉及会话管理要求。"><span class="dash">—</span></td>
+
+      <td data-tip="【第二级 7.4 b)】可采用密码技术保证信息系统应用的访问控制信息的完整性。
+强度为“可”——可选，非强制。">可保证完整性</td>
+
+      <td data-tip="【第二级 7.3 c)】可采用密码技术保证日志记录的完整性。
+强度为“可”。">可保证日志完整性</td>
+
+      <td data-tip="【第二级 7.4】
+c) 宜采用密码技术保证重要数据在传输过程中的机密性；
+d) 宜采用密码技术保证重要数据在存储过程中的机密性；
+e) f) 传输 / 存储完整性均为“宜”。
+即二级的机密性与完整性要求全部为“宜”。">宜保证机密性</td>
+
+      <td data-tip="第二级要求：采用的密码产品应达到 GB/T 37092《信息安全技术 密码模块安全要求》一级及以上安全要求。
+对比第三级：需二级及以上。">密码产品 ≥ 一级</td>
+    </tr>
+
+    <tr data-cat="mp">
+      <th>密评 · 三级</th>
+      <td data-tip="密评标准不涉及身份标识与账号管理的具体条款。"><span class="dash">—</span></td>
+
+      <td data-tip="【GB/T 39786-2021 第 8 章（第三级）——三个层面均为“应”】
+8.2 a) 应采用密码技术对通信实体进行身份鉴别，保证通信实体身份的真实性；
+8.3 a) 应采用密码技术对登录设备的用户进行身份鉴别，保证用户身份的真实性；
+8.4 a) 应采用密码技术对登录用户进行身份鉴别，保证应用系统用户身份的真实性。
+
+⚠️ 第三级相比第二级，此项由“宜”升为“应”。"><b>应用密码做鉴别（应）</b></td>
+
+      <td data-tip="第三级要求身份鉴别信息（口令）应使用密码技术保护存储——即不得明文存储，也不得使用无盐快速哈希。">口令须密码保护</td>
+
+      <td data-tip="密评标准不涉及会话管理要求。"><span class="dash">—</span></td>
+
+      <td data-tip="【第三级 8.4 b)】宜采用密码技术保证信息系统应用的访问控制信息的完整性。
+【第三级 8.3 c)】宜采用密码技术保证系统资源访问控制信息的完整性。
+强度仍为“宜”。">宜保证完整性</td>
+
+      <td data-tip="【第三级 8.3 e)】宜采用密码技术保证日志记录的完整性。
+强度为“宜”——但等保三级对审计保护本身是“应”，建议按“应”来实现。">宜保证日志完整性</td>
+
+      <td data-tip="【GB/T 39786-2021 第 8 章（第三级）8.4】
+d) 应采用密码技术保证重要数据在传输过程中的机密性；   ← 应
+e) 应采用密码技术保证重要数据在存储过程中的机密性；   ← 应
+f) g) 传输 / 存储完整性均为“宜”；
+h) 在可能涉及法律责任认定的应用中，宜采用密码技术提供数据原发证据和数据接收证据，实现数据原发行为的不可否认性和数据接收行为的不可否认性。   ← 宜
+
+⚠️ 更正说明：抗抵赖在密评第三级是“宜”，在等保第四级才是“应”。此前若看到“密评三级要求抗抵赖为应”的说法，与标准原文不符。
+
+📌 记忆规律：第三级的“身份鉴别”与“重要数据机密性”全部是“应”；完整性、抗抵赖多为“宜”。"><b>应保证机密性 · 抗抵赖为宜</b></td>
+
+      <td data-tip="【第三级 8.4 j)】采用的密码产品，应达到 GB/T 37092 二级及以上安全要求。
+
+密钥管理需覆盖全生命周期：产生 / 存储 / 分发 / 使用 / 更新 / 归档 / 撤销 / 销毁。
+· 密钥应由合规密码产品产生，随机性达标；
+· 私钥 / 对称密钥不得以明文出现在密码边界之外（不得写在配置或代码里）；
+· 分发 / 导入导出应有机密性与完整性保护；
+· 应有明确的更新 / 更换周期与机制；
+· 归档 / 撤销 / 销毁应有规范且可审计。">密码产品 ≥ 二级 · 密钥全周期</td>
+    </tr>
+
+    <tr data-cat="in">
+      <th>NIST SP 800-63B</th>
+      <td data-tip="每次成功认证产生一个 subscriber 标识，并要求每次认证均使用该标识；该标识可以是假名的（pseudonymous），且不应被复用于不同的主体。">唯一标识（可假名）</td>
+
+      <td data-tip="【NIST SP 800-63B 第 4 节 · Authenticator Assurance Levels】
+AAL1：提供一定的保证，单因素或多因素均可，需在安全认证协议下证明对认证器的持有与控制；
+AAL2：要求通过安全协议证明持有并控制**两种不同的**认证因素；AAL2 及以上必须使用批准的密码技术；
+AAL3：基于密码协议证明密钥的持有，要求使用**硬件认证器**并提供**抗验证者冒充（verifier impersonation resistance，即防钓鱼）**，且仍需证明两种不同因素。
+
+📌 AAL2 = 双因素；AAL3 = 硬件 + 防钓鱼，是三者中最高的。"><b>AAL1 单 / AAL2 双 / AAL3 硬件+防钓鱼</b></td>
+
+      <td data-tip="强调记忆密码的强度：设置最小长度、与常见弱口令和已泄露口令库比对、禁止使用与站点相关的弱口令。
+明确**不建议**要求用户随意或定期更换口令——理由是这会促使用户选择更弱、更好记的口令。
+
+⚠️ 与等保 2.0 的“定期更换”要求冲突，见下方冲突对照表。"><b>长度+黑名单；不建议轮换</b></td>
+
+      <td data-tip="会话时长要求（NIST 建议值）：
+· AAL2：重新认证间隔不超过 12 小时，空闲会话超时 30 分钟；
+· AAL3：重新认证间隔不超过 12 小时，空闲会话超时 15 分钟。
+
+（对于需要回访的服务，成功认证提供“今天访问服务的用户与昨天相同”的合理保证。）"><b>12h / 空闲 30min（AAL2）</b></td>
+
+      <td data-tip="NIST SP 800-63B 的范围是“认证与认证器生命周期管理”，不涉及授权与访问控制。
+（授权的对应内容在 SP 800-162 ABAC 等其他文件中。）"><span class="dash">—</span></td>
+
+      <td data-tip="SP 800-63B 的范围不包含审计要求。"><span class="dash">—</span></td>
+
+      <td data-tip="AAL2 及以上必须使用经批准的密码技术（approved cryptographic techniques）。">AAL2 起须批准密码技术</td>
+
+      <td data-tip="机构在线提供自我声明的 PII（个人身份信息）或其他个人信息时，必须选择不低于 AAL2 的保证等级。
+
+（另有：FIPS 140 要求由 FIPS 140-2 或更新版本满足。）"><b>在线 PII 最低 AAL2</b></td>
+    </tr>
+
+    <tr data-cat="in">
+      <th>ISO/IEC 29115</th>
+      <td data-tip="标准全称 ISO/IEC 29115:2013《信息技术 安全技术 实体认证保证框架》。
+以“实体认证保证级别 LoA（Level of Assurance）”为核心，覆盖身份注册、认证器签发与管理、认证、终止等全生命周期环节。">身份注册与保证级别</td>
+
+      <td data-tip="定义 LoA1 ~ LoA4 四个保证级别：
+LoA1（无或极低信任要求）→ LoA4（极高信任，通常需要硬件令牌或强身份核验）。
+级别选择依据是业务的风险评估结果，而不是技术偏好。">LoA1~4 按风险选级</td>
+
+      <td data-tip="覆盖认证器的注册、签发、激活、使用、暂停、撤销、销毁等生命周期环节。">认证器生命周期</td>
+
+      <td data-tip="对认证成功后的会话建立、维持与终止提出要求。">会话管理</td>
+
+      <td data-tip="该标准聚焦认证保证，不涉及访问控制。"><span class="dash">—</span></td>
+
+      <td data-tip="对认证事件及相关记录的留存提出要求，以支持审计与追责。">认证记录留存</td>
+
+      <td data-tip="该标准不直接规定密码算法要求。"><span class="dash">—</span></td>
+
+      <td data-tip="核心方法论：先做风险评估，再按风险选择对应的保证级别。
+与本项目的 ACR（保证级别）分级思路完全一致。">级别与风险匹配</td>
+    </tr>
+
+    <tr data-cat="in">
+      <th>ISO/IEC 27001:2022</th>
+      <td data-tip="Annex A 控制项（2022 版共 93 项，分组织 / 人员 / 物理 / 技术四类）
+5.16 身份管理：应管理身份信息的全生命周期；
+5.17 鉴别信息：应控制鉴别信息的分配与使用，并指导员工如何处理鉴别信息。">5.16 身份管理 · 5.17 鉴别信息</td>
+
+      <td data-tip="【Annex A 8.5 安全认证】
+应按照信息访问限制和访问控制策略实施安全认证技术与流程。">8.5 安全认证</td>
+
+      <td data-tip="【Annex A 5.17 鉴别信息】
+应控制鉴别信息的分配与使用，并指导员工如何处理鉴别信息。">5.17 鉴别信息</td>
+
+      <td data-tip="【Annex A 8.5 安全认证】
+覆盖认证流程（含会话相关措施）。">8.5 安全认证</td>
+
+      <td data-tip="【Annex A 5.15 访问控制】应按业务与信息安全要求，建立并实施访问控制的物理与逻辑规则。
+【Annex A 5.18 访问权限】应按访问控制策略的规定，对信息资产进行访问权限的授予、变更与撤销。">5.15 访问控制 · 5.18 访问权限</td>
+
+      <td data-tip="【Annex A 8.15 日志记录】应记录活动、异常、故障及其他相关事件。
+【Annex A 8.16 监控活动】应监控网络、系统与应用的异常行为，并采取适当措施。">8.15 日志 · 8.16 监控活动</td>
+
+      <td data-tip="【Annex A 8.24 密码技术使用】
+应定义并实施密码技术的使用规则，包括密钥管理。">8.24 密码技术使用</td>
+
+      <td data-tip="【Annex A 5.7 威胁情报】
+应收集与信息威胁相关的信息并加以分析。">5.7 威胁情报</td>
+    </tr>
+
+    <tr data-cat="in">
+      <th>OWASP ASVS</th>
+      <td data-tip="ASVS 是应用安全验证标准，聚焦应用自身的安全要求，不涉及账号管理流程。"><span class="dash">—</span></td>
+
+      <td data-tip="【ASVS V2 认证】
+· 设置口令最小长度；
+· 与弱口令清单、已泄露口令库比对；
+· 防凭证填充（限流 / 锁定 / 验证码）；
+· 支持并推荐多因素认证；
+· 生物特征不得作为单一的认证因素。"><b>认证强度 · 防撞库 · MFA</b></td>
+
+      <td data-tip="【ASVS 口令存储】
+口令必须使用自适应单向哈希（如 Argon2、bcrypt、PBKDF2、scrypt）存储，并按工作因子调优；
+禁止使用 MD5、SHA-1、SHA-256 等快速哈希直接存储口令。
+
+另：口令找回 / 重置流程不得泄露账号是否存在。"><b>必须自适应哈希</b></td>
+
+      <td data-tip="【ASVS V3 会话管理】
+· 优先使用服务端会话；
+· 会话标识高熵、防猜测；
+· 防会话固定攻击；
+· 设置空闲超时与绝对超时；
+· 登出后应在服务端失效会话。"><b>服务端会话 · 防固定 · 超时</b></td>
+
+      <td data-tip="【ASVS V4 访问控制】
+· 默认拒绝；
+· 在服务端逐请求校验，不能只在客户端隐藏；
+· 防水平越权（同角色访问他人数据）；
+· 防垂直越权（低权限访问高权限功能）。"><b>默认拒绝 · 防越权</b></td>
+
+      <td data-tip="【ASVS V7 日志与监控】
+· 记录认证、授权与关键操作事件；
+· 日志中不得包含敏感数据（如令牌、口令、个人信息）；
+· 具备异常检测能力。">日志与监控</td>
+
+      <td data-tip="【ASVS V6 存储加密】
+所有敏感数据在静止状态下加密；
+密钥与数据分开存放。">存储加密</td>
+
+      <td data-tip="【ASVS 生物特征】
+生物特征作为单一认证因素不可接受；必须与物理认证器（something you own）组合使用。
+理由：生物特征可从照片、指纹残留等方式获取，且无法更换。"><b>生物特征不得单用</b></td>
+    </tr>
+
+  </tbody>
+</table>
+</div>
+
+<h2>标准之间的冲突点</h2>
+<table class="plain">
+  <thead>
+    <tr><th>冲突点</th><th>等保 2.0</th><th>NIST SP 800-63B</th><th>处理建议</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>口令定期更换</td>
+      <td>要求“定期更换”（二级 / 三级已明确）</td>
+      <td>不建议强制定期更换，认为会促使用户选择更弱、更好记的口令</td>
+      <td>二者取严：默认开启定期更换（可配关闭），并在策略说明中记录理由</td>
+    </tr>
+    <tr>
+      <td>口令复杂度</td>
+      <td>要求复杂度要求（组合规则）</td>
+      <td>更强调长度与弱口令黑名单，弱化组合规则</td>
+      <td>同时做：长度 + 复杂度组合 + 弱口令黑名单</td>
+    </tr>
+    <tr>
+      <td>生物特征</td>
+      <td>可作为“两种以上组合鉴别技术”中的一种</td>
+      <td>不得单独作为认证因素，必须与物理认证器组合</td>
+      <td>二者取严：生物特征在本平台不作单因素使用</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2>来源全称、发布单位与原文入口</h2>
+<ol class="refs">
+  <li>
+    <span class="name">GB/T 22239-2019《信息安全技术 网络安全等级保护基本要求》</span><br>
+    <span class="org">发布单位：国家市场监督管理总局、国家标准化管理委员会；主要起草单位含公安部第三研究所（公安部信息安全等级保护评估中心）等。</span><br>
+    原文入口：<a href="https://openstd.samr.gov.cn/bzgk/gb/" target="_blank" rel="noopener">国家标准全文公开系统</a>（检索标准号 <code>GB/T 22239-2019</code>）&nbsp;·&nbsp;<a href="https://std.samr.gov.cn/" target="_blank" rel="noopener">全国标准信息公共服务平台</a>
+  </li>
+  <li>
+    <span class="name">GB/T 39786-2021《信息安全技术 信息系统密码应用基本要求》</span><br>
+    <span class="org">发布单位：国家市场监督管理总局、国家标准化管理委员会。配套的测评依据为《商用密码应用安全性评估管理办法》及配套测评要求，由密码管理部门组织实施。</span><br>
+    原文入口：<a href="https://openstd.samr.gov.cn/bzgk/gb/" target="_blank" rel="noopener">国家标准全文公开系统</a>（检索 <code>GB/T 39786-2021</code>）&nbsp;·&nbsp;<a href="https://www.oscca.gov.cn/" target="_blank" rel="noopener">国家密码管理局</a>
+  </li>
+  <li>
+    <span class="name">GB/T 37092《信息安全技术 密码模块安全要求》</span><br>
+    <span class="org">发布单位：国家市场监督管理总局、国家标准化管理委员会。用于判定“密码产品”是否达到密评所要求的安全等级（密评三级要求二级及以上）。</span><br>
+    原文入口：<a href="https://openstd.samr.gov.cn/bzgk/gb/" target="_blank" rel="noopener">国家标准全文公开系统</a>（检索 <code>GB/T 37092</code>）
+  </li>
+  <li>
+    <span class="name">NIST SP 800-63B《Digital Identity Guidelines: Authentication and Lifecycle Management》</span><br>
+    <span class="org">发布单位：美国国家标准与技术研究院（NIST），隶属美国商务部。属 SP 800-63-3 系列，配套 SP 800-63A（注册与身份核验）、SP 800-63C（联邦与断言）。</span><br>
+    原文链接：<a href="https://pages.nist.gov/800-63-3/sp800-63b.html" target="_blank" rel="noopener">https://pages.nist.gov/800-63-3/sp800-63b.html</a>&nbsp;·&nbsp;<a href="https://pages.nist.gov/800-63-3/" target="_blank" rel="noopener">SP 800-63-3 系列目录</a>
+  </li>
+  <li>
+    <span class="name">ISO/IEC 29115:2013《Information technology — Security techniques — Entity authentication assurance framework》</span><br>
+    <span class="org">发布单位：国际标准化组织（ISO）与国际电工委员会（IEC）联合发布，技术委员会 ISO/IEC JTC 1/SC 27（信息安全、网络安全与隐私保护）。</span><br>
+    原文入口：<a href="https://www.iso.org/obp" target="_blank" rel="noopener">ISO Online Browsing Platform</a>（检索 <code>29115</code>）
+  </li>
+  <li>
+    <span class="name">ISO/IEC 27001:2022《Information security, cybersecurity and privacy protection — Information security management systems — Requirements》</span><br>
+    <span class="org">发布单位：ISO 与 IEC 联合发布，技术委员会 ISO/IEC JTC 1/SC 27。第 3 版，2022-10 发布；Annex A 含 93 项控制措施，分组织 / 人员 / 物理 / 技术四类。配套实施指南为 ISO/IEC 27002:2022。</span><br>
+    原文链接：<a href="https://www.iso.org/standard/27001" target="_blank" rel="noopener">https://www.iso.org/standard/27001</a>&nbsp;·&nbsp;<a href="https://webstore.iec.ch/en/publication/79694" target="_blank" rel="noopener">IEC Webstore 条目</a>
+  </li>
+  <li>
+    <span class="name">OWASP ASVS《Application Security Verification Standard》</span><br>
+    <span class="org">发布单位：OWASP 基金会（Open Worldwide Application Security Project）。与认证相关的主要是 V2 认证、V3 会话管理、V4 访问控制、V6 存储加密、V7 日志与监控。</span><br>
+    原文链接：<a href="https://owasp.org/www-project-application-security-verification-standard/" target="_blank" rel="noopener">项目主页</a>&nbsp;·&nbsp;<a href="https://github.com/OWASP/ASVS" target="_blank" rel="noopener">GitHub 仓库（含各版本全文）</a>
+  </li>
+  <li>
+    <span class="name">OWASP Top 10 Proactive Controls（C7: Secure Digital Identities）</span><br>
+    <span class="org">发布单位：OWASP 基金会。用于补充“认证与会话管理”方面的工程实践建议；漏洞扫描与渗透测试的方法学参考（OWASP Testing Guide）。</span><br>
+    原文链接：<a href="https://top10proactive.owasp.org/" target="_blank" rel="noopener">https://top10proactive.owasp.org/</a>
+  </li>
+</ol>
+
+<p class="note">
+  说明：国标类标准（GB / GB-T）的全文在“国家标准全文公开系统”按标准号公开提供，链接指向该系统的检索入口，实际阅读请在其中搜索对应标准号。密评的具体测评项判定由具备资质的测评机构现场出具结论；本表条文摘录用于设计自查，最终以标准原文与测评结论为准。
+</p>
+
+<div id="tip"></div>
+<script>
+(function(){
+  var tip = document.getElementById('tip');
+  var cur = null;
+
+  function place(el){
+    var r = el.getBoundingClientRect();
+    tip.style.display = 'block';
+    tip.style.left = '0px';
+    tip.style.top = '0px';
+    var w = tip.offsetWidth, h = tip.offsetHeight;
+    var gap = 10;
+    var x = r.left;
+    var y = r.bottom + gap;
+    if (y + h > window.innerHeight - 8) {
+      y = r.top - h - gap;
+      if (y < 8) { y = Math.max(8, window.innerHeight - h - 8); }
+    }
+    if (x + w > window.innerWidth - 8) { x = window.innerWidth - w - 8; }
+    if (x < 8) { x = 8; }
+    tip.style.left = x + 'px';
+    tip.style.top = y + 'px';
+  }
+
+  function show(el){
+    var t = el.getAttribute('data-tip');
+    if (!t) return;
+    cur = el;
+    tip.textContent = t;
+    place(el);
+  }
+
+  function hide(){
+    cur = null;
+    tip.style.display = 'none';
+  }
+
+  document.addEventListener('mouseover', function(e){
+    var el = e.target.closest ? e.target.closest('[data-tip]') : null;
+    if (!el || el === cur) return;
+    show(el);
+  });
+
+  document.addEventListener('mouseout', function(e){
+    var el = e.target.closest ? e.target.closest('[data-tip]') : null;
+    if (!el) return;
+    var to = e.relatedTarget;
+    if (to && to.closest && to.closest('[data-tip]') === el) return;
+    hide();
+  });
+
+  document.addEventListener('scroll', function(){ if (cur) place(cur); }, true);
+  window.addEventListener('resize', hide);
+  document.addEventListener('keydown', function(e){ if (e.key === 'Escape') hide(); });
+})();
+</script>
+
+</body>
+</html>

@@ -1,1 +1,21 @@
-docs/
+# 构建产物
+bin/
+dist/
+*.exe
+*.test
+*.out
+
+# 前端依赖与产物（SDK/前端的 node_modules 不入库）
+node_modules/
+web/dist/
+
+# 本地环境
+.env
+.env.local
+
+# 编辑器 / 系统
+.idea/
+.vscode/
+.DS_Store
+
+# 注意：docs/ 必须入库（设计基线 + 裁定台账 + ADR 是唯一权威文档，见 decisions.md P3）
