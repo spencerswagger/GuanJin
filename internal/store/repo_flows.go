@@ -229,6 +229,34 @@ func (r *FlowRepo) AbandonBySession(ctx context.Context, sessionID uuid.UUID) (i
 	return res.RowsAffected, nil
 }
 
+// FindActiveByUserClient 查某用户对某 client 的**活跃流**（不存在返回 ErrFlowNotFound）。
+//
+// 这是 CH-7⑤ 要求的「**先查后建**」的查询端：正常路径先看有没有活跃流，
+// 有就直接复用同一条 `flow_id` 继续走（200 + 同一条流），**不要**先插再靠唯一索引挡。
+// 理由：`flows_one_active_per_user_client_uniq` 的 23505 在 CH-7 里映射成
+// `COOLDOWN_ACTIVE`(409)，那是「要等」的语义；而用户其实只是"接着上一次走"。
+// 23505 只应作为**并发竞态兜底**（两个请求同时判定"没有活跃流"再同时插入），
+// 出现即说明先查后建生效了但撞上了竞态，属可重试的极小概率路径。
+//
+// 匿名流（user_id 为 NULL）不适用本查询：匿名流按 `flow_id` 直接携带（CH-1）。
+func (r *FlowRepo) FindActiveByUserClient(ctx context.Context, userID uuid.UUID, clientID string) (*model.Flow, error) {
+	if userID == uuid.Nil || clientID == "" {
+		return nil, ErrFlowNotFound
+	}
+	var f model.Flow
+	err := r.db.WithContext(ctx).
+		Where("user_id = ? AND client_id = ? AND status = 'active'", userID, clientID).
+		Order("created_at DESC").
+		Take(&f).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, ErrFlowNotFound
+	}
+	if err != nil {
+		return nil, MapError(err)
+	}
+	return &f, nil
+}
+
 // CountActiveByUserClient 统计某用户对某 client 的活跃流条数（用于诊断与用例断言）。
 //
 // 业务路径不需要它——唯一性由 `flows_one_active_per_user_client_uniq` 保证；

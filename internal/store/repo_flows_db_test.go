@@ -95,7 +95,8 @@ func (f *fixture) newFlow(t *testing.T) *model.Flow {
 	}
 }
 
-// 23505 命中 `flows_one_active_per_user_client_uniq` → 映射 409（AC-FLOW-11②）。
+// 23505 命中 `flows_one_active_per_user_client_uniq` → 映射 409（AC-FLOW-11②），
+// 并验 CH-7⑤ 的前置条件：正常路径「先查后建」能拿到同一条活跃流。
 func TestDBFlowActiveUniqueMapsTo409(t *testing.T) {
 	db := openTestDB(t)
 	f := newFixture(t, db)
@@ -107,9 +108,20 @@ func TestDBFlowActiveUniqueMapsTo409(t *testing.T) {
 	if err := repo.Create(ctx, first); err != nil {
 		t.Fatalf("create first flow: %v", err)
 	}
+
+	// CH-7⑤：先查后建 —— 已有活跃流时正常路径应直接复用它（不是撞 409 让客户端等）。
+	existing, err := repo.FindActiveByUserClient(ctx, f.userID, f.clientID)
+	if err != nil {
+		t.Fatalf("先查后建必须能查到已有活跃流: %v", err)
+	}
+	if existing.ID != first.ID {
+		t.Fatalf("先查后建应返回同一条流，got %s want %s", existing.ID, first.ID)
+	}
+
 	second := f.newFlow(t)
 	second.UserID = &f.userID
-	err := repo.Create(ctx, second)
+	// 绕过"先查后建"直接插入 = 模拟并发竞态，验证 23505 兜底映射（CH-7⑤）。
+	err = repo.Create(ctx, second)
 	if err == nil {
 		t.Fatal("second active flow for the same (user, client) must be rejected")
 	}

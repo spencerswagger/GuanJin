@@ -62,6 +62,15 @@ func (r *RuntimeConfigRepo) Lookup(ctx context.Context, key string) (*model.Runt
 }
 
 // StartupKeys 返回启动期**必须存在**的 runtime_config 键（缺失即启动失败）。
+//
+// 三态口径（`decisions.md` **D5-₂**，归属 **S10** 的启动装配；本包只提供判据，不决定谁来调）：
+//  1. **环境变量错**（主密钥缺失/非 base64/<32B 等）→ 启动**退出**并说明是哪一项；
+//  2. **DB 不可达** → **不退出**：`/livez` 200、`/readyz` 503 `DB_UNAVAILABLE`、业务请求全拒
+//     （fail-closed 指的是"拒服"，不是"进程起不来"——否则多副本下会连探针都没有）；
+//  3. **DB 可达但缺键** → 启动**退出**，并打印缺失键名（本文件的 RequiredIntSeconds 负责）。
+//
+// 所以 `LoadFlowTTL` / `ValidateStartup` 必须在"DB 已确认可达"之后才调，
+// 不能拿它的错误去判 DB 是否可用（那会把两种故障混成一种）。
 func StartupKeys() []string {
 	return []string{KeyFlowTTLSeconds}
 }

@@ -117,36 +117,61 @@ type constraintRule struct {
 // 禁止"23505 一律 409"（D4-D / AC-ENG-04）：同一个 SQLSTATE 下，
 // 「标识符已被绑定」和「码值重复」对用户是完全不同的两件事。
 // 新增唯一约束时**必须**在这张表里补一行，否则单测 TestEveryUniqueConstraintIsMapped 会红。
+//
+// 行号口径 = `decisions.md` **D4-D₂（CH-7）八行映射表**，改这里必须同步那份文档：
+//
+//	CH-7① identifiers_type_value_uniq        → IDENTIFIER_ALREADY_BOUND (E4/409)
+//	CH-7② users_username_lower_uidx           → IDENTIFIER_ALREADY_BOUND (E4/409)
+//	CH-7③ role_bindings_uniq                  → BINDING_ALREADY_EXISTS   (E7/409)
+//	CH-7④ policy_snapshots_uniq               → POLICY_SNAPSHOT_CONFLICT (E4/409)
+//	CH-7⑤ flows_one_active_per_user_client_uniq → COOLDOWN_ACTIVE        (E4/409)
+//	CH-7⑥ clients_pkey                        → INVALID_CLIENT           (E1/400)
+//	CH-7⑦ signing_keys_kid_uniq               → INVALID_PARAMETER        (E1/400)
+//	CH-7⑧ login_policies_tier_default_uidx / login_policies_client_override_uidx
+//	                                          → INVALID_PARAMETER        (E1/400)
+//
+// 另外两条**故意不映射**（见 unmappedUniqueConstraints）：identifiers_one_primary_per_user
+// （D3-B：I6 无对外错误码）、user_visited_clients_uniq（upsert 前提，撞上即缺陷）。
 var uniqueRules = map[string]constraintRule{
+	// CH-7①
 	"identifiers_type_value_uniq": {
 		code:   codeIdentifierAlreadyBound,
 		reason: "标识符 (type,value) 全局唯一 → 该标识符已被绑定（E4/409）",
 	},
+	// CH-7②
 	"users_username_lower_uidx": {
 		code:   codeIdentifierAlreadyBound,
 		reason: "用户名大小写不敏感唯一 → 视作标识符已被绑定（E4/409）",
 	},
+	// CH-7③
 	"role_bindings_uniq": {
 		code:   codeBindingAlreadyExists,
 		reason: "角色绑定 (user_id,client_id,role) 唯一 → 绑定已存在（E7/409）",
 	},
+	// CH-7④
 	"policy_snapshots_uniq": {
 		code:   codePolicySnapshotConflict,
 		reason: "策略快照 (client_id,version) 唯一 → 版本冲突（E4/409）",
 	},
+	// CH-7⑤
 	"flows_one_active_per_user_client_uniq": {
 		code: codeCooldownActive,
 		reason: "同一用户对同一 client 至多一条活跃流（D5）→ 409；" +
-			"§5.4 无「已有活跃流」专用码，按语义最近取 COOLDOWN_ACTIVE（E4/409）",
+			"§5.4 无「已有活跃流」专用码，CH-7 定取 COOLDOWN_ACTIVE（E4/409）。" +
+			"**正常路径必须先查后建**（已有活跃流 → 直接复用同一条 flow_id 继续走），" +
+			"本映射仅作并发竞态兜底；否则客户端会把「接着走」误读成「要等」",
 	},
+	// CH-7⑥
 	"clients_pkey": {
 		code:   codeInvalidClient,
 		reason: "client_id 主键冲突 → 该 client_id 已存在（§5.4 无专用码，取 INVALID_CLIENT/400）",
 	},
+	// CH-7⑦
 	"signing_keys_kid_uniq": {
 		code:   codeInvalidParameter,
 		reason: "kid 唯一冲突（§5.4 无专用码，取 INVALID_PARAMETER/400）",
 	},
+	// CH-7⑧
 	"login_policies_tier_default_uidx": {
 		code:   codeInvalidParameter,
 		reason: "每个档位仅一份默认策略（§5.4 无专用码，取 INVALID_PARAMETER/400）",
