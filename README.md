@@ -15,7 +15,7 @@
 | `docs/baseline/` | **设计基线（唯一权威）**：12 份设计文档 + 索引 + 2 份 HTML 清单（**共 14 个文件**；入口是 `GuanJin-设计基线索引.md`，先看 §2「已生效的设计决定」） | ❌ **只读，一个字不许改** |
 | `docs/decisions.md` | **文档矛盾裁定台账**：`D1`–`D11`（裁定）、`P1`–`P7`（已生效前提）、`CH-1`–`CH-6`（对外契约变更，**待追认**）、残余待裁 `R2`–`R5/R8/R9` | 仅架构（Ark） |
 | `docs/m1-slices.md` | **M1 垂直切片拆解**：S0–S11 串行步骤、端点→包→表→判据映射、依赖链、DoD | 仅架构（Ark） |
-| `docs/acceptance-criteria.md` | **验收判据**（10 组）；**账目一律以该文件当前版本为准**（现为 v11：`90 = 83 PASS-able / 0 PENDING / 0 BLOCKED / 6 NOT-APPLICABLE / 0 NOT-IMPLEMENTED / 1「后置（DEFERRED）」`，随其入库生效）——此处只**引用**、不硬写计数，避免版本一动就漂 | 仅测试（Gate） |
+| `docs/acceptance-criteria.md` | **验收判据**（10 组）；**账目一律以该文件当前版本为准** —— 本文**不写版本号、不写任何计数**（硬写必然与源文件漂开） | 仅测试（Gate） |
 | `docs/sdk-contract.md` | **语言无关 SDK 契约**：22 条能力 + 29 项配置，Java 8 / Node / Go 三语言的等价定义（**唯一 owner = Nova，落 PR #1**；其他人只引用不复制） | 仅 SDK（Nova） |
 | `docs/adr/` | 架构决策记录（`ADR-000` 规范 + 首批 4 篇） | 架构（Ark），涉及他人模块先确认 |
 
