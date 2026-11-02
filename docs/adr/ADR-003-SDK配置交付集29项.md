@@ -18,7 +18,7 @@
 
 ## 2. 决定
 
-1. **交付集 = 29 项，连续编号 1..29**；"32 项"作废。缺号 #7/#16/#17 是**编号空洞（文档笔误）**，**不得新增 key 补齐编号**（禁编造契约）。来历：#7/#16/#17 正是 direct 形态的 3 个键（`mode` + `Direct.userTokenJwksUri` + `Direct.userTokenIssuer`），索引 §2 定"只保留网关形态"后 3 项失去存在理由、被删但编号未重排。
+1. **交付集 = 29 项，连续编号 1..29**；"32 项"作废。缺号 #7/#16/#17 是**编号空洞（文档笔误）**，**不得新增 key 补齐编号**（禁编造契约）。来历：#7/#16/#17 正是 direct 形态的 3 个键（`guanjin.mode`、`guanjin.direct.user-token-jwks-uri`、`guanjin.direct.user-token-issuer`），索引 §2 定"只保留网关形态"后 3 项失去存在理由、被删除但编号未重排。**缺口已在 `decisions.md` D6【待澄清登记】逐个键名登记**（29 条键 / 32 个编号位，编号不重排、不补号）。
 2. **删除 `guanjin.mode`**：SDK 无模式开关，只有一种形态（流量必过数据面）。
 3. **`jwks-uri` 默认 = `${base-url}/.well-known/jwks.json`**（`base-url` 不带尾斜杠），与 `/.well-known/openid-configuration` 同基址。
 4. **`guanjin.enabled` / `guanjin.authz.enabled` 受 profile 门控**：仅 `spring.profiles.active` 含 `local|test` 时可置 `false`；**其它 profile 置 `false` → 启动直接失败（fail-fast，不是告警）**。生产不存在跳过验签/跳过判定的开关。
