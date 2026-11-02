@@ -5,7 +5,7 @@ dist/
 *.test
 *.out
 
-# 前端依赖与产物
+# 前端依赖与产物（SDK / 前端的 node_modules 不入库）
 node_modules/
 web/dist/
 web/node_modules/
@@ -23,4 +23,5 @@ web/node_modules/
 # 证据留档（按 AC-ID 存放，不入库）
 artifacts/
 
-# 注意：docs/ 必须入库（P7）；migrations/ 必须入库（schema 唯一权威）
+# 注意：docs/ 必须入库（设计基线 + 裁定台账 + ADR 是唯一权威文档，见 decisions.md P3 / P7）；
+#       migrations/ 必须入库（schema 唯一权威）；禁止用 `git add -f` 单文件绕过（P7）
