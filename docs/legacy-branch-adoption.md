@@ -20,7 +20,7 @@
 | **重做** | **4** | 编排引擎（flow）、Go 验签、Agent HMAC、审计链 |
 | **放弃** | **3** | 旧 14 表 schema、旧 `design-baseline/` 13 份、旧骨架（已被 PR#4 取代） |
 
-**一句话**：旧分支的价值在**业务逻辑与测试用例**（因子 SPI、注册、网关 E2E、权限绑定、Java Starter），不在**数据面契约**——它整体停在"14 表 + SHA256 HMAC + `dataLabel()` + 无分区审计链"的旧世界，凡是触碰这些契约的文件都必须改写或重做。
+**一句话**：旧分支的价值在**业务逻辑与测试用例**（因子 SPI、注册、网关 E2E、权限绑定、Java Starter），不在**数据面契约**——它整体停在"14 表 + SHA256 HMAC + `dataLabel` + 无分区审计链"的旧世界，凡是触碰这些契约的文件都必须改写或重做。
 
 > **本轮实际落地代码文件数 = 0**。原因见 §3：任何一块搬进来都会立刻破 D1/D2/D5/D11/D4-C 中的至少一条，三闸必红；正确做法是按 §3 的分期计划在 S2–S11 内逐个改写吸收（那属编码工作，不是合并工作）。
 
@@ -38,7 +38,7 @@
 | 6 | **TOTP** | `764ab1f`：TOTP 持有型因子，验证 SPI 可扩展性 | 需接现 `credential` 布局与 SM3 时间窗参数 | **改写后吸收** | 索引 §2 因子四类（TOTP 属 M2）；算法口径（SM3）与现 D4-B 派生键一致 |
 | 7 | **注册面** | `3c84599`：`register/start|complete` + 标识符自助 | 缺 "必带 `client_id` 上下文"、`purpose=register` 落库（旧词表无该值） | **改写后吸收** | **索引 §2「注册必带业务系统上下文」+ D2**；逻辑骨架可留，校验与词表必须换 |
 | 8 | **网关 E2E** | `ce03dd3`：数据面 `/gw/{client_id}` 路由 + E2E 用例 | 需核对：只做 7 件事、客户端自带头先弃后签、断言 `exp=60s`、`UPSTREAM_UNAVAILABLE` | **改写后吸收** | **数据面 §1.1–§1.3 + D8-C′**；E2E 用例价值最高（可转成 `AC-DP-*` 的资产） |
-| 9 | **Spring Boot Starter** | `b598bd4`：`sdk/guanjin-core`（34 个 java）+ `guanjin-spring-boot2` + 示例 | **`dataLabel(` 6 处、裸 `.clearance(` 1 处**（D11 作废名）；配置需核 29 项与 `jwks-uri` 默认路径 | **改写后吸收** | **D11**（唯一写法 `withClearance(level)`、`dataLabel()`/裸 `clearance(` 零残留）+ **D6**（29 项 / 无 `mode` / jwks 默认）；owner = Nova |
+| 9 | **Spring Boot Starter** | `b598bd4`：`sdk/guanjin-core`（34 个 java）+ `guanjin-spring-boot2` + 示例 | **`dataLabel` 6 处、裸 `clearance` 1 处**（D11 作废名）；配置需核 29 项与 `jwks-uri` 默认路径 | **改写后吸收** | **D11**（唯一写法 `withClearance(level)`、`dataLabel`/裸 `clearance` 零残留）+ **D6**（29 项 / 无 `mode` / jwks 默认）；owner = Nova |
 | 10 | **Go 验签（SDK 侧互操作）** | `b598bd4`：Go 侧验签示例/工具 | 现 main `internal/agent/canonical.go` **已按 D1 实现**（`sorted_query` + `SM3HEX(body)` + `PATH` 规则） | **重做（已完成）** | **D1**：旧分支同期 `hmac.go` 用 **SHA256**，与 D1 直接冲突；现实现为权威，旧文件作参考 |
 | 11 | **权限判定（binding）** | `cb208d2`：`authz/binding.go` + 绑定 E2E | 需确认"平台只存绑定、判定在 SDK 本地"；错误码双码分工（`THREE_POWER_VIOLATION` vs `INSUFFICIENT_ROLE`） | **改写后吸收** | **索引 §2「平台不做授权」+ D3-E**；绑定/撤销联动（`AbandonBySession`）与 D5 一致 |
 | 12 | **Agent HMAC** | `cb208d2`：`agent/hmac.go`/`report.go`/`policies.go`/`service.go` + E2E | **`SHA256` 命中**（`hmac.go` 3 处）＝违 D1；nonce 长度按字符非字节 | **重做** | **D1（A1/A2 口径）**：canonical 段序含 `sorted_query`、`SM3HEX(body)`；现 main 已有 D1 版 canonical，HMAC 侧按同一向量重写 |
@@ -52,7 +52,7 @@
 | # | 冲突点 | 旧分支表现 | 现行裁定 | 影响 |
 |---|---|---|---|---|
 | C1 | 传输/签名摘要算法 | `internal/agent/hmac.go` 用 `SHA256` | **D1**：`SM3HEX(body)`，全链路国密 | Agent 面互验必失败 |
-| C2 | 密级方法名 | SDK 内 `dataLabel(` 6 处、裸 `.clearance(` 1 处 | **D11**：唯一 `withClearance(level)`，两个旧名作废 | SDK 三语言判定不一致 |
+| C2 | 密级方法名 | SDK 内 `dataLabel` 6 处、裸 `clearance` 1 处 | **D11**：唯一 `withClearance(level)`，两个旧名作废 | SDK 三语言判定不一致 |
 | C3 | 错误码 | `SERVICE_DEGRADED` 仍出现 | **D8-C′⑤**：永不返回 | 同故障双码 |
 | C4 | 表数与中间态 | 14 表，无 `flows` | **D5**：15 表 + I-F1~F8 | 阶梯 amr 无处落 |
 | C5 | `purpose` 词表 | `stepup`/`bind` 与 `step_up`/`enroll`/`verify_identifier`/`register` 混用 | **D2**：6 值唯一词表 | 写入触发 CHECK 失败或语义分叉 |
@@ -69,7 +69,7 @@
 | P1 | **S2/S3** | `internal/store/model/*`（14 模型）→ `d723ceb`；`internal/store/repo_*.go`、`pgxerr.go` → `cb208d2` | 补 `flows` 13 列模型 + 4 具名索引；`mapPgError` 加 SQLSTATE+约束名双键（`flows_one_active_per_user_client_uniq`→409、I-F1→400）；**不得**带入 `migrations/migrations.go` 的 AutoMigrate 路径 |
 | P2 | **S4/S5** | `internal/factor/**`（21）→ `2fd4295`/`764ab1f`；`internal/flow/{descriptor,state,register}.go` → `2fd4295`/`3c84599` | 接入现 `crypto`/`store` 接口；编排改读写 `flows`（`LockByID` + 事务内消费 challenge）；`purpose` 换 6 值；两段式过期清理；amr 单调校验 |
 | P3 | **S8** | `internal/gateway/**`（9）+ `gateway` E2E → `ce03dd3` | 只保留 7 件事；客户端自带头"先弃后签"；`UPSTREAM_UNAVAILABLE`；断言 `exp=60s` |
-| P4 | **S9（Nova）** | `sdk/guanjin-core/**`（34 java）、`sdk/guanjin-spring-boot2/**`（21）、`sdk/examples`、`sdk/testdata` → `b598bd4` | `dataLabel(`/裸 `.clearance(` **全删**改 `withClearance`；配置 29 项 + `jwks-uri` 默认；剥离按 **D10 六步**；`enabled` profile 门控 |
+| P4 | **S9（Nova）** | `sdk/guanjin-core/**`（34 java）、`sdk/guanjin-spring-boot2/**`（21）、`sdk/examples`、`sdk/testdata` → `b598bd4` | `dataLabel`/裸 `clearance` **全删**改 `withClearance`；配置 29 项 + `jwks-uri` 默认；剥离按 **D10 六步**；`enabled` profile 门控 |
 | P5 | **S10** | `internal/audit/chain.go` 仅作**对照**（不搬） | 重做：月分区 + 主键 `(id, occurred_at)` + advisory lock + 锚 + 两段式 + 校验 Job（D4-C） |
 | P6 | **M2 前置** | `internal/agent/{hmac,report,policies,service}.go` + `agent_e2e_test.go` → `cb208d2` | 算法换 HMAC-**SM3**；nonce 按**字节**；沿用现 `internal/agent/canonical.go` 的 D1 实现 |
 
