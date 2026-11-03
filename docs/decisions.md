@@ -220,6 +220,29 @@
 
 ---
 
+## 旧分支借用登记（`origin/feat/phase-8-authz`，2026-11-02）
+
+> 背景：该分支为 spencer 10 月实现，19 个提交（`4c6f922`…`cb208d2`，tip `cb208d2`）、292 文件。**判断标准 = 哪版更贴本文现行裁定**，不是"哪版更新更全"。**不 merge 那 19 个提交**（会与新骨架纠缠），只按需 cherry-pick 或重做。完整对照见 `docs/legacy-branch-adoption.md`（14 模块四档判档）。
+
+**本轮实际落地代码文件数 = 0。** 原因：旧分支每一块都绑在"14 表 / 旧 `crypto`·`store` 接口 / 旧 `purpose` 词表 / SHA256 HMAC / `dataLabel()` / 无分区审计链"上，原样搬入会同时破 D1/D2/D5/D11/D4-C，三闸必红。故**本轮只登记借用清单与改写点**，代码在 S2–S11 内逐块改写吸收。
+
+| 拟借用文件（glob） | 来源提交 | 将落地步骤 | 必须改写点（依本文条号） |
+|---|---|---|---|
+| `internal/store/model/*.go`（14 个模型）<br>`internal/store/repo_*.go`、`internal/store/pgxerr.go` | `d723ceb`<br>`cb208d2` | S2 / S3 | ①补 `flows` **13 列**模型与 4 具名索引（**D5**）；②`mapPgError` 改 **SQLSTATE + 约束名**双键（`flows_one_active_per_user_client_uniq`→409、I-F1→400，**D5 落地段**）；③**禁止**带入 `migrations/migrations.go` 的"应用内迁移"路径（**P1**） |
+| `internal/factor/**`（21 文件）<br>`internal/factor/totp*.go` | `2fd4295`<br>`764ab1f` | S4 / M2 | 接口改接现 `crypto`/`store`；保持**能力断言**（禁 `if type==`，索引 §2 因子 + 因子模型 §7）；TOTP 时间窗走 SM3 |
+| `internal/flow/{descriptor,state,register}.go` | `2fd4295` / `3c84599` | S5 | ①改读写 **`flows`**，用 `repo_flows.LockByID`（`FOR UPDATE`）做 amr 累加（**D5 I-F5/I-F8**）；②`purpose` 换 **6 值**词表（**D2**）；③补**两段式过期清理**（**D5 I-F6**）；④amr **单调不减**校验（**I-F2**）；⑤注册必带 `client_id`（索引 §2） |
+| `internal/gateway/**`（9 文件）+ `gateway` E2E 用例 | `ce03dd3` | S8 | 只保留 **7 件事**（数据面 §1.1）；客户端自带头**先弃后签**；上游失败 → `UPSTREAM_UNAVAILABLE`（**D8-C′④**）；断言 `exp=60s`、`kid` 区分（索引 §4.2-23） |
+| `sdk/guanjin-core/**`（34 java）、`sdk/guanjin-spring-boot2/**`（21）、`sdk/examples`、`sdk/testdata` | `b598bd4` | S9（owner = Nova） | ①`dataLabel(` / 裸 `.clearance(` **全删**，唯一 `role(name).withClearance(level)`（**D11**，旧分支有 6+1 处）；②配置 **29 项**、无 `mode`、`jwks-uri` 默认 `/.well-known/jwks.json`、`replay-store=redis`、`pull.enabled=false`（**D6**）；③剥离按 **D10 六步**（替换请求视图，非"验签前剥离"）；④`enabled`/`authz.enabled` 非 `local|test` **启动失败**（**D6(4)**，加固非 CH） |
+| `internal/authz/binding.go`、`internal/authz/binding_e2e_test.go` | `cb208d2` | S7 / M5 | 平台只存"用户→角色"绑定并审计、判定在 SDK 本地（索引 §2）；双码分工 `THREE_POWER_VIOLATION`(E7/403) vs `INSUFFICIENT_ROLE`(E3/403)（**D3-E**）；撤销联动走 `AbandonBySession`（**D5**） |
+| `internal/agent/{hmac,report,policies,service}.go`、`agent_e2e_test.go` | `cb208d2` | M2 前置 | **重做为 HMAC-SM3**：旧文件用 `SHA256`（违 **D1**）；沿用现 `internal/agent/canonical.go` 的 D1 实现（`sorted_query` + `SM3HEX(body)` + `PATH` 含 context-path、不解码、不去尾斜杠）；`nonce` 按**字节**计长（**D1 A1/A2**） |
+| `internal/audit/chain.go` | `cb208d2` | S10 | **只作对照、不搬**：重做为 月分区 + 主键 `(id, occurred_at)` + `pg_advisory_xact_lock` + 锚（`runtime_config`）+ 两段式 + 整链校验 Job（**D4-B/D4-C**） |
+
+**明确不借用（放弃）**：①旧 `migrations/` 的 **14 表** DDL 与 `migrations/migrations.go`（**D5** 已定 15 表、**P1** 禁应用内迁移）；②旧 `design-baseline/` 的 13 份（现 `docs/baseline/` 14 份为准，**P3**，绝不回灌）；③旧骨架（已被 PR#4 的骨架 + 三闸取代）；④`internal/notify`、旧 `internal/observability`（不在 10 包边界内 / 与现规划重复）。
+
+**旧分支硬冲突清单（8 条，落地时必须逐条消）**：C1 `agent/hmac.go` 用 `SHA256`（违 D1）；C2 SDK `dataLabel(`×6、`.clearance(`×1（违 D11）；C3 `SERVICE_DEGRADED` 仍出现（违 D8-C′⑤）；C4 14 表无 `flows`（违 D5）；C5 `purpose` 词表 `stepup/bind` 与 `step_up/enroll/verify_identifier/register` 混用（违 D2）；C6 审计链无分区/无锚/无咨询锁（违 D4-C）；C7 flow 包无 `FOR UPDATE`（违 D5 I-F5/I-F8）；C8 SDK 配置未按 29 项收口（违 D6）。
+
+---
+
 ## 残余待裁（spencer 本轮未覆盖，本节不作裁定）
 
 | # | 事项 | 现状 / 卡点 | 需要谁 |
