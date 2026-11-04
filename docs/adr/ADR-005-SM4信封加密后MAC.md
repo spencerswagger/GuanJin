@@ -2,10 +2,10 @@
 
 | 项 | 内容 |
 |---|---|
-| 状态 | **Accepted**（Edge 起草；**Ark 批准 2026-11-04**；配套裁定见 `decisions.md` **D15**） |
+| 状态 | **Accepted**（Edge 起草；**Ark 批准 2026-11-04**。接受依据：**Owl 追认 #33 无阻断**（前向修复即可）+ **代码现状**——`internal/crypto/purpose.go` 已按本 ADR 落 8 个用途域（main `18ed08e`）；配套裁定 `decisions.md` **D15**。批准不改本 ADR 已定内容） |
 | 日期 | 2026-11-04 |
 | 主笔 | 数据面与国密 · Edge（H8CSJ5） |
-| 上位依据 | `decisions.md` **D4-B**（HKDF-SM3 派生 / 一密钥一用途）、**D14②**（用途域 5→6 的先例）、**D8-E**（密评出证后置，但等保代码判据不动）、`AC-AUD-12`（应用侧国密）；基线 `数据模型 §3.3`（`identifiers.value_enc`）、`§3.7`（主密钥用法） |
+| 上位依据 | `decisions.md` **D4-B**（HKDF-SM3 派生 / 一密钥一用途）、**D14②**（用途域 5→6 的先例；本 ADR 再 +2 → **8**）、**D8-E**（密评出证后置，但等保代码判据不动）、`AC-AUD-12`（应用侧国密）；基线 `数据模型 §3.3`（`identifiers.value_enc`）、`§3.7`（主密钥用法） |
 
 ---
 
@@ -43,7 +43,7 @@ padding 恰好合法 → 返回一段乱码明文 → 调用方拿到的是"解�
    校验顺序固定：**先验 MAC（常量时间比较），再解密**；MAC 不通过一律返回 `ErrIntegrityMismatch`，
    不做任何解密、不返回半截明文。
 
-2. **密钥：两条用途域成对**（D4-B 用途域 **6 → 8**）：
+2. **密钥：两条用途域成对**（D4-B 用途域累计 **5 → 8**，本 ADR 贡献 **6 → 8** 的两个 MAC 域；全量清单见 `decisions.md` D15③）：
 
    | 用途域 | 长度 | 用途 |
    |---|---|---|
@@ -96,7 +96,7 @@ padding 恰好合法 → 返回一段乱码明文 → 调用方拿到的是"解�
 
 - 密文长度 = 明文 + 1 + 16 + 32（含 PKCS#7 填充）。`value_enc` / `private_key_enc` 都是 `bytea`、
   无长度约束，**不需要改迁移**。
-- 用途域 6 → 8：`decisions.md` D4-B 需补登记（建议作 **D15**）。`hmac/field|keywrap` 一旦轮换，
+- 用途域累计 5 → 8（本 ADR 6 → 8）：**已在 `decisions.md` D15③ 登记**（2026-11-04，含冻结清单、顺序与生效范围），本文档不再另存一份清单。`hmac/field|keywrap` 一旦轮换，
   历史密文解不开（与其它用途同性质，需走重加密）。
 - **旧密文不可读**：已写入本地/预发库的 `secret_enc`、`value_enc` 需要重灌（未上线，无业务影响）。
 
@@ -104,7 +104,7 @@ padding 恰好合法 → 返回一段乱码明文 → 调用方拿到的是"解�
 
 | 谁 | 做什么 | 何时 |
 |---|---|---|
-| **Ark** | 批准本 ADR（状态改 `Accepted`）；在 `decisions.md` 补 **D15**（用途域 6→8 + v1 拒绝口径） | 本 PR 评审时 |
+| **Ark** | **已完成 2026-11-04**：批准本 ADR（状态 `Accepted`，依据 Owl 追认 #33 + 代码现状）；`decisions.md` **D15** 已落（用途域累计 **5 → 8** + v1 拒绝口径 + 对外码） | 已关闭 |
 | **Gate** | `AC-AUD-12` 的应用侧国密断言补一条反向用例：**篡改任一字节必拒**（当前只断言算法名） | M1 收口前 |
 | **Core** | 仅注释同步（无代码改动）：`internal/identifier/blindindex.go` 的「SM4 密文（随机 IV，含 IV 前缀）」改为「含版本/IV/MAC」，`internal/credential/totp.go` 的 `SecretEnc` 注释同理 | 随手 |
 | **Edge（我）** | 已落实现与用例；后续如接密码机（P2），MAC 与加密仍分别走 K_mac / K_enc | 已完成 |
@@ -132,5 +132,6 @@ go test ./internal/factor/holding -run TestTOTPVerifyResponseAndReplay -count=20
 
 ## 6. 变更历史
 
+- **v2（2026-11-04）**：状态 `Proposed` → **`Accepted`**（接受依据 = Owl 追认 #33 无阻断 + 代码现状已按本 ADR 落地 `internal/crypto/purpose.go` 8 域）。**不改已定内容**；只把「待办」区与用途域计数改成现状：用途域统一表述为**累计 5 → 8**（本 ADR 6 → 8），全量清单的唯一出处 = `decisions.md` **D15③**。
 - **v1（2026-11-04）**：首版。触发 = CI 两次随机红（同一 commit 重跑即绿，两次命中不同包的不同用例），
   根因 = `EncryptSM4` 只有 PKCS#7 校验、无 MAC；本机量化 18/5000 ≈ 0.36% 错钥被误判为成功。
