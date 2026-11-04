@@ -266,8 +266,10 @@ func TestHTTPRegisterIntegrityMismatchIsNonRetryable(t *testing.T) {
 
 	resp, body := postRegister(t, srv.URL+"/auth/register/complete",
 		`{"register_token":"v1.a.b","password":"x"}`)
-	if resp.StatusCode != http.StatusInternalServerError || body.Message != httpx.IntegrityMessage {
-		t.Fatalf("应为 500 + 不可重试文案，实际 %d / %q", resp.StatusCode, body.Message)
+	// 字面量断言（评审 P3）：不用常量自比，否则文案被改回"请稍后重试"也不会红。
+	const wantMessage = "数据完整性校验失败，不可重试，请携带 trace_id 联系支持"
+	if resp.StatusCode != http.StatusInternalServerError || body.Message != wantMessage {
+		t.Fatalf("应为 500 + 不可重试文案（%q），实际 %d / %q", wantMessage, resp.StatusCode, body.Message)
 	}
 	details, _ := body.Details.(map[string]any)
 	if details["crypto_sentinel"] != "mac_mismatch" {
