@@ -55,7 +55,7 @@ func TestDeriveIsDeterministic(t *testing.T) {
 	}
 }
 
-// 用途隔离：6 个用途域必须两两不同（同主密钥下不允许出现"两个用途同键"）。
+// 用途隔离：8 个用途域必须两两不同（同主密钥下不允许出现"两个用途同键"）。
 func TestDerivePurposesAreIsolated(t *testing.T) {
 	mk := mustMasterKey(t)
 	seen := map[string]Purpose{}
@@ -86,7 +86,7 @@ func TestDerivePurposesAreIsolated(t *testing.T) {
 	}
 }
 
-// D14②：`hmac/register`（注册窗口令牌）必须与其余 5 个用途**派生出不同密钥**。
+// D14②：`hmac/register`（注册窗口令牌）必须与其余用途**派生出不同密钥**。
 //
 // 单看 TestDerivePurposesAreIsolated 已经覆盖两两隔离，但这条独立钉住"新用途不许
 // 复用 hmac/identifier"这个具体裁定：如果将来有人把 register 的用途值改成 identifier，
@@ -169,6 +169,8 @@ func TestPurposeLengths(t *testing.T) {
 		PurposeHMACIdentifier: {KindHMAC, 32},
 		PurposeHMACAgent:      {KindHMAC, 32},
 		PurposeHMACRegister:   {KindHMAC, 32},
+		PurposeHMACField:      {KindHMAC, 32},
+		PurposeHMACKeywrap:    {KindHMAC, 32},
 	}
 	// 逐用途的期望表必须覆盖**全部**冻结用途：漏写一条就等于给"新用途随便定长度"开门。
 	if len(want) != len(Purposes()) {
@@ -185,6 +187,44 @@ func TestPurposeLengths(t *testing.T) {
 		length, err := p.Length()
 		if err != nil || length != exp.len {
 			t.Errorf("length(%s) = %d, %v; want %d", p, length, err, exp.len)
+		}
+	}
+}
+
+// ADR-005：用途表自检——每个 SM4 用途必须有配套的 32B HMAC 用途，HMAC 用途不许再挂 MAC。
+//
+// 少了这条，将来有人加一个 SM4 用途却忘了配 MAC 域，`DeriveSM4` 会在**运行期**报
+// ErrNoIntegrityKey（启动即炸）；这里让它在**单测**就红，不必等到部署。
+func TestPurposeSpecsAreConsistent(t *testing.T) {
+	if err := validatePurposeSpecs(); err != nil {
+		t.Fatalf("用途表不一致：%v", err)
+	}
+}
+
+// ADR-005：SM4 信封的 MAC 材料**就是** `hmac/field` / `hmac/keywrap` 派生出来的那把钥匙，
+// 而加密键与 MAC 键互不相同（同一用途域内两把钥匙也必须分开）。
+func TestSM4EnvelopeMacKeyIsThePairedPurpose(t *testing.T) {
+	mk := mustMasterKey(t)
+	for _, pair := range []struct {
+		enc, mac Purpose
+	}{
+		{PurposeSM4Field, PurposeHMACField},
+		{PurposeSM4Keywrap, PurposeHMACKeywrap},
+	} {
+		envelopeKey, err := mk.DeriveSM4(pair.enc)
+		if err != nil {
+			t.Fatalf("DeriveSM4(%s): %v", pair.enc, err)
+		}
+		macKey, err := mk.DeriveHMAC(pair.mac)
+		if err != nil {
+			t.Fatalf("DeriveHMAC(%s): %v", pair.mac, err)
+		}
+		if string(envelopeKey.mac[:]) != string(macKey.material[:]) {
+			t.Fatalf("%s 的 MAC 材料必须等于 DeriveHMAC(%s)（两把钥匙都直接来自主密钥）",
+				pair.enc, pair.mac)
+		}
+		if string(envelopeKey.material[:]) == string(envelopeKey.mac[:SM4KeySize]) {
+			t.Fatalf("%s 的加密键与 MAC 键不得相同（用途隔离）", pair.enc)
 		}
 	}
 }
@@ -331,8 +371,8 @@ func TestKeyKindAndPurposeString(t *testing.T) {
 			KindSM4.String(), KindHMAC.String(), KeyKind(99).String())
 	}
 	list := Purposes()
-	if len(list) != 6 {
-		t.Fatalf("Purposes() must return the 6 frozen purposes, got %d", len(list))
+	if len(list) != 8 {
+		t.Fatalf("Purposes() must return the 8 frozen purposes, got %d", len(list))
 	}
 	if _, err := Purpose("bogus").Kind(); err == nil {
 		t.Fatal("unknown purpose Kind must fail")
