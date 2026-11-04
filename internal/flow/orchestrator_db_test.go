@@ -497,3 +497,74 @@ func (f *fixture) newSession(t *testing.T) uuid.UUID {
 	t.Cleanup(func() { _ = f.db.Exec(`DELETE FROM sessions WHERE id = ?`, id).Error })
 	return id
 }
+
+// flowstore 的其余错误分支（真库）：过期、已作废、匿名流缺 user_id。
+//
+// 为什么这些必须在这里补：`internal/flowstore` 的模块下限是 85%（D8 补登），而它的
+// 大部分语句是**错误分支**——正常路径一条用例就能走到，错误分支不走就永远 0 覆盖。
+// 这些分支恰恰是"用户被锁在门外"或"孤儿账号"最容易发生的地方。
+func TestFlowstoreErrorPaths(t *testing.T) {
+	db := openTestDB(t)
+	f := newFixture(t, db, "L2", nil)
+	orc, _ := f.orchestrator(t)
+	ctx := context.Background()
+
+	t.Run("流过期后推进 → FLOW_EXPIRED，且行被置 expired", func(t *testing.T) {
+		begun, err := orc.Begin(ctx, flow.BeginInput{ClientID: f.clientID, UserID: &f.userID})
+		if err != nil {
+			t.Fatalf("Begin: %v", err)
+		}
+		// 直接把 TTL 推到过去（等价于"用户开着登录页去泡了杯咖啡"）。
+		if err := db.Exec(`UPDATE flows SET expires_at = now() - interval '1 minute' WHERE id = ?`,
+			begun.FlowID).Error; err != nil {
+			t.Fatalf("改 expires_at: %v", err)
+		}
+		_, err = orc.VerifyStep(ctx, flow.VerifyInput{
+			FlowID: begun.FlowID, Factor: factor.FactorPassword, Response: "ok",
+		})
+		if !errors.Is(err, flowstore.ErrFlowExpired) {
+			t.Fatalf("过期流应报 ErrFlowExpired，实际 %v", err)
+		}
+		var status string
+		if err := db.Raw(`SELECT status FROM flows WHERE id = ?`, begun.FlowID).Scan(&status).Error; err != nil {
+			t.Fatalf("读 status: %v", err)
+		}
+		if status != "expired" {
+			t.Fatalf("过期后行状态应为 expired（不删行，I-F6 两段式），实际 %q", status)
+		}
+	})
+
+	t.Run("已作废的流不能再推进/消费 → FLOW_NOT_ACTIVE", func(t *testing.T) {
+		begun, err := orc.Begin(ctx, flow.BeginInput{ClientID: f.clientID, UserID: &f.userID})
+		if err != nil {
+			t.Fatalf("Begin: %v", err)
+		}
+		if err := db.Exec(`UPDATE flows SET status = 'abandoned' WHERE id = ?`, begun.FlowID).Error; err != nil {
+			t.Fatalf("置 abandoned: %v", err)
+		}
+		if _, err := orc.VerifyStep(ctx, flow.VerifyInput{
+			FlowID: begun.FlowID, Factor: factor.FactorPassword, Response: "ok",
+		}); !errors.Is(err, flowstore.ErrFlowNotActive) {
+			t.Fatalf("作废流推进应报 ErrFlowNotActive，实际 %v", err)
+		}
+		if _, err := orc.Finish(ctx, begun.FlowID, nil, nil); !errors.Is(err, flowstore.ErrFlowNotActive) {
+			t.Fatalf("作废流消费应报 ErrFlowNotActive，实际 %v", err)
+		}
+	})
+
+	t.Run("匿名流没有 user_id 时不能消费 → ErrUserRequired", func(t *testing.T) {
+		// 注册前的匿名流（Begin 的 UserID 传 nil）：完成时必须回填 user_id（I-F1）。
+		anon, err := orc.Begin(ctx, flow.BeginInput{ClientID: f.clientID})
+		if err != nil {
+			t.Fatalf("Begin(匿名): %v", err)
+		}
+		if _, err := orc.VerifyStep(ctx, flow.VerifyInput{
+			FlowID: anon.FlowID, Factor: factor.FactorPassword, Response: "ok",
+		}); err != nil {
+			t.Fatalf("VerifyStep: %v", err)
+		}
+		if _, err := orc.Finish(ctx, anon.FlowID, nil, nil); !errors.Is(err, flowstore.ErrUserRequired) {
+			t.Fatalf("缺 user_id 应报 ErrUserRequired（I-F1），实际 %v", err)
+		}
+	})
+}
