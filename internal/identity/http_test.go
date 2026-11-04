@@ -241,7 +241,8 @@ func TestHTTPCompleteEmitsViolationsDetails(t *testing.T) {
 		t.Fatalf("details.violations 应含 2 条命中项，实际 %v", details["violations"])
 	}
 	first, _ := raw[0].(map[string]any)
-	if first["rule"] != "weaklist" || first["code"] != string(httpx.CodeWeakPassword) {
-		t.Fatalf("第一条应是弱口令（顺序固定 weak → reused → policy），实际 %v", first)
+	// 元素形状按 D3-B″ 冻结的 `{code, hint?}`（`rule` 是附加键），顺序固定 weak → reused → policy。
+	if first["hint"] != "常见弱口令" || first["code"] != string(httpx.CodeWeakPassword) {
+		t.Fatalf("第一条应是弱口令且带 hint，实际 %v", first)
 	}
 }

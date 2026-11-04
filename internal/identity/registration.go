@@ -207,6 +207,17 @@ func (s *Service) CompleteRegistration(ctx context.Context, req CompleteRegistra
 	if claims.expired(now) {
 		return nil, ErrRegisterTokenExpired
 	}
+	// 复查禁用因子（TOCTOU）：`start` 之后管理员可以禁掉 `email_otp`，
+	// 在途令牌不该还有效 —— 否则"禁用"只对新的申请生效。
+	if claims.Type != identifier.TypeUsername {
+		policy, perr := s.policies.LoadRegistrationPolicy(ctx, nil, claims.ClientID)
+		if perr != nil {
+			return nil, perr
+		}
+		if factorDisabled(policy.DisabledFactors, verifyFactorFor(claims.Type)) {
+			return nil, ErrFactorDisabled
+		}
+	}
 	// 先跑**不依赖历史**的口令策略（长度/字符类/弱口令黑名单）再消费挑战：
 	// 弱口令是最常见的失败，若等建号时才判，一条短信和一个注册窗口就被白烧了。
 	// （`PASSWORD_REUSED` 需要历史，只能在建号事务里判 —— 那种失败仍会消耗窗口，属已知取舍。）

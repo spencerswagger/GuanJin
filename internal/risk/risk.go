@@ -88,7 +88,7 @@ type Guard struct {
 // 探活由 `/readyz` 与每次调用负责。
 func New(addr, password string) (*Guard, error) {
 	if strings.TrimSpace(addr) == "" {
-		return nil, fmt.Errorf("%w", ErrConfigMissing)
+		return nil, ErrConfigMissing
 	}
 	return &Guard{rdb: redis.NewClient(&redis.Options{Addr: strings.TrimSpace(addr), Password: password})}, nil
 }

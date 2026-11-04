@@ -134,10 +134,12 @@ func (h *RegisterHTTP) fail(w http.ResponseWriter, r *http.Request, err error) {
 	if errors.As(err, &rejected) {
 		violations := make([]map[string]string, 0, len(rejected.Violations()))
 		for _, v := range rejected.Violations() {
+			// 元素形状按 D3-B″ 冻结的 `{code, hint?}`；`rule` 是附加键（可定位到具体规则，
+			// AC-REG-10② 要求"每项可定位"），不改冻结字段名。
 			violations = append(violations, map[string]string{
-				"code":   string(v.Code),
-				"rule":   v.Rule,
-				"detail": v.Message,
+				"code": string(v.Code),
+				"hint": v.Message,
+				"rule": v.Rule,
 			})
 		}
 		code, _ := CodeOf(err)

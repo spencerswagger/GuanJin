@@ -140,3 +140,26 @@ func TestCompletePrecheckRejectsWeakPasswordBeforeConsuming(t *testing.T) {
 	}
 	f.userIDs = append(f.userIDs, res.UserID)
 }
+
+// TOCTOU：`start` 之后管理员禁掉 `email_otp`，在途令牌不得还能建号。
+func TestCompleteRechecksDisabledFactors(t *testing.T) {
+	db := openTestDB(t)
+	f := newFixture(t, db, true)
+	svc := newRegisterService(t, db, 5*time.Minute, 5)
+	ctx := context.Background()
+
+	start, err := svc.StartRegistration(ctx, StartRegistrationRequest{
+		ClientID: f.clientID, Type: "email", Value: "s4e-" + uuid.NewString()[:12] + "@example.com",
+	})
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	f.setDisabledFactors(t, db, "{email_otp}")
+	defer f.setDisabledFactors(t, db, "{}")
+
+	if _, err := svc.CompleteRegistration(ctx, CompleteRegistrationRequest{
+		RegisterToken: start.RegisterToken, Code: testRegisterCode, Password: "GuanJin#S4e-Strong1",
+	}); !errors.Is(err, ErrFactorDisabled) {
+		t.Fatalf("禁用后应报 ErrFactorDisabled，实际 %v", err)
+	}
+}
