@@ -343,17 +343,24 @@ func TestAC_REG_03_PurposeVocabulary(t *testing.T) {
 	f := newFixture(t, db, true)
 	ctx := context.Background()
 
+	// 夹具的 `max_attempts` **从 `runtime_config` 取**（D14① 的唯一来源）。
+	// 不硬编码 5、也不恢复 DB DEFAULT：否则运维把键改成 3、库里是 3，夹具却按 5 写行，
+	// 这条用例就变成"验自己造的值"，而 `AC-REG-01` 要的正是"跟着键走"。
+	maxAttempts, err := store.LoadChallengeMaxAttempts(ctx, store.NewRuntimeConfigRepo(db))
+	if err != nil {
+		t.Fatalf("读 runtime_config 的 challenge.max_attempts：%v", err)
+	}
+
 	insert := func(purpose string) error {
 		id, err := uuid.NewV7()
 		if err != nil {
 			t.Fatalf("uuid v7: %v", err)
 		}
+		// `max_attempts` 必须显式写（000018 已 DROP DEFAULT，漏传即 23502），且值来自配置。
 		return store.MapError(db.WithContext(ctx).Exec(
-			// `max_attempts` 显式给：000018 已 DROP DEFAULT（D14①：单一来源 = runtime_config），
-			// 漏传会 23502；5 是这份夹具自己的取值，不是实现里的默认值。
 			`INSERT INTO challenges (id, client_id, purpose, factor_type, response_hash, max_attempts, expires_at)
-			 VALUES (?, ?, ?, 'email_otp', '\x01'::bytea, 5, now() + interval '10 min')`,
-			id, f.clientID, purpose).Error)
+			 VALUES (?, ?, ?, 'email_otp', '\x01'::bytea, ?, now() + interval '10 min')`,
+			id, f.clientID, purpose, maxAttempts).Error)
 	}
 
 	// 六个合法值全都能落库（含 register）。
