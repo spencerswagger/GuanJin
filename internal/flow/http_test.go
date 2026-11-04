@@ -1,9 +1,11 @@
 package flow
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -12,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/spencerswagger/guanjin/internal/credential"
+	"github.com/spencerswagger/guanjin/internal/crypto"
 	"github.com/spencerswagger/guanjin/internal/factor"
 	"github.com/spencerswagger/guanjin/internal/httpx"
 )
@@ -278,5 +282,56 @@ func TestNewHTTPHandlerRequiresDeps(t *testing.T) {
 	orc := newOrc(t, &fakeStore{}, &fakeVerifier{})
 	if _, err := NewHTTPHandler(orc, nil); err == nil {
 		t.Fatal("缺 logger 必须报错")
+	}
+}
+
+// D15④ / ADR-005：完整性失败必须是**不可重试**的 500，且落一条带 `crypto_sentinel` 的结构化日志。
+//
+// 为什么这条必须有：`ErrIntegrityMismatch` 被 `CodeOf` 归到 `INTERNAL_ERROR`，走的是"已识别码"
+// 分支 —— 不单独拦一道就**一条日志都不落**，那对 crypto 哨兵到不了任何日志/指标，
+// 而客户端按 5xx 重试会对"存量 v1 未重加密"打出重试风暴。
+func TestHTTPIntegrityMismatchIsNonRetryable(t *testing.T) {
+	var logBuf bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+
+	st := &fakeStore{}
+	verifier := &fakeVerifier{err: fmt.Errorf("%w: open secret: %w",
+		credential.ErrIntegrityMismatch, crypto.ErrCiphertextVersion)}
+	orc := newOrc(t, st, verifier)
+	h, err := NewHTTPHandler(orc, logger)
+	if err != nil {
+		t.Fatalf("NewHTTPHandler: %v", err)
+	}
+	mux := http.NewServeMux()
+	h.Routes(mux)
+	srv := httptest.NewServer(httpx.TraceMiddleware(mux, "X-Trace-Id", logger))
+	t.Cleanup(srv.Close)
+
+	res, berr := orc.Begin(context.Background(), BeginInput{ClientID: "c-1"})
+	if berr != nil {
+		t.Fatalf("Begin: %v", berr)
+	}
+	resp, body := postJSON(t, srv.URL+"/auth/verify/password",
+		`{"flow_id":"`+res.FlowID.String()+`","response":"pw"}`)
+	if resp.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("应为 500，实际 %d", resp.StatusCode)
+	}
+	if body.Code != httpx.CodeInternalError || body.Message != httpx.IntegrityMessage {
+		t.Fatalf("文案必须是不可重试那句（%q），实际 %q / %q", httpx.IntegrityMessage, body.Code, body.Message)
+	}
+	details, _ := body.Details.(map[string]any)
+	if details["crypto_sentinel"] != "ciphertext_version" || details["retryable"] != false {
+		t.Fatalf("details 应标明哨兵与不可重试，实际 %v", body.Details)
+	}
+
+	logs := logBuf.String()
+	if !strings.Contains(logs, `"crypto_sentinel":"ciphertext_version"`) {
+		t.Fatalf("必须落一条带 crypto_sentinel 的日志，实际 %q", logs)
+	}
+	if !strings.Contains(logs, `"retryable":false`) || !strings.Contains(logs, "integrity_mismatch_total") {
+		t.Fatalf("日志应带 retryable=false 与指标名，实际 %q", logs)
+	}
+	if !strings.Contains(logs, `"trace_id":"`) {
+		t.Fatalf("日志必须带可复制的 trace_id，实际 %q", logs)
 	}
 }

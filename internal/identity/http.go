@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 
+	"github.com/spencerswagger/guanjin/internal/credential"
 	"github.com/spencerswagger/guanjin/internal/httpx"
 )
 
@@ -145,6 +146,19 @@ func (h *RegisterHTTP) fail(w http.ResponseWriter, r *http.Request, err error) {
 		code, _ := CodeOf(err)
 		httpx.WriteError(w, traceID, code, registerMessage(code),
 			map[string]any{"violations": violations})
+		return
+	}
+	// **完整性失败先单独处理**（D15④ / ADR-005）：见 `flow/http.go` 同处注释 ——
+	// 它被归到 INTERNAL_ERROR，不拦一道就只剩"稍后重试"，而这类失败不可重试。
+	if errors.Is(err, credential.ErrIntegrityMismatch) {
+		sentinel := httpx.CryptoIntegritySentinel(err)
+		total := httpx.IncIntegrityMismatch()
+		h.logger.ErrorContext(r.Context(), "identity: envelope integrity check failed",
+			"trace_id", traceID, "path", r.URL.Path, "code", string(httpx.CodeInternalError),
+			"crypto_sentinel", sentinel, "retryable", false,
+			"metric", "integrity_mismatch_total", "count", total)
+		httpx.WriteErrorStatus(w, traceID, httpx.CodeInternalError, http.StatusInternalServerError,
+			httpx.IntegrityMessage, map[string]any{"crypto_sentinel": sentinel, "retryable": false})
 		return
 	}
 	code, ok := CodeOf(err)

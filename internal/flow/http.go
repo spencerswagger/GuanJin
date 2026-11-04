@@ -11,6 +11,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/spencerswagger/guanjin/internal/credential"
 	"github.com/spencerswagger/guanjin/internal/factor"
 	"github.com/spencerswagger/guanjin/internal/httpx"
 )
@@ -193,6 +194,21 @@ func (h *HTTPHandler) fail(w http.ResponseWriter, r *http.Request, err error) {
 	if errors.As(err, &insufficient) {
 		httpx.WriteErrorStatus(w, traceID(r), httpx.CodeACRInsufficient, http.StatusForbidden,
 			"当前档位不足，请完成剩余步骤", map[string]any{"flow": insufficient.Flow})
+		return
+	}
+	// **完整性失败先单独处理**（D15④ / ADR-005）：它被 `CodeOf` 归到 `INTERNAL_ERROR`，
+	// 若不在这里拦一道，就只剩一句"服务内部错误，请稍后重试"——而这类失败是**永久性缺陷**，
+	// 客户端按 5xx 重试会对"存量 v1 未重加密"打出重试风暴。
+	if errors.Is(err, credential.ErrIntegrityMismatch) {
+		sentinel := httpx.CryptoIntegritySentinel(err)
+		total := httpx.IncIntegrityMismatch()
+		// 结构化日志是这套哨兵的**唯一出口**（指标/告警底座归 S10，见 httpx 的缺件说明）。
+		h.logger.ErrorContext(r.Context(), "flow: envelope integrity check failed",
+			"trace_id", traceID(r), "path", r.URL.Path, "code", string(httpx.CodeInternalError),
+			"crypto_sentinel", sentinel, "retryable", false,
+			"metric", "integrity_mismatch_total", "count", total)
+		httpx.WriteErrorStatus(w, traceID(r), httpx.CodeInternalError, http.StatusInternalServerError,
+			httpx.IntegrityMessage, map[string]any{"crypto_sentinel": sentinel, "retryable": false})
 		return
 	}
 	code, okCode := CodeOf(err)
