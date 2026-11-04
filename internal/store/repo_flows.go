@@ -170,13 +170,23 @@ func flowPatchUpdates(patch FlowPatch) map[string]any {
 	return updates
 }
 
+// 两段式清理的三条语句是**常量**，因为集成测试要用 `EXPLAIN` 证明它们走哪条索引：
+// 如果测试自己抄一遍 SQL，就变成"测的是一条不存在的语句"。改这里必须同步看测试。
+const (
+	// markExpiredSQL 第一段：到期仍 active 的流 → expired（行保留）。走 `flows_expires_idx`。
+	markExpiredSQL = `UPDATE flows SET status = 'expired' WHERE status = 'active' AND expires_at <= now()`
+	// markExpiredIfActiveSQL 读路径上的单行懒过期（同样用库时间判过期）。
+	markExpiredIfActiveSQL = `UPDATE flows SET status = 'expired' WHERE id = $1 AND status = 'active' AND expires_at <= now()`
+	// deleteExpiredBeforeSQL 第二段：只删已过期且超过保留期的行。
+	deleteExpiredBeforeSQL = `DELETE FROM flows WHERE status = 'expired' AND updated_at < $1`
+)
+
 // MarkExpired 是两段式清理的**第一段**：把到期但仍 `active` 的流置为 `expired`（行保留）。
 //
 // 返回受影响行数（本次惰性过期了几条）。`expires_at <= now` 的判定用**库时间**
 // （`now()`），不用应用时钟：多副本下应用时钟可能不一致，而 TTL 是安全属性。
 func (r *FlowRepo) MarkExpired(ctx context.Context) (int64, error) {
-	res := r.db.WithContext(ctx).Exec(
-		`UPDATE flows SET status = 'expired' WHERE status = 'active' AND expires_at <= now()`)
+	res := r.db.WithContext(ctx).Exec(markExpiredSQL)
 	if res.Error != nil {
 		return 0, MapError(res.Error)
 	}
@@ -189,8 +199,7 @@ func (r *FlowRepo) MarkExpired(ctx context.Context) (int64, error) {
 // 返回 0 行表示"这条流已经不 active 了"——由调用方决定是返回 `FLOW_EXPIRED`
 // 还是 `FLOW_NOT_FOUND`（`completed` 后二次提交是 NOT_FOUND，D5 I-F4）。
 func (r *FlowRepo) MarkExpiredIfActive(ctx context.Context, id uuid.UUID) (int64, error) {
-	res := r.db.WithContext(ctx).Exec(
-		`UPDATE flows SET status = 'expired' WHERE id = $1 AND status = 'active' AND expires_at <= now()`, id)
+	res := r.db.WithContext(ctx).Exec(markExpiredIfActiveSQL, id)
 	if res.Error != nil {
 		return 0, MapError(res.Error)
 	}
@@ -199,14 +208,18 @@ func (r *FlowRepo) MarkExpiredIfActive(ctx context.Context, id uuid.UUID) (int64
 
 // DeleteExpiredBefore 是两段式清理的**第二段**：只删 `expired` 且 `updated_at < cutoff` 的行。
 //
-// `cutoff` 由调用方显式给出（= now - ExpiredRetention），本函数不含"7 天"常量之外的隐式判断；
-// 查询走部分索引 `flows_expires_idx`（`status='active'`）之外，这里由 `status='expired'` 条件过滤。
+// `cutoff` 由调用方显式给出（= now - ExpiredRetention），本函数不含"7 天"常量之外的隐式判断。
+//
+// ⚠️ 已知缺口（已报 Ark，待 D5 决定）：`flows_expires_idx` 是 `WHERE status='active'` 的
+// **部分**索引，只服务第一段；本段的谓词是 `status='expired' AND updated_at < cutoff`，
+// 现有 4 条具名索引**没有一条能覆盖**，全表扫到 status='expired' 段。M1 量级（TTL 600s、
+// 活跃流数有限）无感；若要收紧，需在 D5 增加 `(updated_at) WHERE status='expired'` 的
+// 部分索引——那是 schema 变更，走 D5/CH，不在本包擅自加。
 func (r *FlowRepo) DeleteExpiredBefore(ctx context.Context, cutoff time.Time) (int64, error) {
 	if cutoff.IsZero() {
 		return 0, errors.New("store: DeleteExpiredBefore requires an explicit cutoff")
 	}
-	res := r.db.WithContext(ctx).Exec(
-		`DELETE FROM flows WHERE status = 'expired' AND updated_at < $1`, cutoff)
+	res := r.db.WithContext(ctx).Exec(deleteExpiredBeforeSQL, cutoff)
 	if res.Error != nil {
 		return 0, MapError(res.Error)
 	}
