@@ -3,7 +3,7 @@
 #
 # 双闸：
 #   1) **逐模块下限**（§9.3，唯一权威）：crypto/audit 90、factor/credential/identifier/flow/authz 85、
-#      risk/gateway 80、store 75、flowstore 85（D8 补登）、protocol/admin/agent 70；
+#      risk/gateway 80、store 75、flowstore 85（D8 补登）、identity 85（D8 补登）、protocol/admin/agent 70；
 #      只对**已有可执行语句**的模块生效 —— 尚未实现的包（只有 doc.go）不出现在 profile 里，**跳过但不放行**：
 #      一旦该包有了语句，这闸立刻开始管它。
 #   2) **总闸**（COVERAGE_MIN，默认 60）：兜底，防止"每个模块都刚好压线、整体却很低"。
@@ -36,6 +36,16 @@ module_floor() {
     internal/flowstore)
       # D8 补登：flowstore = 85%（I-F2/F5/F6/F8 唯一落点）。但它的行为全在 //go:build integration 用例里，
       # **unit profile 不编译那些文件** → 只能用 integration profile 判（COVERAGE_TAGS 含 integration）。
+      case ",${COVERAGE_TAGS:-}," in
+        *,integration,*) echo 85 ;;
+        *) echo "" ;;   # 由下方"未判定"分支显式说明，不许静默跳过
+      esac ;;
+    # D8 补登（2026-11-04，decisions.md 第 192 行 / AC-ENG-01）：「注册即登录」与 I1–I6 编排收口，
+    # 错一处即用户被锁门外或产生孤儿账号 → 与 factor/credential/identifier 同级 85%。
+    # 与 flowstore 同形：它的编排行为全在 //go:build integration 用例（注册事务、HTTP 面、挑战消费），
+    # unit profile 实测 26.8%（85.7% 只有在 integration profile 里才拿得到）→ 硬在 unit profile 判 85
+    # 会让**每一个** unit job 永久判红，等于把闸做成假的；判在 integration profile，unit profile 显式打 INFO。
+    internal/identity)
       case ",${COVERAGE_TAGS:-}," in
         *,integration,*) echo 85 ;;
         *) echo "" ;;   # 由下方"未判定"分支显式说明，不许静默跳过
@@ -101,7 +111,7 @@ if [ "$relax" != "1" ]; then
     if [ -z "$floor" ]; then
       # D8 补登模块在 unit profile 下没有下限可判：**显式说明**，不让它变成静默跳过
       case "$m" in
-        internal/flowstore)
+        internal/flowstore|internal/identity)
           echo "[INFO] ${m}：下限 85% 须由 integration profile 判定（unit profile 不编译 //go:build integration 用例）"
           echo "[INFO]       → 运行方式：COVERAGE_TAGS=integration COVERAGE_PROFILE=<integration 覆盖率> $0" ;;
       esac
@@ -110,7 +120,7 @@ if [ "$relax" != "1" ]; then
     st=${stmts[$m]}; cv=${covered[$m]:-0}
     if [ "$st" -eq 0 ]; then
       case "$m" in
-        internal/flowstore)
+        internal/flowstore|internal/identity)
           echo "[FAIL] ${m} 在 integration profile 里没有任何语句 → 下限 85% 无法判定（判据不成立即为红）"; fail=1 ;;
       esac
       continue
