@@ -151,6 +151,7 @@ S0 文档入库+PR
 ### S6 · 协议面令牌签发（负责人 Core，前置：S5；D3-E 双码分工已收口；**D13 `login_policies` 三档 seed 已落 `000017`，启动期 fail-fast 由 Core 补**）
 - **目的**：把 OIDC 面做完，签出 `SM3withSM2` 令牌。
 - **动作要点**：`/authorize`、`/authorize/submit`、`/oauth/token`（授权码一次性、refresh 轮换 + 复用即撤销会话）、`/oauth/revoke`、`/oauth/introspect`（低频）、`/userinfo`（**本地解析，零查库**）、`/.well-known/openid-configuration`、`/.well-known/jwks.json`（双密钥 `kid` 前缀区分，`kty=EC/crv=SM2`）。 **策略来源（D13）**：`/authorize`/`/authorize/flow` 读 `login_policies` 的 `tier_default`（L1/L2→AAL1、L3→AAL2，由 `000017` seed）；`cmd/guanjind` 装配期必须校验三档各恰一行，**缺失/多行 → 非 0 退出**（不得退化成 500）。
+- **签名私钥的解封口径（D15④，`signing_keys.private_key_enc`）**：信封 v2 = `0x02 | iv | ct | HMAC-SM3`，**先验 MAC 再解密**；**启动期**打不开（`ErrIntegrityMismatch` / `ErrCiphertextVersion`）→ **非 0 退出并打印 `kid` 与原因**（`D5-₂` 三态：数据/配置坏了就起不来），**不得**带着坏密钥对外服务、也不得把 500/503 返回给客户端。运行期只有"密钥不在内存/未激活"才是 `503 KEY_UNAVAILABLE`；`kid` 未知属配置 → `INVALID_PARAMETER`/400（D3-B 既有码）。
 - **验收判据**：`AC-LOGIN-01` PASS = JWT `alg=SM3withSM2` + `kid` + `acr=AAL1`/`amr=["pwd"]`，`/userinfo` 用「该请求 SQL 计数 = 0」证明本地解析；`AC-LOGIN-04` PASS = 授权码二次 → `INVALID_GRANT`，refresh 二次 → `REFRESH_TOKEN_REUSED` + 会话撤销；`AC-LOGIN-05` PASS = verdict 按 **D3-E** 分工（缺/畸形 verifier → `INVALID_CODE_VERIFIER`；不匹配 → `PKCE_VERIFICATION_FAILED`）；`AC-LOGIN-06` PASS = discovery 声明与实际签发**交叉校验**一致；`AC-LOGIN-07` PASS = 两类密钥同时发布且 `kid` 可区分；`AC-LOGIN-08` PASS = 1k 次受保护请求后 introspect 计数 = 0。
 - **退出条件**：一条 curl 链路（authorize→token→userinfo）可演示；discovery 与行为一致。
 
