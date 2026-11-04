@@ -466,11 +466,13 @@ func TestFinishBackfillsSessionOnce(t *testing.T) {
 	if _, err := orc.Finish(ctx, first.FlowID, nil, &s1); err != nil {
 		t.Fatalf("Finish(2) 回填应成功：%v", err)
 	}
-	var got *uuid.UUID
-	if err := db.Raw(`SELECT session_id FROM flows WHERE id = ?`, first.FlowID).Scan(&got).Error; err != nil {
+	// 用 *string 接：这条 Raw 路径下 uuid 列以文本返回，直接扫 *uuid.UUID 会报
+	// "converting driver.Value type string to a uint8"（与 S4b 的 jsonb 同类问题）。
+	var got *string
+	if err := db.Raw(`SELECT session_id::text FROM flows WHERE id = ?`, first.FlowID).Scan(&got).Error; err != nil {
 		t.Fatalf("读 session_id: %v", err)
 	}
-	if got == nil || *got != s1 {
+	if got == nil || *got != s1.String() {
 		t.Fatalf("session_id 应回填为 %s，实际 %v", s1, got)
 	}
 
