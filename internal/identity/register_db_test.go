@@ -343,12 +343,18 @@ func TestAC_REG_03_PurposeVocabulary(t *testing.T) {
 	f := newFixture(t, db, true)
 	ctx := context.Background()
 
-	// 夹具的 `max_attempts` **从 `runtime_config` 取**（D14① 的唯一来源）。
-	// 不硬编码 5、也不恢复 DB DEFAULT：否则运维把键改成 3、库里是 3，夹具却按 5 写行，
-	// 这条用例就变成"验自己造的值"，而 `AC-REG-01` 要的正是"跟着键走"。
-	maxAttempts, err := store.LoadChallengeMaxAttempts(ctx, store.NewRuntimeConfigRepo(db))
+	// 挑战的两个参数**都从 `runtime_config` 取**（D14① 的唯一来源）：
+	// 次数走 `LoadChallengeMaxAttempts`，TTL 走 `LoadChallengeTTL`。
+	// 不写死 5 / 10min、也不恢复 DB DEFAULT：否则运维改键后夹具仍按旧值造行，
+	// 用例就变成"验自己造的值"，而 `AC-REG-01` 要的正是"跟着键走"。
+	cfgRepo := store.NewRuntimeConfigRepo(db)
+	maxAttempts, err := store.LoadChallengeMaxAttempts(ctx, cfgRepo)
 	if err != nil {
 		t.Fatalf("读 runtime_config 的 challenge.max_attempts：%v", err)
+	}
+	ttl, err := store.LoadChallengeTTL(ctx, cfgRepo)
+	if err != nil {
+		t.Fatalf("读 runtime_config 的 challenge.ttl_seconds：%v", err)
 	}
 
 	insert := func(purpose string) error {
@@ -357,10 +363,11 @@ func TestAC_REG_03_PurposeVocabulary(t *testing.T) {
 			t.Fatalf("uuid v7: %v", err)
 		}
 		// `max_attempts` 必须显式写（000018 已 DROP DEFAULT，漏传即 23502），且值来自配置。
+		// `expires_at` 同样按配置的 TTL 计算（不再用固定的 10 分钟）。
 		return store.MapError(db.WithContext(ctx).Exec(
 			`INSERT INTO challenges (id, client_id, purpose, factor_type, response_hash, max_attempts, expires_at)
-			 VALUES (?, ?, ?, 'email_otp', '\x01'::bytea, ?, now() + interval '10 min')`,
-			id, f.clientID, purpose, maxAttempts).Error)
+			 VALUES (?, ?, ?, 'email_otp', '\x01'::bytea, ?, now() + make_interval(secs => ?))`,
+			id, f.clientID, purpose, maxAttempts, ttl.Seconds()).Error)
 	}
 
 	// 六个合法值全都能落库（含 register）。
@@ -369,6 +376,26 @@ func TestAC_REG_03_PurposeVocabulary(t *testing.T) {
 			t.Fatalf("purpose=%q 应能落库：%v", p, err)
 		}
 	}
+	// 落库值必须**等于配置值**：seed 被改、或夹具漏读配置，这里立刻红。
+	// （只断"写进去了"没有意义——那正是"自己证自己"。）
+	var (
+		gotMaxAttempts int
+		gotTTLSeconds  int64
+	)
+	if err := db.Raw(`SELECT max_attempts,
+			EXTRACT(EPOCH FROM (expires_at - created_at))::bigint
+		FROM challenges WHERE client_id = ? AND purpose = 'login' LIMIT 1`, f.clientID).
+		Row().Scan(&gotMaxAttempts, &gotTTLSeconds); err != nil {
+		t.Fatalf("读回挑战行：%v", err)
+	}
+	if gotMaxAttempts != maxAttempts {
+		t.Fatalf("落库 max_attempts 应等于 runtime_config 的 %d，实际 %d", maxAttempts, gotMaxAttempts)
+	}
+	if want := int64(ttl.Seconds()); gotTTLSeconds != want {
+		t.Fatalf("落库 TTL（expires_at-created_at）应等于 runtime_config 的 %d 秒，实际 %d 秒",
+			want, gotTTLSeconds)
+	}
+
 	// 作废值必须 23514，并且映射到 INVALID_PARAMETER（约束名显式 challenges_purpose_valid）。
 	for _, dead := range []string{"bind", "stepup"} {
 		err := insert(dead)

@@ -312,7 +312,7 @@
 | **D3-E** | 同场景双码**按语义分工**（CH-4③ **已追认**） | `AC-LOGIN-05`、`AC-SESS-01`、`AC-AUD-07` | **PASS-able · CH-4③ 已追认（P8，经 hugo 追认 2026-11-02）** |
 | **D3-F** | **新增 `STEP_ALREADY_SATISFIED`（E4/409）**，只由 `internal/flow` 返回（CH-4① **已追认**） | `AC-FLOW-03`、`AC-ENG-08` | **PASS-able · CH-4① 已追认（P8，经 hugo 追认 2026-11-02）** |
 | **D4-A** | 不写 DB 默认值，UUID v7 应用层生成 | `AC-ENG-02` | PASS-able |
-| **D4-B** | 统一 HKDF-SM3 派生（5 用途域），编译期拒直传 | `AC-FC-03`、`AC-AUD-12` | PASS-able |
+| **D4-B** | 统一 HKDF-SM3 派生（**8 用途域**：沿革 5 → 6（D14② `hmac/register`）→ 8（ADR-005 `hmac/field`/`hmac/keywrap`），口径见 `decisions.md` **D15③**），编译期拒直传 | `AC-FC-03`、`AC-AUD-12` | PASS-able |
 | **D4-C** | 月分区 + 主键 `(id, occurred_at)` + 锚 `anchor/segment` + `verified|broken|unverified` + Job 在 `guanjind` + 2 指标；**(4) `trace_id` 取证口径**：`flows.trace_id` 只记创建那次，**与后续 `auth_events.trace_id` 不一致不算缺陷** | `AC-AUD-02/05/06/11`、`AC-AUD-01` | PASS-able（v4 已补 (4) 口径） |
 | **D4-D** | `agent_hmac_secret` 走既有三列；`is_confidential` 删除引用；非法 CHECK 不写 | `AC-ENG-02`、`AC-SDK-07` key 集合 | PASS-able |
 | **D5** | 第 15 张表 `flows`：**13 列**（含 `trace_id`）、4 具名索引、**I-F1~F8**、两段式清理、`flow.ttl_seconds` seed 600 + 缺键 fail-fast、单向逻辑引用不加 FK | `AC-REG-06`、`AC-FLOW-01/03/10/11`、`AC-ENG-02`、`AC-AUD-01` | PASS-able（`AC-FLOW-01/03` 另受 CH-2/CH-4 约束） |
