@@ -65,11 +65,13 @@ func newFixture(t *testing.T, db *gorm.DB, tier string, disabled []string) *fixt
 	if err != nil {
 		t.Fatalf("uuid v7: %v", err)
 	}
+	// `disabled_factors` 是 `text[] NOT NULL`：必须显式给 PG 数组字面量
+	// （传 nil 会写 NULL → 23502；传 Go 字符串 "password" 会 22P02）。
 	if err := db.Exec(`INSERT INTO login_policies
 		(id, scope, client_id, min_acr, password_min_length, password_char_classes,
 		 password_history_count, password_max_age_days, self_registration_allowed, disabled_factors)
-		VALUES (?, 'client_override', ?, 'AAL1', 12, 3, 5, 90, true, ?)`,
-		policyID, f.clientID, disabled).Error; err != nil {
+		VALUES (?, 'client_override', ?, 'AAL1', 12, 3, 5, 90, true, ?::text[])`,
+		policyID, f.clientID, pgArrayLiteral(disabled)).Error; err != nil {
 		t.Fatalf("insert login_policies: %v", err)
 	}
 	uid, err := uuid.NewV7()
@@ -162,6 +164,14 @@ func (f *fixture) orchestrator(t *testing.T) (*flow.Orchestrator, *int32) {
 }
 
 // amrOf 读库里的 achieved_amr（证据必须来自 DB，不是来自返回值）。
+// pgArrayLiteral 把 []string 编成 PG 数组字面量（`{}` / `{password,totp}`）。
+func pgArrayLiteral(items []string) string {
+	if len(items) == 0 {
+		return "{}"
+	}
+	return "{" + strings.Join(items, ",") + "}"
+}
+
 func (f *fixture) amrOf(t *testing.T, flowID uuid.UUID) []string {
 	t.Helper()
 	var raw string
@@ -405,11 +415,14 @@ func TestChallengeLifecycleInDB(t *testing.T) {
 	}
 
 	// 一次性消费：第一次 1 行，第二次 0 行。
-	affected, err := repo.Consume(ctx, id, now)
+	// 消费时刻必须晚于 created_at（DB CHECK `challenges_consumed_after_created`），
+	// 所以这里取"现在"而不是前面那个 now。
+	consumedAt := time.Now().UTC().Add(time.Second)
+	affected, err := repo.Consume(ctx, id, consumedAt)
 	if err != nil || affected != 1 {
 		t.Fatalf("首次消费应抢到：affected=%d err=%v", affected, err)
 	}
-	affected, err = repo.Consume(ctx, id, now)
+	affected, err = repo.Consume(ctx, id, consumedAt.Add(time.Second))
 	if err != nil || affected != 0 {
 		t.Fatalf("重复消费必须抢不到（affected=0）：affected=%d err=%v", affected, err)
 	}
