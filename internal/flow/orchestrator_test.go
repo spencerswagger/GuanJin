@@ -75,13 +75,22 @@ type fakeVerifier struct {
 	lastReq factor.VerifyRequest
 	// order 用于断言"先校验、后推进"（I-F8）。
 	order *[]string
+	// ticket / beginErr / beginReqs 供挑战下发用例（S5）使用：
+	// 口令回 `input_password` 且不落行；`type_code` 类必须带 `challenge_id`。
+	ticket    factor.ChallengeTicket
+	beginErr  error
+	beginReqs []factor.ChallengeRequest
 }
 
 func (v *fakeVerifier) AuthenticatableSpec() factor.AuthenticatableSpec {
 	return factor.AuthenticatableSpec{AsFirst: true}
 }
-func (v *fakeVerifier) BeginChallenge(context.Context, factor.ChallengeRequest) (factor.ChallengeTicket, error) {
-	return factor.ChallengeTicket{}, nil
+func (v *fakeVerifier) BeginChallenge(_ context.Context, req factor.ChallengeRequest) (factor.ChallengeTicket, error) {
+	v.beginReqs = append(v.beginReqs, req)
+	if v.beginErr != nil {
+		return factor.ChallengeTicket{}, v.beginErr
+	}
+	return v.ticket, nil
 }
 func (v *fakeVerifier) VerifyResponse(_ context.Context, req factor.VerifyRequest) (factor.VerifyResult, error) {
 	v.calls++

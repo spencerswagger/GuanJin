@@ -49,6 +49,21 @@ func NewPassword(store PasswordStore, policy credential.Policy) (*PasswordProvid
 	return &PasswordProvider{store: store, params: policy}, nil
 }
 
+// NewPasswordVerifier 构造**只用于认证校验**的口令因子（编排层 `internal/flow` 用）。
+//
+// 为什么不复用 `NewPassword`：那个构造器要求一份口令策略，而**校验路径不判策略**
+// （策略只在注册/改密/绑定这些有 `client_id` 上下文的动作里判）。为了通过构造器自检
+// 而在装配期塞一份"随便挑个档位"的策略数字，本身就是隐性默认 —— 那是第二套口径。
+//
+// 能力声明、`Authenticatable`、`ACRContributing` 与 `NewPassword` 完全相同（同一个类型）：
+// 差别只在**是否持有策略**，而不是"两个不同的因子"。
+func NewPasswordVerifier(store PasswordStore) (*PasswordProvider, error) {
+	if store == nil {
+		return nil, ErrNilStore
+	}
+	return &PasswordProvider{store: store}, nil
+}
+
 // Type 实现 factor.Provider。
 func (p *PasswordProvider) Type() factor.FactorType { return factor.FactorPassword }
 
