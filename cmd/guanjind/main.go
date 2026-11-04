@@ -87,6 +87,9 @@ func startup(ctx context.Context, getenv func(string) string, logger *slog.Logge
 	w.flowHandler.Routes(mux)
 	// 注册面（S4）：`/auth/register/start|complete`。
 	w.registerHandler.Routes(mux)
+	// 会话自助面 + 管理面 sessions 段（S7）：`/api/v1/me/sessions*`、`/api/v1/sessions*`。
+	w.sessionHandler.Routes(mux)
+	w.adminSessions.Routes(mux)
 
 	mux.HandleFunc("/livez", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)

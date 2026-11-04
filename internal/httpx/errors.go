@@ -64,6 +64,12 @@ const (
 	CodeThreePowerViolation Code = "THREE_POWER_VIOLATION" // E7 / 403
 	CodeACRInsufficient     Code = "ACR_INSUFFICIENT"      // E3 / 403 + details.flow
 	CodeSessionNotFound     Code = "SESSION_NOT_FOUND"     // E3 / 404
+	// CodeSessionNotOwned 表示"这条会话不属于你"（接口 §3.6.2 的错误码，§5.4 E4 组已登记）。
+	//
+	// 用 404 而不是 403：E4 前缀的默认区间是 404/409/422，而 403 会告诉调用方
+	// "这个 id 真实存在"——把别人的会话 id 变成可探测的。§5.4 首句允许接口覆盖状态码，
+	// 但这里**没有**覆盖的必要，404 既不泄露存在性又符合 E4 前缀。
+	CodeSessionNotOwned Code = "SESSION_NOT_OWNED" // E4 / 404
 
 	// 资源与不变式（E4）
 	CodeIdentifierAlreadyBound  Code = "IDENTIFIER_ALREADY_BOUND"  // E4 / 409
@@ -127,6 +133,7 @@ var knownCodes = []Code{
 	CodeTokenInvalid, CodeTokenExpired, CodeTokenRevoked, CodeSessionRevoked,
 	CodeInvalidCredential, CodeTemporalCodeReused, CodeAccountLocked,
 	CodeInsufficientRole, CodeThreePowerViolation, CodeACRInsufficient, CodeSessionNotFound,
+	CodeSessionNotOwned,
 	CodeIdentifierAlreadyBound, CodeIdentifierNotFound, CodeUserNotFound, CodeClientNotFound,
 	CodeKeyNotFound, CodeSnapshotNotFound, CodePolicySnapshotConflict, CodeCooldownActive,
 	CodePasswordPolicyViolation, CodeWeakPassword, CodePasswordReused,
@@ -168,8 +175,9 @@ func HTTPStatus(c Code) int {
 	case CodeInvalidRequest, CodeInvalidParam, CodeMissingParameter, CodeInvalidClient,
 		CodeFlowExpired, CodePageSizeExceeded, CodeIdentifierInvalidFormat, CodeInviteCodeInvalid:
 		return http.StatusBadRequest
-	case CodeFlowNotFound, CodeSessionNotFound, CodeIdentifierNotFound, CodeUserNotFound,
-		CodeClientNotFound, CodeKeyNotFound, CodeSnapshotNotFound, CodeBindingNotFound:
+	case CodeFlowNotFound, CodeSessionNotFound, CodeSessionNotOwned, CodeIdentifierNotFound,
+		CodeUserNotFound, CodeClientNotFound, CodeKeyNotFound, CodeSnapshotNotFound,
+		CodeBindingNotFound:
 		return http.StatusNotFound
 	case CodeTokenInvalid, CodeTokenExpired, CodeTokenRevoked,
 		CodeInvalidCredential, CodeTemporalCodeReused, CodeAccountLocked,

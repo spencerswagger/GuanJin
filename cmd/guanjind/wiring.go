@@ -9,14 +9,17 @@ import (
 
 	"gorm.io/gorm"
 
+	"github.com/spencerswagger/guanjin/internal/admin"
 	"github.com/spencerswagger/guanjin/internal/config"
 	"github.com/spencerswagger/guanjin/internal/crypto"
 	"github.com/spencerswagger/guanjin/internal/factor"
 	"github.com/spencerswagger/guanjin/internal/factor/holding"
 	"github.com/spencerswagger/guanjin/internal/flow"
 	"github.com/spencerswagger/guanjin/internal/flowstore"
+	"github.com/spencerswagger/guanjin/internal/httpx"
 	"github.com/spencerswagger/guanjin/internal/identity"
 	"github.com/spencerswagger/guanjin/internal/risk"
+	"github.com/spencerswagger/guanjin/internal/session"
 	"github.com/spencerswagger/guanjin/internal/store"
 )
 
@@ -33,6 +36,8 @@ import (
 type wiring struct {
 	flowHandler     *flow.HTTPHandler
 	registerHandler *identity.RegisterHTTP
+	sessionHandler  *session.HTTPHandler
+	adminSessions   *admin.SessionsHTTP
 	riskGuard       *risk.Guard
 }
 
@@ -46,7 +51,46 @@ func newWiring(ctx context.Context, db *gorm.DB, cfg *config.Config, startup sto
 	if err != nil {
 		return nil, err
 	}
-	return &wiring{flowHandler: flowHandler, registerHandler: registerHandler, riskGuard: guard}, nil
+	sessionHandler, adminSessions, err := newSessionWiring(db, logger)
+	if err != nil {
+		return nil, err
+	}
+	return &wiring{
+		flowHandler:     flowHandler,
+		registerHandler: registerHandler,
+		sessionHandler:  sessionHandler,
+		adminSessions:   adminSessions,
+		riskGuard:       guard,
+	}, nil
+}
+
+// newSessionWiring 装出会话自助面 + 管理面 sessions 段（S7）。
+//
+// **调用方身份解析**：`httpx.DenyAllResolver{}` 是 S6 接线前的显式选择——它不是"占位 TODO"，
+// 而是 fail-closed 的行为约定：令牌解析归 S6（`SM3withSM2` 验签 + `sid`/`roles` 取值），
+// 在它接线前，本仓**不允许**存在任何"从头部自认身份"的暗门（技术栈 §8.3）。
+// 因此这两组端点现在一律回 401 `TOKEN_INVALID`；业务逻辑（撤销/级联/审计）已完整并有测试覆盖。
+func newSessionWiring(db *gorm.DB, logger *slog.Logger) (*session.HTTPHandler, *admin.SessionsHTTP, error) {
+	sessionRepo := store.NewSessionRepo(db)
+	// 撤销级联走 D5 的窄接口 `AbandonBySession`（不直接 import flowstore，避免成环）。
+	flowRepo := store.NewFlowRepo(db)
+	events := store.NewAuthEventRepo(db)
+
+	mgr, err := session.NewManager(sessionRepo, flowRepo, events, session.Options{Logger: logger})
+	if err != nil {
+		return nil, nil, fmt.Errorf("startup: session manager: %w", err)
+	}
+	resolver := httpx.DenyAllResolver{}
+
+	sessionHandler, err := session.NewHTTPHandler(mgr, resolver, logger)
+	if err != nil {
+		return nil, nil, fmt.Errorf("startup: session http: %w", err)
+	}
+	adminSessions, err := admin.NewSessionsHTTP(mgr, resolver, logger)
+	if err != nil {
+		return nil, nil, fmt.Errorf("startup: admin sessions http: %w", err)
+	}
+	return sessionHandler, adminSessions, nil
 }
 
 // newFlowHandler 装出因子与挑战面（S5）。
