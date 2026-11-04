@@ -34,4 +34,7 @@ if [ "$cached" = yes ]; then
   exit 1
 fi
 [ "$fail" -eq 0 ] || { echo "[FAIL] 存在失败用例：$fail" >&2; exit 1; }
-echo "[OK] test summary"
+# SKIP = 未验证 = 红（Gate §9.2 / hugo 口径）：不是"跳过就不算数"，而是"跳过即失败"。
+# 需要跳过的场景请用显式构建标签（如 -tags=integration）分区，而不是 t.Skip 蒙过门禁。
+[ "$skip" -eq 0 ] || { echo "[FAIL] 存在 $skip 条 SKIP —— SKIP = 未验证 = 红（请去掉 t.Skip，改用构建标签分区）" >&2; exit 1; }
+echo "[OK] test summary（SKIP=未验证=红：tests_skip 必须为 0）"

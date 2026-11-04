@@ -129,10 +129,21 @@ jobs:
           echo "flows_if1_check=$chk"; [ "$chk" = "1" ] || { echo "[FAIL] 缺 I-F1 CHECK"; exit 1; }
           ttl=$(q "SELECT value FROM runtime_config WHERE key='flow.ttl_seconds';")
           echo "ttl_seed=$ttl"; [ "$ttl" = "600" ] || { echo "[FAIL] flow.ttl_seconds seed 期望 600，实际 $ttl"; exit 1; }
-      - name: 集成测试（-tags=integration；不许 t.Skip 蒙过）
+      - name: 集成测试（-tags=integration；无集成用例 = 红、有 SKIP = 红、有例即真跑）
         run: |
-          test_files=$(grep -rln --include='*_test.go' '^//go:build integration' . || true)
-          if [ -z "$test_files" ]; then echo "[INFO] 暂无 integration 测试文件（S3 起随切片落地）"; fi
+          set -euo pipefail
+          # ①「无集成用例」必须红：0 条真连库用例 = 未验证 = 红（普通单测不能冒充）
+          tagged=$(grep -rl --include='*_test.go' '^//go:build integration' . | wc -l | tr -d ' ')
+          echo "integration_tagged_files=$tagged"
+          [ "$tagged" -gt 0 ] || { echo "[FAIL] 无 //go:build integration 用例文件 → 0 条真连库用例 = 未验证 = 红"; exit 1; }
+          # ② 只认「带标签才存在」的用例：tag 集合 - 无 tag 集合 的差集必须 > 0
+          #    （不强制命名前缀，避免要求他人改测试名；纯靠构建标签判定）
+          go test -tags=integration -list '.*' ./... 2>/dev/null | grep -E '^(Test|Example|Benchmark)' | sort -u > /tmp/all.txt || true
+          go test -list '.*' ./... 2>/dev/null | grep -E '^(Test|Example|Benchmark)' | sort -u > /tmp/plain.txt || true
+          extra=$(comm -23 /tmp/all.txt /tmp/plain.txt | wc -l | tr -d ' ')
+          echo "integration_only_cases=$extra (all=$(wc -l < /tmp/all.txt | tr -d ' ') plain=$(wc -l < /tmp/plain.txt | tr -d ' '))"
+          [ "$extra" -gt 0 ] || { echo "[FAIL] 没有任何「仅带 integration 标签才出现」的用例 → 视为未验证 = 红"; exit 1; }
+          # ③ 真跑并留证据；SKIP/失败/缓存/空跑一律由 test-summary.sh 判红
           go test -tags=integration ./... -count=1 -v | tee integration-test.log
           ./scripts/test-summary.sh integration-test.log | tee integration-summary.txt
 
