@@ -679,6 +679,7 @@ func TestAuthorizeSubmitIssuesCode(t *testing.T) {
 	// 码可用：换令牌成功
 	_, tok, _ := postForm(t, ts.URL+"/oauth/token", map[string]string{
 		"grant_type": "authorization_code", "code": done["code"].(string), "client_id": "c-1",
+		"redirect_uri": "https://rp.example.com/cb",
 	})
 	if tok["id_token"] == nil {
 		t.Fatalf("用授权码应换到 id_token，实际 %v", tok)
@@ -772,5 +773,140 @@ func TestAuthorizeSubmitRequiresUser(t *testing.T) {
 	}
 	if resp.StatusCode != http.StatusInternalServerError {
 		t.Fatalf("达标缺用户应 500，实际 %d", resp.StatusCode)
+	}
+}
+
+// ---- CallerResolver（③）：验签 → exp/nbf → 会话状态 ----
+
+type fakeSessionState struct {
+	status string
+	err    error
+}
+
+func (f *fakeSessionState) SessionStatus(context.Context, string) (string, error) {
+	if f.err != nil {
+		return "", f.err
+	}
+	return f.status, nil
+}
+
+func mintToken(t *testing.T, keys *signing.Set, claims map[string]any) string {
+	t.Helper()
+	key, err := keys.For(signing.PurposeOIDC)
+	if err != nil {
+		t.Fatalf("For: %v", err)
+	}
+	tok, err := signing.SignJWT(key, claims)
+	if err != nil {
+		t.Fatalf("SignJWT: %v", err)
+	}
+	return tok
+}
+
+func TestCallerResolver(t *testing.T) {
+	keys := testKeys(t)
+	now := time.Unix(1_760_000_000, 0).UTC()
+	base := map[string]any{"iss": "https://auth.example.com", "sub": "u-1", "sid": "sid-1", "exp": now.Add(time.Minute).Unix()}
+
+	// 正常：active 会话 → Caller 带 sub/sid/roles
+	r := &CallerResolver{Keys: keys, Sessions: &fakeSessionState{status: "active"}, Now: func() time.Time { return now }}
+	tok := mintToken(t, keys, map[string]any{"iss": base["iss"], "sub": "u-1", "sid": "sid-1",
+		"exp": now.Add(time.Minute).Unix(), "roles": []string{"user"}})
+	caller, err := r.Resolve(context.Background(), tok)
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if caller.Sub != "u-1" || caller.SID != "sid-1" || len(caller.Roles) != 1 || caller.Roles[0] != "user" {
+		t.Fatalf("Caller 不符：%+v", caller)
+	}
+
+	// 会话已撤销 → ErrCallerSessionRevoked（不是"令牌无效"）
+	rRevoked := &CallerResolver{Keys: keys, Sessions: &fakeSessionState{status: "revoked"}, Now: func() time.Time { return now }}
+	if _, err := rRevoked.Resolve(context.Background(), tok); !errors.Is(err, httpx.ErrCallerSessionRevoked) {
+		t.Fatalf("撤销会话应报 ErrCallerSessionRevoked，实际 %v", err)
+	}
+
+	// 会话不存在 → 也按已撤销处理（不区分，避免枚举）
+	rGone := &CallerResolver{Keys: keys, Sessions: &fakeSessionState{err: ErrSessionGone}, Now: func() time.Time { return now }}
+	if _, err := rGone.Resolve(context.Background(), tok); !errors.Is(err, httpx.ErrCallerSessionRevoked) {
+		t.Fatalf("会话不存在应按已撤销处理，实际 %v", err)
+	}
+
+	// 过期 → ErrCallerUnauthenticated
+	expired := mintToken(t, keys, map[string]any{"sub": "u-1", "sid": "sid-1", "exp": now.Add(-time.Second).Unix()})
+	if _, err := r.Resolve(context.Background(), expired); !errors.Is(err, httpx.ErrCallerUnauthenticated) {
+		t.Fatalf("过期令牌应报 ErrCallerUnauthenticated，实际 %v", err)
+	}
+
+	// nbf 在未来 → 拒（允许 skew 内）
+	nbfFuture := mintToken(t, keys, map[string]any{"sub": "u-1", "exp": now.Add(time.Minute).Unix(), "nbf": now.Add(30 * time.Second).Unix()})
+	if _, err := r.Resolve(context.Background(), nbfFuture); !errors.Is(err, httpx.ErrCallerUnauthenticated) {
+		t.Fatalf("nbf 未到应拒，实际 %v", err)
+	}
+
+	// 篡改/空令牌 → ErrCallerUnauthenticated
+	if _, err := r.Resolve(context.Background(), tok+"x"); !errors.Is(err, httpx.ErrCallerUnauthenticated) {
+		t.Fatalf("篡改令牌应拒，实际 %v", err)
+	}
+	if _, err := r.Resolve(context.Background(), ""); !errors.Is(err, httpx.ErrCallerUnauthenticated) {
+		t.Fatalf("空令牌应拒，实际 %v", err)
+	}
+}
+
+// ① 换码时必须校验 redirect_uri：不一致 → INVALID_GRANT，且**不得**记成 code_consumed。
+func TestTokenRejectsRedirectMismatch(t *testing.T) {
+	_, ts, store, sessions, audit := newTestServer(t, nil)
+	payload, _ := json.Marshal(codePayload{Sub: "u-1", ClientID: "c-1", ACR: "AAL1",
+		Redirect: "https://rp.example.com/cb"})
+	_ = store.Put(context.Background(), CodeKey("code-rd"), string(payload), time.Minute)
+
+	resp, _, env := postForm(t, ts.URL+"/oauth/token", map[string]string{
+		"grant_type": "authorization_code", "code": "code-rd", "client_id": "c-1",
+		"redirect_uri": "https://evil.example.com/cb",
+	})
+	if resp.StatusCode != http.StatusUnauthorized || env.Code != httpx.CodeInvalidGrant {
+		t.Fatalf("回调不一致应 401 INVALID_GRANT，实际 %d / %s", resp.StatusCode, env.Code)
+	}
+	if sessions.created != 0 {
+		t.Fatalf("拒绝路径不得建会话，实际 %d", sessions.created)
+	}
+	for _, r := range audit.reasons() {
+		if r == "code_consumed" {
+			t.Fatalf("拒绝路径不得记 code_consumed，实际 %v", audit.reasons())
+		}
+	}
+	found := false
+	for _, r := range audit.reasons() {
+		if r == "redirect_mismatch" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("应记 redirect_mismatch 审计，实际 %v", audit.reasons())
+	}
+}
+
+// ② PKCE 失败必须记 failure/pkce_failed，且**不得**出现 success。
+func TestPKCEFailureAuditsFailure(t *testing.T) {
+	_, ts, store, _, audit := newTestServer(t, nil)
+	challenge := pkceChallenge("correct-verifier-0123456789012345678901234567890123")
+	payload, _ := json.Marshal(codePayload{Sub: "u-1", ClientID: "c-1", ACR: "AAL1", Challenge: challenge})
+	_ = store.Put(context.Background(), CodeKey("code-pkce"), string(payload), time.Minute)
+
+	resp, _, env := postForm(t, ts.URL+"/oauth/token", map[string]string{
+		"grant_type": "authorization_code", "code": "code-pkce", "client_id": "c-1",
+		"code_verifier": "wrong-verifier-0123456789012345678901234567890123",
+	})
+	if resp.StatusCode != http.StatusUnauthorized || env.Code != httpx.CodePKCEFailed {
+		t.Fatalf("PKCE 不匹配应 401，实际 %d / %s", resp.StatusCode, env.Code)
+	}
+	reasons := audit.reasons()
+	if len(reasons) != 1 || reasons[0] != "pkce_failed" {
+		t.Fatalf("应只记一条 pkce_failed，实际 %v", reasons)
+	}
+	for _, ev := range audit.events {
+		if ev.Result == "success" {
+			t.Fatalf("PKCE 失败不得出现 success 审计：%+v", ev)
+		}
 	}
 }

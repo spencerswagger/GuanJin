@@ -31,6 +31,11 @@ type Session struct {
 	LastSeenAt    *time.Time `gorm:"column:last_seen_at"`
 	RevokedAt     *time.Time `gorm:"column:revoked_at"`
 	RevokeReason  *string    `gorm:"column:revoke_reason"`
+	// 设备上下文三列（DB 000005 已有；S7 的管理面列表要用，避免两套映射）。
+	// `ip` 是 PG 的 `inet`，这里按文本读写（写入用合法 IP 字符串，读出即文本）。
+	IP        *string `gorm:"column:ip;type:inet"`
+	UserAgent *string `gorm:"column:user_agent"`
+	DeviceID  *string `gorm:"column:device_id"`
 }
 
 // TableName 冻结表名（F0：表名不得改名）。
@@ -41,6 +46,15 @@ func SessionColumns() []string {
 	return []string{
 		"id", "user_id", "client_id", "acr", "amr", "status", "issued_at",
 		"last_seen_at", "expires_at", "idle_expires_at", "revoked_at", "revoke_reason",
+		"ip", "user_agent", "device_id",
 		"created_at", "updated_at",
 	}
 }
+
+// 会话状态取值（与 `sessions.status` 的 DB CHECK 一致）——**权威定义在这里**，
+// S7 侧那份临时副本在 S6 合入后按 follow-up 删除并改引用。
+const (
+	SessionStatusActive  = "active"
+	SessionStatusRevoked = "revoked"
+	SessionStatusExpired = "expired"
+)

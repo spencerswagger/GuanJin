@@ -20,6 +20,7 @@ import (
 	"github.com/spencerswagger/guanjin/internal/identity"
 	"github.com/spencerswagger/guanjin/internal/protocol"
 	"github.com/spencerswagger/guanjin/internal/risk"
+	"github.com/spencerswagger/guanjin/internal/signing"
 	"github.com/spencerswagger/guanjin/internal/store"
 	"github.com/spencerswagger/guanjin/internal/store/model"
 )
@@ -450,6 +451,32 @@ func amrOfDescriptor(d flow.Descriptor) []string {
 		}
 	}
 	return out
+}
+
+// callerResolver 把 `protocol.CallerResolver` 接到 `httpx.CallerResolver`（验签 + 会话状态）。
+func newCallerResolver(keys *signing.Set, db *gorm.DB) (*protocol.CallerResolver, error) {
+	if keys == nil {
+		return nil, errors.New("startup: caller resolver requires signing keys")
+	}
+	return &protocol.CallerResolver{
+		Keys:     keys,
+		Sessions: &sessionState{repo: store.NewSessionRepo(db)},
+		Now:      time.Now,
+	}, nil
+}
+
+// sessionState 把 `store.SessionRepo.SessionStatus` 折成协议面要的形状（把"没查到"翻成哨兵）。
+type sessionState struct{ repo *store.SessionRepo }
+
+func (s *sessionState) SessionStatus(ctx context.Context, sid string) (string, error) {
+	st, err := s.repo.SessionStatus(ctx, sid)
+	if err != nil {
+		if errors.Is(err, store.ErrSessionNotFound) {
+			return "", protocol.ErrSessionGone
+		}
+		return "", err
+	}
+	return st, nil
 }
 
 // redirects 读 `clients.redirect_uris`。

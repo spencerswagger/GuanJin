@@ -214,14 +214,25 @@ func (s *Server) exchangeCode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	state.userID = p.Sub
-	s.audit(r, AuditEvent{EventType: "token", ClientID: clientID, UserID: p.Sub, Result: "success", Reason: "code_consumed"})
 
+	// ① `redirect_uri` 必须与**码内保存的那一份**逐字一致（RFC 6749 §4.1.3）：
+	// 否则攻击者拿到码后可以把回调改到自己的站点去换令牌 —— 授权码等于白送。
+	// 拒绝路径**不消费码**（码已在上面 Take 掉，所以这里只拒绝、不再写 success 审计）。
+	if p.Redirect != "" && r.PostFormValue("redirect_uri") != p.Redirect {
+		s.audit(r, AuditEvent{EventType: "token", ClientID: clientID, UserID: p.Sub, Result: "failure", Reason: "redirect_mismatch"})
+		s.fail(w, r, httpx.CodeInvalidGrant, "redirect_uri 与授权请求不一致")
+		return
+	}
+
+	// ② 审计移到 **PKCE 通过之后**：审计链只增不可改，写在校验之前等于把失败永久记成成功。
 	if p.Challenge != "" {
 		if codeErr := verifyPKCE(p.Challenge, r.PostFormValue("code_verifier")); codeErr != nil {
+			s.audit(r, AuditEvent{EventType: "token", ClientID: clientID, UserID: p.Sub, Result: "failure", Reason: "pkce_failed"})
 			s.fail(w, r, codeErr.(*protoError).code, codeErr.Error())
 			return
 		}
 	}
+	s.audit(r, AuditEvent{EventType: "token", ClientID: clientID, UserID: p.Sub, Result: "success", Reason: "code_consumed"})
 
 	policy, err := s.d.Clients.Policy(r.Context(), clientID)
 	if err != nil {

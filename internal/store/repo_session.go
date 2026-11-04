@@ -12,6 +12,9 @@ import (
 	"github.com/spencerswagger/guanjin/internal/store/model"
 )
 
+// ErrSessionNotFound 表示按 id 没查到会话。
+var ErrSessionNotFound = errors.New("store: session not found")
+
 // SessionRepo 是 `sessions` 的**最小写路径**（S6 与 S7 的分工点）。
 //
 // 为什么只有一个方法：`id_token.sid` 必须在签发那一刻就存在（回填会破坏 AC-LOGIN-01 的举证），
@@ -54,3 +57,23 @@ func (r *SessionRepo) Create(ctx context.Context, s *model.Session) error {
 
 // 编译期断言：模型与表名/列名一一对应（改名即构建失败，防止漂移）。
 var _ = model.SessionColumns
+
+// SessionStatus 读会话状态（`active|revoked|expired`）；不存在 → `ErrSessionNotFound`。
+//
+// 这是 `httpx.CallerResolver` 需要的唯一读：验签之后查一次"这个会话还活着吗"。
+// 其余读/撤销/列表仍在 S7 的 `repo_session_ops.go`。
+func (r *SessionRepo) SessionStatus(ctx context.Context, sid string) (string, error) {
+	id, err := uuid.Parse(sid)
+	if err != nil {
+		return "", ErrSessionNotFound
+	}
+	var status string
+	res := r.db.WithContext(ctx).Raw(`SELECT status FROM sessions WHERE id = ?`, id).Scan(&status)
+	if res.Error != nil {
+		return "", MapError(res.Error)
+	}
+	if res.RowsAffected == 0 || status == "" {
+		return "", ErrSessionNotFound
+	}
+	return status, nil
+}
