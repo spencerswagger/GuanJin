@@ -8,8 +8,6 @@ package main
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -44,12 +42,13 @@ func main() {
 		_, _ = w.Write([]byte(`{"status":"ready","checks":{"config":"ok"},"pending":["db","redis"]}`))
 	})
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		httpx.WriteError(w, traceID(r, cfg.TraceHeader), httpx.CodeInvalidRequest, "endpoint not implemented yet", nil)
+		httpx.WriteError(w, httpx.TraceIDFromContext(r.Context()), httpx.CodeInvalidRequest,
+			"endpoint not implemented yet", nil)
 	})
 
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           withTrace(mux, cfg.TraceHeader, logger),
+		Handler:           httpx.TraceMiddleware(mux, cfg.TraceHeader, logger),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
@@ -69,32 +68,4 @@ func main() {
 	defer cancel()
 	_ = srv.Shutdown(shutdownCtx)
 	logger.Info("guanjind stopped")
-}
-
-// withTrace 贯穿日志与响应头的 trace 标识（D4-C：trace_id 用于取证串联）。
-func withTrace(next http.Handler, header string, logger *slog.Logger) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		id := r.Header.Get(header)
-		if id == "" {
-			id = newTraceID()
-		}
-		w.Header().Set(header, id)
-		next.ServeHTTP(w, r)
-		logger.Info("request", "trace_id", id, "method", r.Method, "path", r.URL.Path)
-	})
-}
-
-func traceID(r *http.Request, header string) string {
-	if id := r.Header.Get(header); id != "" {
-		return id
-	}
-	return newTraceID()
-}
-
-func newTraceID() string {
-	var b [16]byte
-	if _, err := rand.Read(b[:]); err != nil {
-		return "trace-unavailable"
-	}
-	return hex.EncodeToString(b[:])
 }

@@ -14,10 +14,9 @@ import (
 	"strconv"
 	"strings"
 	"time"
-)
 
-// MinMasterKeyLen 是主密钥的最小字节数（HKDF-SM3 派生 32B 子密钥要求输入熵足够）。
-const MinMasterKeyLen = 32
+	"github.com/spencerswagger/guanjin/internal/crypto"
+)
 
 // Config 是进程级配置。**只从环境变量读取**，不从命令行、不读文件（密钥不落盘）。
 type Config struct {
@@ -28,8 +27,9 @@ type Config struct {
 	// RedisAddr / RedisPassword 用于限流计数、jti 防重放、热缓存。
 	RedisAddr     string
 	RedisPassword string
-	// MasterKey 是主密钥原文；**只在进程内存**，派生后不保留在业务结构里。
-	MasterKey []byte
+	// MasterKey 是**已校验的主密钥对象**；只在进程内存，且只能用来派生（D4-B）。
+	// 注意：这里刻意不暴露 []byte —— 主密钥原文一旦能自由传，就一定会被直传进算法。
+	MasterKey *crypto.MasterKey
 	// TraceHeader 是贯穿日志、auth_events、audit_logs 的 trace 头名（D4-C）。
 	TraceHeader string
 }
@@ -72,18 +72,23 @@ func Load(getenv func(string) string) (*Config, error) {
 	return c, nil
 }
 
-// parseMasterKey 解析 base64 主密钥；长度不足即拒绝（不截断、不补齐 —— 补齐会悄悄降低熵）。
-func parseMasterKey(raw string) ([]byte, error) {
+// parseMasterKey 解析 base64 主密钥并交给 crypto 做长度校验。
+//
+// 长度不足即拒绝（不截断、不补齐 —— 补齐会悄悄降低熵）；长度下限的唯一来源是
+// crypto.MinMasterKeyLen，本包不另存一份数字。
+func parseMasterKey(raw string) (*crypto.MasterKey, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return nil, errors.New("config: GUANJIN_MASTER_KEY is required (fail-closed)")
 	}
-	key, err := base64.StdEncoding.DecodeString(raw)
+	decoded, err := base64.StdEncoding.DecodeString(raw)
 	if err != nil {
 		return nil, fmt.Errorf("config: GUANJIN_MASTER_KEY must be standard base64: %w", err)
 	}
-	if len(key) < MinMasterKeyLen {
-		return nil, fmt.Errorf("config: GUANJIN_MASTER_KEY must be >= %d bytes, got %d", MinMasterKeyLen, len(key))
+	key, err := crypto.NewMasterKey(decoded)
+	if err != nil {
+		return nil, fmt.Errorf("config: GUANJIN_MASTER_KEY invalid (need >= %d bytes): %w",
+			crypto.MinMasterKeyLen, err)
 	}
 	return key, nil
 }
