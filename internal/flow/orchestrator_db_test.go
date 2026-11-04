@@ -427,3 +427,71 @@ func TestChallengeLifecycleInDB(t *testing.T) {
 		t.Fatalf("重复消费必须抢不到（affected=0）：affected=%d err=%v", affected, err)
 	}
 }
+
+// I-F7 的一次性回填与"不许换会话"（真库）：编排层把 session 交给 flowstore 之后的行为。
+//
+// 这三步必须都在真库上跑：回填是带 `WHERE session_id IS NULL` 的条件 UPDATE，
+// 没有库根本验不了"只能成功一次"。
+func TestFinishBackfillsSessionOnce(t *testing.T) {
+	db := openTestDB(t)
+	f := newFixture(t, db, "L2", nil)
+	orc, _ := f.orchestrator(t)
+	ctx := context.Background()
+
+	// ① Begin 两次应复用同一条活跃流（Start 的"先查后建"）。
+	first, err := orc.Begin(ctx, flow.BeginInput{ClientID: f.clientID, UserID: &f.userID})
+	if err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+	second, err := orc.Begin(ctx, flow.BeginInput{ClientID: f.clientID, UserID: &f.userID})
+	if err != nil {
+		t.Fatalf("Begin(2): %v", err)
+	}
+	if first.FlowID != second.FlowID {
+		t.Fatalf("同一用户同一 client 应复用活跃流，实际 %s vs %s", first.FlowID, second.FlowID)
+	}
+
+	if _, err := orc.VerifyStep(ctx, flow.VerifyInput{FlowID: first.FlowID, Factor: factor.FactorPassword, Response: "ok"}); err != nil {
+		t.Fatalf("VerifyStep: %v", err)
+	}
+
+	// ② 第一次 Finish 不带 session → completed 且 session_id 仍为空。
+	if _, err := orc.Finish(ctx, first.FlowID, &f.userID, nil); err != nil {
+		t.Fatalf("Finish(1): %v", err)
+	}
+	s1 := f.newSession(t)
+	s2 := f.newSession(t)
+
+	// ③ 第二次带 session → 一次性回填（I-F7）。
+	if _, err := orc.Finish(ctx, first.FlowID, nil, &s1); err != nil {
+		t.Fatalf("Finish(2) 回填应成功：%v", err)
+	}
+	var got *uuid.UUID
+	if err := db.Raw(`SELECT session_id FROM flows WHERE id = ?`, first.FlowID).Scan(&got).Error; err != nil {
+		t.Fatalf("读 session_id: %v", err)
+	}
+	if got == nil || *got != s1 {
+		t.Fatalf("session_id 应回填为 %s，实际 %v", s1, got)
+	}
+
+	// ④ 再换一个会话 → 拒绝（能换就等于能劫持）。
+	if _, err := orc.Finish(ctx, first.FlowID, nil, &s2); !errors.Is(err, flowstore.ErrSessionImmutable) {
+		t.Fatalf("换会话应被拒（ErrSessionImmutable），实际 %v", err)
+	}
+}
+
+// newSession 建一条真实会话（flows.session_id 有 FK，随机 uuid 会撞 flows_session_id_fkey）。
+func (f *fixture) newSession(t *testing.T) uuid.UUID {
+	t.Helper()
+	id, err := uuid.NewV7()
+	if err != nil {
+		t.Fatalf("uuid v7: %v", err)
+	}
+	if err := f.db.Exec(`INSERT INTO sessions (id, user_id, client_id, acr, expires_at, idle_expires_at)
+		VALUES (?, ?, ?, 'AAL1', now() + interval '1 hour', now() + interval '30 min')`,
+		id, f.userID, f.clientID).Error; err != nil {
+		t.Fatalf("insert session: %v", err)
+	}
+	t.Cleanup(func() { _ = f.db.Exec(`DELETE FROM sessions WHERE id = ?`, id).Error })
+	return id
+}
