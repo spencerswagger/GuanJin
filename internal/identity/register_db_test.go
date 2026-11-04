@@ -349,8 +349,10 @@ func TestAC_REG_03_PurposeVocabulary(t *testing.T) {
 			t.Fatalf("uuid v7: %v", err)
 		}
 		return store.MapError(db.WithContext(ctx).Exec(
-			`INSERT INTO challenges (id, client_id, purpose, factor_type, response_hash, expires_at)
-			 VALUES (?, ?, ?, 'email_otp', '\x01'::bytea, now() + interval '10 min')`,
+			// `max_attempts` 显式给：000018 已 DROP DEFAULT（D14①：单一来源 = runtime_config），
+			// 漏传会 23502；5 是这份夹具自己的取值，不是实现里的默认值。
+			`INSERT INTO challenges (id, client_id, purpose, factor_type, response_hash, max_attempts, expires_at)
+			 VALUES (?, ?, ?, 'email_otp', '\x01'::bytea, 5, now() + interval '10 min')`,
 			id, f.clientID, purpose).Error)
 	}
 

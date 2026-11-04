@@ -134,3 +134,18 @@ func Tx(ctx context.Context, db *gorm.DB, fn func(tx *gorm.DB) error) error {
 	}
 	return nil
 }
+
+// DBNow 读**库时间**（`now()`）。
+//
+// 为什么不用应用时钟：一次性挑战的过期、注册窗口、流 TTL 都用库时间判定（D5/D14），
+// 多副本时钟漂移会让"同一个瞬间"在两台机器上得出不同结论。凡是"权威时刻"都必须走这里。
+func DBNow(ctx context.Context, db *gorm.DB) (time.Time, error) {
+	if db == nil {
+		return time.Time{}, errors.New("store: nil db")
+	}
+	var now time.Time
+	if err := db.WithContext(ctx).Raw(`SELECT now()`).Scan(&now).Error; err != nil {
+		return time.Time{}, MapError(err)
+	}
+	return now.UTC(), nil
+}
