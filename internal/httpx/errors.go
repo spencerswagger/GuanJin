@@ -76,12 +76,22 @@ const (
 	// V1 没有暴露"设主标识符"端点，撞到即属内部缺陷（500）。
 	CodeLastIdentifierCannotUnbind    Code = "LAST_IDENTIFIER_CANNOT_UNBIND"    // E4 / 409
 	CodeLastAuthenticatorCannotRemove Code = "LAST_AUTHENTICATOR_CANNOT_REMOVE" // E4 / 409
+	// 挑战状态机（E2 / 401）：挑战是一次性的，四种失败必须能被客户端区分。
+	CodeChallengeExpired  Code = "CHALLENGE_EXPIRED"  // E2 / 401
+	CodeChallengeConsumed Code = "CHALLENGE_CONSUMED" // E2 / 401
+	CodeChallengeInvalid  Code = "CHALLENGE_INVALID"  // E2 / 401（不存在/不属于本流）
+	CodeAttemptsExceeded  Code = "ATTEMPTS_EXCEEDED"  // E2 / 401（单挑战次数用尽）
+
 	// CodeIdentifierNotVerified 表示"这个标识符还没验证过"，不能当作可用登录方式/找回通道。
 	CodeIdentifierNotVerified Code = "IDENTIFIER_NOT_VERIFIED" // E4 / 409
 	// CodeIdentifierInvalidFormat 表示标识符格式不合法（规范化阶段就拒，不落库）。
 	CodeIdentifierInvalidFormat Code = "IDENTIFIER_INVALID_FORMAT" // E4 / 400
 	// CodeRegistrationNotAllowed 表示目标业务系统未开放自助注册（D3-B″ 补登记：E4/403）。
 	CodeRegistrationNotAllowed Code = "REGISTRATION_NOT_ALLOWED" // E4 / 403
+	// 因子不可用（E4 / 422）：三种原因必须分开，否则前端不知道该"换因子"还是"找管理员"。
+	CodeFactorDisabled     Code = "FACTOR_DISABLED"      // 该业务系统禁用了这个因子
+	CodeFactorNotSupported Code = "FACTOR_NOT_SUPPORTED" // 平台没装配这个因子
+	CodeNoEligibleFactor   Code = "NO_ELIGIBLE_FACTOR"   // 没有任何因子能推进这一步
 
 	// 管理面与策略（E7）
 	CodeBindingAlreadyExists   Code = "BINDING_ALREADY_EXISTS"   // E7 / 409
@@ -108,6 +118,8 @@ var knownCodes = []Code{
 	CodePasswordPolicyViolation, CodeWeakPassword, CodePasswordReused,
 	CodeLastIdentifierCannotUnbind, CodeLastAuthenticatorCannotRemove, CodeIdentifierNotVerified,
 	CodeIdentifierInvalidFormat, CodeRegistrationNotAllowed,
+	CodeChallengeExpired, CodeChallengeConsumed, CodeChallengeInvalid, CodeAttemptsExceeded,
+	CodeFactorDisabled, CodeFactorNotSupported, CodeNoEligibleFactor,
 	CodeBindingAlreadyExists, CodeBindingNotFound, CodeTierDirectionViolation,
 }
 
@@ -146,7 +158,8 @@ func HTTPStatus(c Code) int {
 		CodeClientNotFound, CodeKeyNotFound, CodeSnapshotNotFound, CodeBindingNotFound:
 		return http.StatusNotFound
 	case CodeTokenInvalid, CodeTokenExpired, CodeTokenRevoked,
-		CodeInvalidCredential, CodeTemporalCodeReused:
+		CodeInvalidCredential, CodeTemporalCodeReused,
+		CodeChallengeExpired, CodeChallengeConsumed, CodeChallengeInvalid, CodeAttemptsExceeded:
 		return http.StatusUnauthorized
 	case CodeSessionRevoked, CodeInsufficientRole, CodeThreePowerViolation, CodeACRInsufficient:
 		return http.StatusForbidden
@@ -158,7 +171,8 @@ func HTTPStatus(c Code) int {
 		// 接口 §3.3 / §5.4「接口可覆盖」：E4 默认 404/409/422，本条覆盖为 403（AC-REG-09）。
 		return http.StatusForbidden
 	case CodePasswordPolicyViolation, CodeTierDirectionViolation,
-		CodeWeakPassword, CodePasswordReused:
+		CodeWeakPassword, CodePasswordReused,
+		CodeFactorDisabled, CodeFactorNotSupported, CodeNoEligibleFactor:
 		return http.StatusUnprocessableEntity
 	case CodeRedisUnavailable, CodeDBUnavailable, CodeKeyUnavailable,
 		CodeDependencyUnavail, CodeUpstreamUnavailable:
