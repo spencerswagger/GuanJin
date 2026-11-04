@@ -31,8 +31,14 @@ type Challenge struct {
 	// ResponseHash 期望应答的摘要（SM3/HMAC-SM3）：**明文码永不落库**。
 	ResponseHash []byte `gorm:"column:response_hash;type:bytea;not null"`
 	// Attempts / MaxAttempts 单挑战尝试计数（DB CHECK：attempts <= max_attempts）。
+	//
+	// `max_attempts` **故意不带 `default` tag**（D14①）：`000018` 已
+	// `ALTER TABLE challenges ALTER COLUMN max_attempts DROP DEFAULT`，
+	// 代码侧也不许留"漏传就有 5 兜底"的错觉——GORM 的 default tag 会让零值被静默省掉。
+	// 唯一来源是 `runtime_config('challenge.max_attempts')`（`store.LoadChallengeMaxAttempts`）；
+	// 一旦漏传，INSERT 会以 0 落库并被 `CHECK (max_attempts > 0)` 拒（23514），当场失败。
 	Attempts    int32 `gorm:"column:attempts;not null;default:0"`
-	MaxAttempts int32 `gorm:"column:max_attempts;not null;default:5"`
+	MaxAttempts int32 `gorm:"column:max_attempts;not null"`
 	// ConsumedAt 一次性消费标记。
 	ConsumedAt *time.Time `gorm:"column:consumed_at"`
 	// ExpiresAt 过期时刻（DB CHECK：expires_at > created_at）。

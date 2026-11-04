@@ -117,27 +117,69 @@ func TestValidateStartupReportsAllMissingKeys(t *testing.T) {
 	}
 
 	ok := &fakeConfig{rows: map[string]*model.RuntimeConfig{
-		KeyFlowTTLSeconds: intRow(KeyFlowTTLSeconds, "600"),
+		KeyFlowTTLSeconds:       intRow(KeyFlowTTLSeconds, "600"),
+		KeyChallengeTTLSeconds:  intRow(KeyChallengeTTLSeconds, "300"),
+		KeyChallengeMaxAttempts: intRow(KeyChallengeMaxAttempts, "5"),
 	}}
 	got, err := ValidateStartup(context.Background(), ok)
 	if err != nil {
 		t.Fatalf("ValidateStartup: %v", err)
 	}
-	if got[KeyFlowTTLSeconds] != 10*time.Minute {
-		t.Fatalf("flow ttl = %v, want 10m", got[KeyFlowTTLSeconds])
+	if got.FlowTTL != 10*time.Minute {
+		t.Fatalf("flow ttl = %v, want 10m", got.FlowTTL)
+	}
+	if got.ChallengeTTL != 5*time.Minute {
+		t.Fatalf("challenge ttl = %v, want 5m（300 秒）", got.ChallengeTTL)
+	}
+	// 关键：5 必须原样是 **5 次**，不能被当成 5ns（D14① 点名的语义错）。
+	if got.ChallengeMaxAttempts != 5 {
+		t.Fatalf("challenge max_attempts = %d, want 5", got.ChallengeMaxAttempts)
 	}
 }
 
-// StartupKeys 必须含 D5 冻结的那个键名（拼错就是启动必挂）。
-func TestStartupKeysContainsFlowTTL(t *testing.T) {
-	found := false
-	for _, k := range StartupKeys() {
-		if k == "flow.ttl_seconds" {
-			found = true
-		}
+// 只缺一个键时也要把**那一个**报出来（而不是笼统的 "validation failed"）。
+func TestValidateStartupNamesTheSingleMissingKey(t *testing.T) {
+	reader := &fakeConfig{rows: map[string]*model.RuntimeConfig{
+		KeyFlowTTLSeconds:      intRow(KeyFlowTTLSeconds, "600"),
+		KeyChallengeTTLSeconds: intRow(KeyChallengeTTLSeconds, "300"),
+		// challenge.max_attempts 缺失
+	}}
+	_, err := ValidateStartup(context.Background(), reader)
+	if !errors.Is(err, ErrConfigKeyMissing) {
+		t.Fatalf("err = %v, want ErrConfigKeyMissing", err)
 	}
-	if !found {
-		t.Fatalf("StartupKeys must contain flow.ttl_seconds, got %v", StartupKeys())
+	if !strings.Contains(err.Error(), KeyChallengeMaxAttempts) {
+		t.Fatalf("缺键报错必须点名 %q，实际：%v", KeyChallengeMaxAttempts, err)
+	}
+	if strings.Contains(err.Error(), KeyFlowTTLSeconds) {
+		t.Fatalf("已存在的键不该出现在缺键报错里：%v", err)
+	}
+}
+
+// 次数键的 value_type 写成别的类型必须报 ErrConfigTypeMismatch（不是静默取默认值）。
+func TestValidateStartupRejectsNonIntValueType(t *testing.T) {
+	reader := &fakeConfig{rows: map[string]*model.RuntimeConfig{
+		KeyFlowTTLSeconds:       intRow(KeyFlowTTLSeconds, "600"),
+		KeyChallengeTTLSeconds:  intRow(KeyChallengeTTLSeconds, "300"),
+		KeyChallengeMaxAttempts: {Key: KeyChallengeMaxAttempts, Value: model.JSONValue(`"5"`), ValueType: "string"},
+	}}
+	_, err := ValidateStartup(context.Background(), reader)
+	if !errors.Is(err, ErrConfigTypeMismatch) {
+		t.Fatalf("err = %v, want ErrConfigTypeMismatch", err)
+	}
+}
+
+// StartupKeys 必须逐字含 D5/D14 冻结的三个键名（拼错就是启动必挂）。
+func TestStartupKeysContainsFrozenNames(t *testing.T) {
+	want := []string{"flow.ttl_seconds", "challenge.ttl_seconds", "challenge.max_attempts"}
+	got := StartupKeys()
+	if len(got) != len(want) {
+		t.Fatalf("StartupKeys = %v, want %v", got, want)
+	}
+	for i, k := range want {
+		if got[i] != k {
+			t.Fatalf("StartupKeys[%d] = %q, want %q（全量 %v）", i, got[i], k, got)
+		}
 	}
 }
 
@@ -163,5 +205,112 @@ func TestNoHardcodedFlowTTLDefault(t *testing.T) {
 					name, i+1, trimmed)
 			}
 		}
+	}
+}
+
+// 源码级检查：`challenge.ttl_seconds` 的初值（300）**不得**以常量形式出现在 store 包里。
+//
+// 与 D5 的 600 同款（D14①："代码里不得出现 300 / 5 常量"）：
+// 一旦代码里留了 300，`AC-REG-01` 的"改键值必须跟着变"就变成"改键值可能没跟着变"。
+func TestNoHardcodedChallengeTTLDefault(t *testing.T) {
+	re := regexp.MustCompile(`\b300\b`)
+	for _, name := range []string{"repo_challenges.go", "runtimeconfig.go", "db.go", "pgxerr.go", "doc.go"} {
+		raw, err := os.ReadFile(name)
+		if err != nil {
+			t.Fatalf("read %s: %v", name, err)
+		}
+		for i, line := range strings.Split(string(raw), "\n") {
+			trimmed := strings.TrimSpace(line)
+			if strings.HasPrefix(trimmed, "//") || strings.HasPrefix(trimmed, "/*") ||
+				strings.HasPrefix(trimmed, "*") {
+				continue
+			}
+			if re.MatchString(line) {
+				t.Errorf("%s:%d 出现 300 字面量（D14①：challenge.ttl_seconds 只能来自 runtime_config）: %s",
+					name, i+1, trimmed)
+			}
+		}
+	}
+}
+
+// 正常路径：300 秒 → 5 分钟；`max_attempts` = 5 → **5 次**（不是 5ns）。
+func TestLoadChallengeConfigHappyPath(t *testing.T) {
+	reader := &fakeConfig{rows: map[string]*model.RuntimeConfig{
+		KeyChallengeTTLSeconds:  intRow(KeyChallengeTTLSeconds, "300"),
+		KeyChallengeMaxAttempts: intRow(KeyChallengeMaxAttempts, "5"),
+	}}
+	ctx := context.Background()
+
+	ttl, err := LoadChallengeTTL(ctx, reader)
+	if err != nil {
+		t.Fatalf("LoadChallengeTTL: %v", err)
+	}
+	if ttl != 5*time.Minute {
+		t.Fatalf("challenge ttl = %v, want 5m", ttl)
+	}
+
+	attempts, err := LoadChallengeMaxAttempts(ctx, reader)
+	if err != nil {
+		t.Fatalf("LoadChallengeMaxAttempts: %v", err)
+	}
+	if attempts != 5 {
+		t.Fatalf("max_attempts = %d, want 5", attempts)
+	}
+}
+
+// 缺键 = fail-fast：两个键都不得回退到 300 / 5。
+func TestLoadChallengeConfigMissingKeyFailsFast(t *testing.T) {
+	ctx := context.Background()
+	empty := &fakeConfig{rows: map[string]*model.RuntimeConfig{}}
+	if _, err := LoadChallengeTTL(ctx, empty); !errors.Is(err, ErrConfigKeyMissing) {
+		t.Fatalf("LoadChallengeTTL err = %v, want ErrConfigKeyMissing", err)
+	}
+	if _, err := LoadChallengeMaxAttempts(ctx, empty); !errors.Is(err, ErrConfigKeyMissing) {
+		t.Fatalf("LoadChallengeMaxAttempts err = %v, want ErrConfigKeyMissing", err)
+	}
+}
+
+// RequiredPositiveInt 的判据：`value_type` 必须 int、值必须 > 0；**不**做时间换算。
+func TestRequiredPositiveInt(t *testing.T) {
+	ctx := context.Background()
+
+	ok := &fakeConfig{rows: map[string]*model.RuntimeConfig{
+		KeyChallengeMaxAttempts: intRow(KeyChallengeMaxAttempts, "3"),
+	}}
+	got, err := RequiredPositiveInt(ctx, ok, KeyChallengeMaxAttempts)
+	if err != nil || got != 3 {
+		t.Fatalf("RequiredPositiveInt = %d, %v; want 3", got, err)
+	}
+
+	cases := []struct {
+		name    string
+		row     *model.RuntimeConfig
+		wantErr error
+	}{
+		{"wrong type", &model.RuntimeConfig{
+			Key: KeyChallengeMaxAttempts, Value: model.JSONValue("5"), ValueType: "long"}, ErrConfigTypeMismatch},
+		{"string value", intRow(KeyChallengeMaxAttempts, `"5"`), ErrConfigValueInvalid},
+		{"zero", intRow(KeyChallengeMaxAttempts, "0"), ErrConfigValueInvalid},
+		{"negative", intRow(KeyChallengeMaxAttempts, "-1"), ErrConfigValueInvalid},
+		{"fraction", intRow(KeyChallengeMaxAttempts, "1.5"), ErrConfigValueInvalid},
+		{"bool", intRow(KeyChallengeMaxAttempts, "true"), ErrConfigValueInvalid},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			reader := &fakeConfig{rows: map[string]*model.RuntimeConfig{KeyChallengeMaxAttempts: tc.row}}
+			_, err := RequiredPositiveInt(ctx, reader, KeyChallengeMaxAttempts)
+			if !errors.Is(err, tc.wantErr) {
+				t.Fatalf("err = %v, want %v", err, tc.wantErr)
+			}
+		})
+	}
+
+	if _, err := RequiredPositiveInt(ctx, nil, KeyChallengeMaxAttempts); err == nil {
+		t.Fatal("nil reader must be rejected")
+	}
+	// reader 故障必须原样上抛（不能被当成缺键，否则"库挂了"会被误报成"配置漏了"）。
+	boom := errors.New("db down")
+	if _, err := RequiredPositiveInt(ctx, &fakeConfig{err: boom}, KeyChallengeMaxAttempts); !errors.Is(err, boom) {
+		t.Fatalf("err = %v, want the reader error", err)
 	}
 }
