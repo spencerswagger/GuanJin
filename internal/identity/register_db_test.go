@@ -64,11 +64,15 @@ func newFixture(t *testing.T, db *gorm.DB, selfRegistration bool) *fixture {
 		f.clientID, "S4b test client").Error; err != nil {
 		t.Fatalf("insert client: %v", err)
 	}
+	policyID, err := uuid.NewV7()
+	if err != nil {
+		t.Fatalf("uuid v7: %v", err)
+	}
 	if err := db.Exec(`INSERT INTO login_policies
-		(scope, client_id, min_acr, password_min_length, password_char_classes,
+		(id, scope, client_id, min_acr, password_min_length, password_char_classes,
 		 password_history_count, password_max_age_days, self_registration_allowed)
-		VALUES ('client_override', ?, 'AAL1', 12, 3, 5, 90, ?)`,
-		f.clientID, selfRegistration).Error; err != nil {
+		VALUES (?, 'client_override', ?, 'AAL1', 12, 3, 5, 90, ?)`,
+		policyID, f.clientID, selfRegistration).Error; err != nil {
 		t.Fatalf("insert login_policies: %v", err)
 	}
 	t.Cleanup(func() {
