@@ -5,6 +5,10 @@ name: ci
 #   - 迁移不在此跑 —— 项目未上线，schema 由本地/发布 Job 手动 `migrate up`（decisions.md P1）；
 #   - **判定类 job 一律只读**：gofmt 只用 `-l` 列出、绝不 `-w`（否则一键把红改绿，闸失效）；
 #   - **-race 不进主闸**：`-race` 需要 cgo，与项目 `CGO_ENABLED=0` 口径冲突，单列 `race` job。
+#   - **integration 真跑真库**（Gate 口径「SKIP = 未验证 = 红」）：`integration` job 用 `postgres:16`
+#     service → `golang-migrate up`（手动式，decisions.md P1 明确**不做**应用内自动迁移）→ schema 断言
+#     → `go test -tags=integration`；**不许 `t.Skip`、不许条件跳过**。
+#   - **合并门禁包含 integration**：`go` / `race` / `web` / `integration` 四个 job 全绿才许合入 main。
 
 on:
   push:
@@ -54,6 +58,83 @@ jobs:
           cache: false
       - name: go test -race（独立 job；同样 -count=1 不吃缓存）
         run: go test ./... -count=1 -race
+
+  integration:
+    # 真库验收：唯一权威环境（Gate §9）。没有它，「DB 类断言」等于未验证。
+    # 本机无 docker 时集成测试**只在 CI 跑**，本地不跑也不跳过（跳过＝未验证＝红）。
+    runs-on: ubuntu-latest
+    env:
+      CGO_ENABLED: '0'
+      GUANJIN_TEST_DSN: postgres://guanjin:guanjin@localhost:5432/guanjin_test?sslmode=disable
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: guanjin
+          POSTGRES_PASSWORD: guanjin
+          POSTGRES_DB: guanjin_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U guanjin -d guanjin_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: 等库就绪（healthcheck 之外再确认一次）
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends postgresql-client
+          for i in $(seq 1 30); do
+            if pg_isready -h localhost -p 5432 -U guanjin -d guanjin_test; then echo "[OK] postgres ready"; exit 0; fi
+            echo "waiting postgres ($i/30)"; sleep 2
+          done
+          echo "[FAIL] postgres 未就绪"; exit 1
+      - name: 安装 golang-migrate（手动式迁移，不做应用内迁移）
+        run: |
+          go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@v4.19.1
+          echo "$HOME/go/bin" >> "$GITHUB_PATH"
+      - name: migrate up（P1：手动执行；失败即红）
+        run: |
+          migrate -path ./migrations -database "$GUANJIN_TEST_DSN" up
+          migrate -path ./migrations -database "$GUANJIN_TEST_DSN" version
+      - name: schema 断言（15 张表 / flows 13 列 / 4 具名索引 / I-F1 CHECK / ttl seed）
+        env:
+          PGPASSWORD: guanjin
+        run: |
+          set -euo pipefail
+          q() { psql -h localhost -U guanjin -d guanjin_test -tAc "$1"; }
+          # 15 张逻辑表 + audit_logs 的月分区（audit_logs_pYYYYMM，属 BASE TABLE 但不算逻辑表）
+          EXP="audit_logs auth_events authenticators challenges clients flows identifiers login_policies policy_snapshots role_bindings runtime_config sessions signing_keys user_visited_clients users"
+          all=$(q "SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE' AND table_name <> 'schema_migrations' ORDER BY 1;")
+          logical=$(echo "$all" | grep -vE '^audit_logs_p[0-9]{6}$' | sed '/^$/d')
+          parts=$(echo "$all" | grep -cE '^audit_logs_p[0-9]{6}$' || true)
+          n=$(echo "$logical" | sed '/^$/d' | wc -l | tr -d ' ')
+          echo "logical_tables=$n audit_logs_partitions=$parts"
+          echo "$logical" | tr '\n' ' '; echo
+          [ "$n" = "15" ] || { echo "[FAIL] 期望 15 张逻辑表，实际 $n"; exit 1; }
+          for t in $EXP; do echo "$logical" | grep -qx "$t" || { echo "[FAIL] 缺表：$t"; exit 1; }; done
+          extra=$(echo "$logical" | grep -vxE "$(echo $EXP | tr ' ' '|')" || true)
+          [ -z "$extra" ] || { echo "[FAIL] 出现未登记的额外表：$extra"; exit 1; }
+          [ "$parts" -ge 1 ] || { echo "[FAIL] audit_logs 无月分区（D4-C 要求按月分区）"; exit 1; }
+          col=$(q "SELECT count(*) FROM information_schema.columns WHERE table_schema='public' AND table_name='flows';")
+          echo "flows_columns=$col"; [ "$col" = "13" ] || { echo "[FAIL] flows 期望 13 列，实际 $col"; exit 1; }
+          idx=$(q "SELECT count(*) FROM pg_indexes WHERE schemaname='public' AND tablename='flows' AND indexname IN ('flows_one_active_per_user_client_uniq','flows_session_idx','flows_expires_idx','flows_client_created_idx');")
+          echo "flows_named_indexes=$idx"; [ "$idx" = "4" ] || { echo "[FAIL] flows 具名索引期望 4，实际 $idx"; exit 1; }
+          chk=$(q "SELECT count(*) FROM pg_constraint WHERE conname='flows_completed_requires_user';")
+          echo "flows_if1_check=$chk"; [ "$chk" = "1" ] || { echo "[FAIL] 缺 I-F1 CHECK"; exit 1; }
+          ttl=$(q "SELECT value FROM runtime_config WHERE key='flow.ttl_seconds';")
+          echo "ttl_seed=$ttl"; [ "$ttl" = "600" ] || { echo "[FAIL] flow.ttl_seconds seed 期望 600，实际 $ttl"; exit 1; }
+      - name: 集成测试（-tags=integration；不许 t.Skip 蒙过）
+        run: |
+          test_files=$(grep -rln --include='*_test.go' '^//go:build integration' . || true)
+          if [ -z "$test_files" ]; then echo "[INFO] 暂无 integration 测试文件（S3 起随切片落地）"; fi
+          go test -tags=integration ./... -count=1 -v | tee integration-test.log
+          ./scripts/test-summary.sh integration-test.log | tee integration-summary.txt
 
   web:
     runs-on: ubuntu-latest
