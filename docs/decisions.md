@@ -271,9 +271,57 @@
 
 ---
 
-## 契约变更清单（对外可见）—— 状态：**CH-1~CH-5 已追认（经 hugo 追认，2026-11-02）**；CH-6 为内部口径
+## D14 注册面三处补口（挑战 TTL/次数来源、`register_token` 形态、邀请码）
 
-> 本表只收**对外可见**的变更（影响业务系统、SDK、前端或对外错误码的）。基线 `/docs/baseline/` 一个字不改，这些变更以本表为准并在**下版契约文档**（OpenAPI + `sdk-contract.md` + 页面规格口径）一次性落盘；落盘时机 = 全部 M1 判据回填后、M1 编码前。**本表状态：CH-1~CH-5 = 已追认（经 hugo 追认，2026-11-02，记录法见 P8）；CH-6 = 内部口径、无需追认。** 后续新增变更一律按 **P8②** 追加行（编号只增不重排）；作废条目改「已撤回」并保留原行。
+> 触发：M1 补课刀（S4 注册面 HTTP）。三处都是**契约没写死**、不允许实现自己发明的地方。
+
+- **① 挑战 TTL 与失败次数：单一来源 = `runtime_config`（迁移 `000018` 已落）**
+  - 落地记录：`000018` 由 **#32** 落进 main（`8cd751a`），`git ls-tree origin/main migrations/` 里**恰好两份**（`.up`/`.down`）；本 PR 只留裁定文本，**不再带同名迁移**（避免两份编号）。
+  - 新增两个键（`migrations/000018_seed_challenge_config.{up,down}.sql`，`ON CONFLICT (key) DO NOTHING`）：**`challenge.ttl_seconds` = 300**（`int`）、**`challenge.max_attempts` = 5**（`int`）。键名沿用 `flow.ttl_seconds` 的 `.` 分段 + 下划线风格。
+  - **同迁移内 `ALTER TABLE challenges ALTER COLUMN max_attempts DROP DEFAULT`**：留 `DEFAULT 5` 等于给"忘记传值"留一条静默成功路径（键改成 3、代码漏传 → 库里还是 5），正是 `AC-REG-01` 要消灭的"第二套来源"；移除后漏传立即 **23502**（GORM 省略零值 → NOT NULL）或 **23514**（`max_attempts > 0`）。
+  - **读取口径**：`challenge.ttl_seconds` 走既有 `store.RequiredIntSeconds` 并**加入 `StartupKeys()`**（缺键 = 启动 fail-fast，与 `flow.ttl_seconds` 同款）；`challenge.max_attempts` **不得**借 `RequiredIntSeconds`（它返回 `time.Duration`，5 会被读成 5ns，语义错），需另一个 `RequiredPositiveInt`（`value_type` 必须 `int`、值 > 0）并同样纳入启动期校验（一次把所有缺失键报全）。**代码里不得出现 300 / 5 常量**（含测试数据以外的一切路径）。
+  - **`register_token` 在 skip 分支的有效期同样取 `challenge.ttl_seconds`**（注册窗口与挑战同 TTL，**不新增第三个键**）。
+  - 归属：迁移 **Ark**（已由 #32 落 main）；`internal/store/runtimeconfig.go` 的三个读取点 + `crypto` 见②**归 Edge**；`cmd/guanjind` 装配期调用 + `internal/identity`（注册服务）消费**归 Core**。
+
+- **② `register_token` = 自包含的 HMAC-SM3 签名串（**不是** `challenge_id`，**不得**为空）**
+  - **为什么不能用 `challenge_id`**：§3.3.2 的请求体只有 `{register_token, code?, password}`——**没有 `client_id`/`type`/`value`**，而建号必须知道"给哪个 client 注册哪个标识符"。`challenges` 行也**没有任何列**能承载"尚未存在的标识符值"（`identifier_id` 指向还没建的行、`target_masked` 是脱敏值、`response_hash` 是摘要）。
+  - **为什么不能为空**：§3.3.2 鉴权行原文是「匿名 + `register_token`」；§3.3.1 允许缺的是 **`challenge_id`**，不是 `register_token`。skip 分支（`AC-REG-05`：仅用户名+密码免验证）照样签发令牌，只是其中 `chid` 为空。
+  - **形态**：`v1.<payload_b64url>.<mac_b64url>`；`payload` = 紧凑 JSON `{"v":1,"cid":"<client_id>","typ":"email|phone|username","val":"<归一化标识符>","chid":"<challenge_id 或空>","exp":<unix 秒>}`；`mac` = `HMAC-SM3(K_register, "guanjin/register-token/v1\n" + payload_b64url)`，校验**常量时间**比较。`val` 必须走**与 `identifiers` 落库同一套归一化**（单一来源，不许另写一个）。
+  - **密钥**：新增用途域 **`guanjin/hmac/register`（32B）**，即 **D4-B 的冻结用途域 5 → 6**（`Purpose` 仍是封闭集合，只是集合本身 +1）。**不得复用 `hmac/identifier`**——"一密钥一用途"是密评口径，复用即自废。
+  - **绑定（安全要点，必测）**：令牌必须同时绑定 `client_id` + `type` + `value` +（有挑战时）`challenge_id`。缺任何一项都能构造"用自己手机的验证码把别人的号码标成 `verified=true`"（账号接管级缺陷）。
+  - **`complete` 校验顺序**：①解析/验 MAC 失败 → `INVALID_PARAMETER`（E1/400）；②`exp` 已过（**以 DB 时间判定**，与 `challenges`/`flows` 同一个钟）→ `CHALLENGE_EXPIRED`（E2/401）；③有 `chid` → 该挑战必须存在、`purpose='register'`、`client_id` 与令牌一致、未消费（已消费 → `CHALLENGE_CONSUMED`）、未过期；④无 `chid` → **按令牌里的 `client_id` 重新校验准入与标识符唯一性**（TOCTOU 必须复查，不能只信 `start` 那次的结论）。
+  - **一次性**：有 `chid` 的走 `challenges.consumed_at` 行级原子消费（与建号同一事务）；skip 分支没有挑战行，可重复提交，但由 `identifiers` 唯一性兜住（第二次必然 `IDENTIFIER_ALREADY_BOUND`），**不为此新增 Redis 键**（§5.9：Redis 不作挑战状态权威源）。
+  - **对外契约面**：`register_token` 对客户端是**不透明串**（原样回传），形态属内部实现 → **不登记 CH**，将来换随机句柄客户端无感。**但必须脱敏**：与密码/验证码同级，**不得进访问日志**（令牌内含标识符明文）。
+
+- **③ 邀请码：本刀"显式拒绝"，不静默忽略**
+  - 现状：全库**没有**邀请机制（无 invite 表，`clients`/`login_policies` 无字段），因此**不存在合法邀请码来源**。本刀实现：`invite_code` **缺省或空串** = 未使用；**任何非空值 → 400 `INVITE_CODE_INVALID`**（E1；已在 D3-B″ 补登记），且判定在**建任何行之前**（`users`/`identifiers` 零新增，满足 `AC-REG-08`）。
+  - **判据账目（必须说实话）**：`AC-REG-08` 的"无效"分支本刀可举证；"已使用 / 过期"两分支**当前不可达**（无机制 → 无"已使用/过期"的码）。Gate 在账目里标注"分支不可达（机制未落地）"，**不得**标 PASS 后又说三条分支都验过。邀请机制（表/字段/准入规则）**推 M2+**，届时本裁定作废、重新出条。
+  - **错误顺序（禁隐性）**：`MISSING_PARAMETER`（缺 `client_id`/`type`/`value`）→ `INVALID_CLIENT` → `REGISTRATION_NOT_ALLOWED`（准入）→ `INVITE_CODE_INVALID` → `IDENTIFIER_INVALID_FORMAT` → `IDENTIFIER_ALREADY_BOUND` → 限流类（`RATE_LIMITED`/`BUDGET_EXCEEDED`/`CAPTCHA_REQUIRED`）。**准入在邀请码之前**：准入是 client 自身属性（不泄露用户信息），先判它不会掩盖 `INVITE_CODE_INVALID`（`AC-REG-08` 用例用开放注册的 client；关闭注册的 client 走 `AC-REG-09`）。
+  - **归属**：Core（`internal/register`）；Gate 按上条改账目口径。
+
+- **④ `attempts_left` 的口径（两处端点、两个计数，不许混用）**
+  - `POST /auth/challenge/{factor}`（§3.2.1）：`attempts_left` = **单挑战**剩余次数（`challenges.max_attempts - attempts`），**不得**用账号级 `login:fail:{user_id}` 的剩余次数顶替（D3-D 明写两个对象）。**无状态挑战**（口令/TOTP 不落挑战行）回 **0 = "该维度不适用"**，不是"没机会"。
+  - `POST /auth/register/start`（§3.3.1）：`attempts_left` 是**新增字段**（§3.3.1 原响应要点为 `{register_token, challenge_id?, next_action, target_masked?, expires_at}`，无此键），值 = 该注册挑战的 `max_attempts`（来自 `runtime_config.challenge.max_attempts`）。登记为 **CH-8（纯加字段，待追认）**；**追认前不得作为判据依据**——`AC-REG-01` 仍按 DB `challenges` 行断言。
+  - **账号级剩余次数（`fail_threshold - count`）一律不对外暴露**；要暴露必须新增字段并另立 CH，**不得复用同名键**。
+
+- **⑤ 落地登记（跨模块代落，只登记、不新开 D 条）**
+
+  | 模块（归属） | 新增 / 改动 | 为什么必须在这里 | 复核 |
+  |---|---|---|---|
+  | `internal/store/runtimeconfig.go`（Edge） | `KeyChallengeTTLSeconds` / `KeyChallengeMaxAttempts`、`RequiredPositiveInt`、`LoadChallengeTTL` / `LoadChallengeMaxAttempts`、`StartupKeys()` 含 3 键、`ValidateStartup` → `StartupConfig{FlowTTL,ChallengeTTL,ChallengeMaxAttempts}` | ①的运行期参数单一读取口径；`max_attempts` 是次数，**不能**借 `RequiredIntSeconds`（会变 5ns） | Edge（main `abde6e0`） |
+  | `internal/crypto/purpose.go`（Edge） | `PurposeHMACRegister` = `guanjin/hmac/register`（32B），用途域 5 → 6 | ②的独立用途域（一密钥一用途） | Edge（main `abde6e0`） |
+  | `internal/store/repo_client_policy.go`（Edge） | `LoadLockoutPolicy(ctx, clientID)`：`client_override` 优先 → 同档 `tier_default` 回落 → 两侧都没有 = `ErrPolicyNotConfigured` | 失败阈值/锁定时长只能来自 `login_policies`，代码里不留 5 / 15 | Edge（Core 在 #32 代落，main `8cd751a`；未反对即默认通过） |
+  | `internal/store/db.go`（Edge） | `DBNow(ctx, db)`（`SELECT now()`，返回 UTC） | 权威时钟：挑战过期、注册窗口与 `flows` 用同一个钟（多副本时钟漂移会让同一瞬间得出不同结论） | 同上 |
+
+  > 后续同类"为别的模块代落一个窄读取"一律**追加到本表**（格式不变），不新开 D 条、不改 `docs/baseline/`。
+
+- **报备（不需裁定，随本条记录）**：`ACCOUNT_LOCKED` 在接口 §5.4 **E2 组**（→ HTTP **401**）有登记，`internal/httpx` 码表漏收 → Core 补登记并按 **E2/401** 映射；**不得**改挂 E5（那是 `ACCOUNT_TEMP_BLOCKED` 的 429 风控语义）。
+
+---
+
+## 契约变更清单（对外可见）—— 状态：**CH-1~CH-5 已追认（经 hugo 追认，2026-11-02）；CH-6 为内部口径；CH-7 已裁定；CH-8 待追认（2026-11-04）**
+
+> 本表只收**对外可见**的变更（影响业务系统、SDK、前端或对外错误码的）。基线 `/docs/baseline/` 一个字不改，这些变更以本表为准并在**下版契约文档**（OpenAPI + `sdk-contract.md` + 页面规格口径）一次性落盘；落盘时机 = 全部 M1 判据回填后、M1 编码前。**本表状态：CH-1~CH-5 = 已追认（经 hugo 追认，2026-11-02，记录法见 P8）；CH-6 = 内部口径、无需追认；CH-7 = 已裁定；CH-8 = 待追认（2026-11-04）。** 后续新增变更一律按 **P8②** 追加行（编号只增不重排）；作废条目改「已撤回」并保留原行。
 
 | # | 变更点 | 依据（本文条） | 影响面 | 状态 |
 |---|---|---|---|---|
@@ -284,8 +332,9 @@
 | **CH-5** | SDK 契约：配置以 **29 项**为交付集（"32 项"作废、缺号 #7/#16/#17 不补 key）、**删除 `guanjin.mode`**（无 direct 形态）。**注：`jwks-uri` 的默认值已移出本条**——它与 `replay-store`/`agent.pull.enabled` 同属**纠错性默认值**、按 **D6(5)** 处理，不单列追认 | D6 (1)(2)(5) | SDK 三语言配置类与示例 / `sdk-contract.md` / 判据 **`AC-SDK-01`、`AC-SDK-07`、`AC-FC-05`**（`AC-SDK-02` 已按 D6(4) 纯加固裁定移出 CH-5） | **已追认**（2026-11-02） |
 | **CH-6** | 端点计数口径：**具名端点 65**（"66" 是 65 + 1 条数据面通配边界）、Agent 面 2 条 | D3-C | 无外部影响（内部计数与文档口径） | 内部口径，**无需追认** |
 | **CH-7** | **约束冲突 → 对外错误码映射表（8 处）**：`flows_one_active_per_user_client_uniq`→`COOLDOWN_ACTIVE`(E4/409)、`clients_pkey`→`INVALID_CLIENT`(E1/400)、`signing_keys_kid_uniq` 与两条 `login_policies_*_uidx`→`INVALID_PARAMETER`(E1/400)、`role_bindings_uniq`→`BINDING_ALREADY_EXISTS`(E7/409)、`policy_snapshots_uniq`→`POLICY_SNAPSHOT_CONFLICT`(E4/409)、`identifiers_one_primary_per_user` 与 `user_visited_clients_uniq` **不映射**。**只用 §5.4 既有码、不新增码名**；新增的是「哪个约束对应哪个码」这一层口径 | D4-D₂、D3-B、D5 | `internal/store/pgxerr.go`（八行逐条）/ Core 的 flow 先查后建 / 判据 `AC-ENG-04`、`AC-FLOW-11`、`AC-REG-03` | **已裁定（2026-11-02，随契约文档落盘）** |
+| **CH-8** | `POST /auth/register/start` **响应新增 `attempts_left`**：§3.3.1 原响应要点是 `{register_token, challenge_id?, next_action, target_masked?, expires_at}`，**无此键**。值为该注册挑战的 `max_attempts`（来自 `runtime_config.challenge.max_attempts`，300s / 5 由 `000018` 落库）。**纯加字段、不删既有键、向后兼容**，老客户端忽略即可 | D14①④ | Vue 注册页（展示"还能试几次"）/ SDK 三语言注册响应模型 / 判据 `AC-REG-01`（**可选用**该字段，断言仍以 DB `challenges` 行为准） | **待追认（2026-11-04，Ark 提）**：追认前**不得作为判据依据**，也不得据此把 `AC-REG-01` 记 PASS |
 
-**合计 7 条：CH-1~CH-5 已全部追认（经 hugo 追认，2026-11-02；记录法与判据侧影响见 P8），CH-6 为内部口径、**CH-7** 为约束→码映射口径（2026-11-02 裁定）。** 追认前的假设性回退方案（**现已不适用，仅留档**）：CH-1 若被否，回退方案是「`challenges` 加 `flow_id` 列 + 反查」（需 ADR，且会引入双向耦合，D5 已论证不推荐）；CH-2/CH-4/CH-5 若被否，按基线原文实现并同步回改本文与 Gate 判据（不留在两套口径）。**纠错/加固性边界的完整口径（Gate v5 回读 2026-11-02 补，解决 G11）**：①「把错标默认值改回与已生效决定一致」= **纠错**，走 D6(3)/(5)，不进本清单（`jwks-uri` 路径、`replay-store=redis`、`agent.pull.enabled=false`）；②「把基线**已经禁止**的取值在非 `local|test` 下变成启动失败」= **加固**，走 D6(4)，同样不进本清单（`guanjin.enabled` / `guanjin.authz.enabled` 的 profile 门控即属此类——SDK 契约 §3.2「验签不可关」+ 移交 §九「不存在生产可跳过验签的开关」本已禁止，D6(4) 只是让禁令**可执行**，没有新增契约面，故 **`AC-SDK-02` 不进 CH、应为 `PASS-able`**）；③**只有**「新增 key / 改 key 名 / 改数量 / 改必填性 / 改变某 key 在 `local|test` 之外的可选值域（即新增一种合法取值）」才必须进本清单待追认。判据：**这条改动是否让业务方能用基线原本不允许的方式配置 SDK？** 能 → 进 CH；不能（只是让基线已禁止的用法启动失败）→ 加固，不进。
+**合计 8 条：CH-1~CH-5 已全部追认（经 hugo 追认，2026-11-02；记录法与判据侧影响见 P8），CH-6 为内部口径、**CH-7** 为约束→码映射口径（2026-11-02 裁定）、**CH-8 待追认（2026-11-04，`§3.3.1` 响应新增 `attempts_left`）。** 追认前的假设性回退方案（**现已不适用，仅留档**）：CH-1 若被否，回退方案是「`challenges` 加 `flow_id` 列 + 反查」（需 ADR，且会引入双向耦合，D5 已论证不推荐）；CH-2/CH-4/CH-5 若被否，按基线原文实现并同步回改本文与 Gate 判据（不留在两套口径）。**纠错/加固性边界的完整口径（Gate v5 回读 2026-11-02 补，解决 G11）**：①「把错标默认值改回与已生效决定一致」= **纠错**，走 D6(3)/(5)，不进本清单（`jwks-uri` 路径、`replay-store=redis`、`agent.pull.enabled=false`）；②「把基线**已经禁止**的取值在非 `local|test` 下变成启动失败」= **加固**，走 D6(4)，同样不进本清单（`guanjin.enabled` / `guanjin.authz.enabled` 的 profile 门控即属此类——SDK 契约 §3.2「验签不可关」+ 移交 §九「不存在生产可跳过验签的开关」本已禁止，D6(4) 只是让禁令**可执行**，没有新增契约面，故 **`AC-SDK-02` 不进 CH、应为 `PASS-able`**）；③**只有**「新增 key / 改 key 名 / 改数量 / 改必填性 / 改变某 key 在 `local|test` 之外的可选值域（即新增一种合法取值）」才必须进本清单待追认。判据：**这条改动是否让业务方能用基线原本不允许的方式配置 SDK？** 能 → 进 CH；不能（只是让基线已禁止的用法启动失败）→ 加固，不进。
 
 ---
 
@@ -362,6 +411,9 @@
 | `D8-E⑦` | D8-E 的 ⑦ | 密评等级只标「待澄清/待追认」、按预检清单落、**不进契约强制项**、不阻塞任何一件 |
 | `D9 补口 ①②③` | D9 的「补口」 | `SDK契约` §8 真悬空（`since_version`/缓存失效/降级）；`页面规格 §4.1` 误判已否决；《错误码体系》不存在 |
 | `D12` | §**D12** | `acr` 取值域：对外只 `AAL1|AAL2`，**`AAL3` 预留、本期任何路径不得产出** |
+| `D13` | §**D13** | `login_policies` 三档 `tier_default` 必须有 seed（`000017`）+ 启动期恰一行 fail-fast |
+| `D14①②③④⑤` | §**D14** | 挑战 TTL/次数只从 `runtime_config` 读（`000018`）、`register_token` = HMAC-SM3 签名串、邀请码非空一律 400、`attempts_left` 两处口径、跨模块代落登记表 |
+| `CH-8` | 契约变更清单 | `§3.3.1` 响应新增 `attempts_left`（纯加字段，**待追认**；追认前不作判据依据） |
 | `D6(1)(6)` + `F0-5` | D6 裁定 (1)/(6) + F0 第 5 条 | SDK 配置 **29 键**（缺号 #7/#16/#17 不补）+ 环境变量逐段机械转换 |
 | `P6` / `P7` / `P8` | §0 已生效前提 | 分支必须短命 / `docs/` 必须入库 / 契约变更清单已追认 + 记录法 |
 | `R10` / `R11` | 残余待裁表末尾 | 引导流程（首个管理员+首把密钥+首个 client）/ 数据面逐条转发规则与容量（**只登记不实现**） |
