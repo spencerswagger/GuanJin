@@ -26,8 +26,8 @@ func TestLoadOK(t *testing.T) {
 	if c.HTTPAddr != ":8080" {
 		t.Errorf("default addr = %q, want :8080", c.HTTPAddr)
 	}
-	if len(c.MasterKey) != 32 {
-		t.Errorf("master key len = %d, want 32", len(c.MasterKey))
+	if c.MasterKey == nil || c.MasterKey.Len() != 32 {
+		t.Fatalf("master key must be a validated crypto object of 32 bytes, got %+v", c.MasterKey)
 	}
 	if c.TraceHeader != "X-Trace-Id" {
 		t.Errorf("trace header = %q", c.TraceHeader)
