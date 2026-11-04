@@ -49,6 +49,11 @@ const (
 	// CodeTemporalCodeReused 是"同一个动态口令被用第二次"（窗口内重放），与"码错"分开：
 	// 前者是重放攻击信号（§5.4 E2 的 TEMPORAL_CODE_REUSED），后者是输错。
 	CodeTemporalCodeReused Code = "TEMPORAL_CODE_REUSED" // E2 / 401
+	// CodeAccountLocked 是"账号因连续失败被锁定"（§5.4 E2 的 ACCOUNT_LOCKED）。
+	//
+	// 与 `ATTEMPTS_EXCEEDED` 是两个对象：后者是**单次挑战**的尝试次数用尽（`challenges.attempts`），
+	// 前者是**账号级**失败计数的结果（Redis `login:lock:{user_id}`，D3-D）。
+	CodeAccountLocked Code = "ACCOUNT_LOCKED" // E2 / 401
 
 	// 授权与档位（E3）
 	CodeInsufficientRole    Code = "INSUFFICIENT_ROLE"     // E3 / 403
@@ -88,6 +93,11 @@ const (
 	CodeIdentifierInvalidFormat Code = "IDENTIFIER_INVALID_FORMAT" // E4 / 400
 	// CodeRegistrationNotAllowed 表示目标业务系统未开放自助注册（D3-B″ 补登记：E4/403）。
 	CodeRegistrationNotAllowed Code = "REGISTRATION_NOT_ALLOWED" // E4 / 403
+	// CodeInviteCodeInvalid 表示邀请码无效/已使用/过期（D3-B″ 补登记：E1/400）。
+	//
+	// M1 没有邀请码存储（`clients`/`login_policies` 无该字段、库里也无 invite 表），
+	// 因此**任何非空邀请码都是无效的**——显式拒绝，不静默忽略（AC-REG-08）。
+	CodeInviteCodeInvalid Code = "INVITE_CODE_INVALID" // E1 / 400
 	// 因子不可用（E4 / 422）：三种原因必须分开，否则前端不知道该"换因子"还是"找管理员"。
 	CodeFactorDisabled     Code = "FACTOR_DISABLED"      // 该业务系统禁用了这个因子
 	CodeFactorNotSupported Code = "FACTOR_NOT_SUPPORTED" // 平台没装配这个因子
@@ -111,13 +121,13 @@ var knownCodes = []Code{
 	CodeInvalidRequest, CodeInvalidParam, CodeMissingParameter, CodeInvalidClient,
 	CodeFlowNotFound, CodeFlowExpired, CodePageSizeExceeded,
 	CodeTokenInvalid, CodeTokenExpired, CodeTokenRevoked, CodeSessionRevoked,
-	CodeInvalidCredential, CodeTemporalCodeReused,
+	CodeInvalidCredential, CodeTemporalCodeReused, CodeAccountLocked,
 	CodeInsufficientRole, CodeThreePowerViolation, CodeACRInsufficient, CodeSessionNotFound,
 	CodeIdentifierAlreadyBound, CodeIdentifierNotFound, CodeUserNotFound, CodeClientNotFound,
 	CodeKeyNotFound, CodeSnapshotNotFound, CodePolicySnapshotConflict, CodeCooldownActive,
 	CodePasswordPolicyViolation, CodeWeakPassword, CodePasswordReused,
 	CodeLastIdentifierCannotUnbind, CodeLastAuthenticatorCannotRemove, CodeIdentifierNotVerified,
-	CodeIdentifierInvalidFormat, CodeRegistrationNotAllowed,
+	CodeIdentifierInvalidFormat, CodeRegistrationNotAllowed, CodeInviteCodeInvalid,
 	CodeChallengeExpired, CodeChallengeConsumed, CodeChallengeInvalid, CodeAttemptsExceeded,
 	CodeFactorDisabled, CodeFactorNotSupported, CodeNoEligibleFactor,
 	CodeBindingAlreadyExists, CodeBindingNotFound, CodeTierDirectionViolation,
@@ -152,13 +162,13 @@ type ErrorResponse struct {
 func HTTPStatus(c Code) int {
 	switch c {
 	case CodeInvalidRequest, CodeInvalidParam, CodeMissingParameter, CodeInvalidClient,
-		CodeFlowExpired, CodePageSizeExceeded, CodeIdentifierInvalidFormat:
+		CodeFlowExpired, CodePageSizeExceeded, CodeIdentifierInvalidFormat, CodeInviteCodeInvalid:
 		return http.StatusBadRequest
 	case CodeFlowNotFound, CodeSessionNotFound, CodeIdentifierNotFound, CodeUserNotFound,
 		CodeClientNotFound, CodeKeyNotFound, CodeSnapshotNotFound, CodeBindingNotFound:
 		return http.StatusNotFound
 	case CodeTokenInvalid, CodeTokenExpired, CodeTokenRevoked,
-		CodeInvalidCredential, CodeTemporalCodeReused,
+		CodeInvalidCredential, CodeTemporalCodeReused, CodeAccountLocked,
 		CodeChallengeExpired, CodeChallengeConsumed, CodeChallengeInvalid, CodeAttemptsExceeded:
 		return http.StatusUnauthorized
 	case CodeSessionRevoked, CodeInsufficientRole, CodeThreePowerViolation, CodeACRInsufficient:

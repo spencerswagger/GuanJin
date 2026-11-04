@@ -177,6 +177,10 @@ func CodeOf(err error) (httpx.Code, bool) {
 		return httpx.CodeInvalidParam, true
 	// 因子层（`internal/credential`）的哨兵：不翻会落到 default 变 500，
 	// 而 AC-LOGIN-02 要求"凭据不对"必须是 **401 `INVALID_CREDENTIAL`** 且带可复制 trace_id。
+	case errors.Is(err, ErrAccountLocked):
+		return httpx.CodeAccountLocked, true
+	case errors.Is(err, ErrRiskUnavailable):
+		return httpx.CodeRedisUnavailable, true
 	case errors.Is(err, credential.ErrInvalidCredential):
 		return httpx.CodeInvalidCredential, true
 	case errors.Is(err, credential.ErrTemporalCodeReused):

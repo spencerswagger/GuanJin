@@ -155,7 +155,13 @@ func (f *fixture) orchestrator(t *testing.T) (*flow.Orchestrator, *int32) {
 		ClientOf: func(_ context.Context, clientID string) (flow.Client, error) {
 			return flow.Client{ID: clientID, Name: "S5 test client"}, nil
 		},
-		Now: time.Now,
+		// 风控在真库用例里用"永不锁定、阈值 5"的桩：本文件验的是编排与落库，
+		// 计数语义由 `internal/risk` 与 `risk_flow_test.go` 负责（真 Redis 用例在 cmd 的 e2e）。
+		Lockout: func(context.Context, string) (flow.LockoutPolicy, error) {
+			return flow.LockoutPolicy{FailThreshold: 5, LockDuration: 15 * time.Minute}, nil
+		},
+		Guard: permGuard{},
+		Now:   time.Now,
 	})
 	if err != nil {
 		t.Fatalf("flow.New: %v", err)
@@ -427,3 +433,16 @@ func TestChallengeLifecycleInDB(t *testing.T) {
 		t.Fatalf("重复消费必须抢不到（affected=0）：affected=%d err=%v", affected, err)
 	}
 }
+
+// permGuard 是"永不锁定"的风控桩（真库用例只需要编排与落库的证据）。
+type permGuard struct{}
+
+func (permGuard) Status(context.Context, string, flow.LockoutPolicy) (int, bool, error) {
+	return 5, false, nil
+}
+
+func (permGuard) RecordFailure(context.Context, string, flow.LockoutPolicy) (int, bool, error) {
+	return 4, false, nil
+}
+
+func (permGuard) Reset(context.Context, string) error { return nil }

@@ -39,6 +39,14 @@ var (
 	ErrNilDependency = errors.New("flow: nil dependency")
 	// ErrWeakClock 表示没给时钟（时间窗与"哪一步先达成"的判定必须同一个钟）。
 	ErrWeakClock = errors.New("flow: clock is required")
+	// ErrAccountLocked 对应 `ACCOUNT_LOCKED`（E2/401）：账号级失败计数达阈值（D3-D）。
+	//
+	// 与 `ATTEMPTS_EXCEEDED` 是两个对象：后者是**单次挑战**的次数用尽（`challenges.attempts`）。
+	ErrAccountLocked = errors.New("flow: account locked")
+	// ErrRiskUnavailable 表示失败计数/锁定判定不可用（Redis 挂了）→ `REDIS_UNAVAILABLE`（E6/503）。
+	//
+	// **不允许**降级成"跳过计数继续验"：那等于把爆破保护关掉还告诉用户一切正常。
+	ErrRiskUnavailable = errors.New("flow: risk counter unavailable")
 )
 
 // ACRInsufficientError 是"档位不足，请补步"的载体（**不是失败**，是引导）。
@@ -138,6 +146,13 @@ type Deps struct {
 	Factors []FactorInfo
 	// DisabledFactors 读某业务系统的禁用因子（`login_policies.disabled_factors`）。
 	DisabledFactors func(ctx context.Context, clientID string) ([]factor.FactorType, error)
+	// Lockout 读该业务系统的失败处理参数（`login_policies.fail_threshold` / `lock_duration_min`）。
+	//
+	// 阈值与锁定时长**只能来自策略**：代码里不留 5 / 15 这类数字（AC-LOGIN-03 的"改键值必须跟着变"）。
+	Lockout func(ctx context.Context, clientID string) (LockoutPolicy, error)
+	// Guard 是账号级失败计数与锁定（Redis 权威，D3-D）。**必填**：
+	// 缺了就等于没有爆破保护，装配期就该失败，而不是"悄悄少做一件事"。
+	Guard AccountGuard
 	// TierOf 读业务系统的档位（用于 target_acr 映射）。
 	TierOf func(ctx context.Context, clientID string) (string, error)
 	// ClientOf 读业务系统摘要（Descriptor 里展示用，可返回空 Client）。
@@ -158,6 +173,9 @@ func New(deps Deps) (*Orchestrator, error) {
 		return nil, fmt.Errorf("%w: reader/starter/advancer/consumer are required", ErrNilDependency)
 	case deps.DisabledFactors == nil, deps.TierOf == nil:
 		return nil, fmt.Errorf("%w: disabled-factors and tier readers are required", ErrNilDependency)
+	case deps.Guard == nil, deps.Lockout == nil:
+		// 风控是认证链的一部分（AC-LOGIN-03）：没装配就没有爆破保护，必须启动期失败。
+		return nil, fmt.Errorf("%w: risk guard and lockout policy are required", ErrNilDependency)
 	case deps.Now == nil:
 		return nil, ErrWeakClock
 	}
@@ -274,9 +292,10 @@ type VerifyResult struct {
 //  1. 读流 + 算 Descriptor（拿到 achieved_amr 与禁用集）；
 //  2. **已完成？** → `STEP_ALREADY_SATISFIED`（D3-F：不产生新 challenge、amr 不重复）；
 //  3. **被禁用？** → `FACTOR_DISABLED`；**没装配？** → `FACTOR_NOT_SUPPORTED`；
-//  4. 调 `VerifyResponse`（**锁外重活**）；
-//  5. 成功 → `Advance`（短事务里锁行、并集、写回）；
-//  6. 重算 Descriptor：达标 → `Satisfied`；未达标 → `ACRInsufficientError`（带 Descriptor）。
+//  4. 账号级锁定判定 → 已锁回 `ACCOUNT_LOCKED`（D3-D）；
+//  5. 调 `VerifyResponse`（**锁外重活**）；失败且是凭据错误 → 记一次账号级失败；
+//  6. 成功 → 清零计数 → `Advance`（短事务里锁行、并集、写回）；
+//  7. 重算 Descriptor：达标 → `Satisfied`；未达标 → `ACRInsufficientError`（带 Descriptor）。
 func (o *Orchestrator) VerifyStep(ctx context.Context, in VerifyInput) (*VerifyResult, error) {
 	if in.FlowID == uuid.Nil {
 		return nil, ErrFlowNotFound
@@ -329,17 +348,50 @@ func (o *Orchestrator) VerifyStep(ctx context.Context, in VerifyInput) (*VerifyR
 		return nil, ErrFactorNotSupported
 	}
 
-	// ③ 锁外校验（PBKDF2/TOTP 解封都在这里）。
-	if _, err := verifier.VerifyResponse(ctx, factor.VerifyRequest{
-		ChallengeID: in.ChallengeID,
-		FlowID:      in.FlowID.String(),
-		UserID:      in.UserID,
-		Response:    in.Response,
-	}); err != nil {
+	// ③ 账号级锁定（Redis 权威，D3-D）：已锁定就不必再算一次 PBKDF2（那正是爆破的成本）。
+	userID := in.UserID
+	policy, err := o.deps.Lockout(ctx, f.ClientID)
+	if err != nil {
 		return nil, err
 	}
+	if userID != "" {
+		if _, locked, lerr := o.deps.Guard.Status(ctx, userID, policy); lerr != nil {
+			return nil, lerr
+		} else if locked {
+			return nil, ErrAccountLocked
+		}
+	}
 
-	// ④ 短事务推进（锁内只做读该行 + 校验 + 并集 + 写回）。
+	// ④ 锁外校验（PBKDF2/TOTP 解封都在这里）。
+	if _, verr := verifier.VerifyResponse(ctx, factor.VerifyRequest{
+		ChallengeID: in.ChallengeID,
+		FlowID:      in.FlowID.String(),
+		UserID:      userID,
+		Response:    in.Response,
+	}); verr != nil {
+		// 只有"凭据不对"才计入账号级失败数；业务性拒绝（如"该步已完成"）已在上面前置返回，
+		// 走到这里仍可能是别的哨兵 → 用 credential 的错误判定，不按"任何错误都计数"。
+		if userID != "" && isCredentialFailure(verr) {
+			_, locked, rerr := o.deps.Guard.RecordFailure(ctx, userID, policy)
+			if rerr != nil {
+				return nil, rerr
+			}
+			if locked {
+				// 达阈值的那一次就回 ACCOUNT_LOCKED（AC-LOGIN-03），而不是再抛 INVALID_CREDENTIAL。
+				return nil, ErrAccountLocked
+			}
+		}
+		return nil, verr
+	}
+
+	// ⑤ 成功即全局清零（接口 §3.2.2：成功时清零）。
+	if userID != "" {
+		if err := o.deps.Guard.Reset(ctx, userID); err != nil {
+			return nil, err
+		}
+	}
+
+	// ⑥ 短事务推进（锁内只做读该行 + 校验 + 并集 + 写回）。
 	// 用返回值直接算下一步 Descriptor：再查一次会多一次往返，也多一个"读到别人改过"的窗口。
 	updated, err := o.deps.Advancer.Advance(ctx, AdvanceInput{
 		FlowID:      in.FlowID,
@@ -352,7 +404,7 @@ func (o *Orchestrator) VerifyStep(ctx context.Context, in VerifyInput) (*VerifyR
 		return nil, err
 	}
 
-	// ⑤ 用**推进后的**流重算 Descriptor（Advance 已返回写回后的行，不再回查）。
+	// ⑦ 用**推进后的**流重算 Descriptor（Advance 已返回写回后的行，不再回查）。
 	d, err := o.descriptorOf(ctx, updated, client)
 	if err != nil {
 		return nil, err
