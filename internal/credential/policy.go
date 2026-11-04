@@ -14,11 +14,14 @@ import (
 // 为什么把它做成显式结构而不是"从 DB 里现取"：策略判定必须是**纯函数**，
 // 才能被 AC-REG-10 那样的"三码同时命中"用例稳定复现；DB 读取在调用方（S4b）。
 type Policy struct {
-	// MinLength 最小长度（`password_min_length`，DB CHECK 8..128）。
+	// MinLength 最小长度，单位**字符**（`password_min_length`；DB CHECK 用 `char_length`，8..128）。
 	MinLength int
-	// MaxLength 最大长度；0 表示"只受 MaxPasswordBytes 硬上限约束"。
+	// MaxLength 最大长度，单位**字节**；0 表示"只受 MaxPasswordBytes 硬上限约束"。
+	//
+	// 两个上限单位不同是刻意的：下限跟 DB 的 `char_length` 对齐（中文口令按字符算才合理），
+	// 上限是 PBKDF2 的 CPU 护栏（按字节算才挡得住"一个字符 4 字节 × 128 字符"）。
 	MaxLength int
-	// CharClasses 要求覆盖的字符类数量（`password_char_classes`，2..4）：
+	// CharClasses 要求覆盖的字符类数量（`password_char_classes`，DB CHECK 2..4）：
 	// 小写 / 大写 / 数字 / 符号。
 	CharClasses int
 	// HistoryCount 历史口令不可复用的条数（`password_history_count`，0 = 不查历史）。
