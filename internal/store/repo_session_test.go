@@ -105,3 +105,28 @@ func TestLoadTokenPolicySQLShape(t *testing.T) {
 }
 
 func errIsDryRun(err error) bool { return err != nil && err == gorm.ErrDryRunModeUnsupported }
+
+// `RedirectURIs`：空 client_id 拒绝；DryRun 下只验语句形态（逐字比对在授权端点用例里证）。
+func TestRedirectURIsGuards(t *testing.T) {
+	if _, err := NewClientPolicyRepo(nil).RedirectURIs(context.Background(), " "); err == nil {
+		t.Fatal("空 client_id 必须报错")
+	}
+	db, capture := dryRunDB(t)
+	if _, err := NewClientPolicyRepo(db).RedirectURIs(context.Background(), "c-1"); err != nil && !errIsDryRun(err) {
+		t.Fatalf("DryRun 下不该报其它错：%v", err)
+	}
+	if sql := capture.last(t); !strings.Contains(sql, "redirect_uris") {
+		t.Fatalf("应查 redirect_uris，实际 %q", sql)
+	}
+}
+
+// `parseRedirectList`：纯函数，覆盖空串/单值/多值/空白。
+func TestParseRedirectList(t *testing.T) {
+	if got := parseRedirectList("  "); got != nil {
+		t.Fatalf("空串应回 nil，实际 %v", got)
+	}
+	got := parseRedirectList("https://a/cb\n https://b/cb \n\n")
+	if len(got) != 2 || got[0] != "https://a/cb" || got[1] != "https://b/cb" {
+		t.Fatalf("拆分不符：%v", got)
+	}
+}

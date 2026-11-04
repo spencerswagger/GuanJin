@@ -78,7 +78,7 @@ func startup(ctx context.Context, getenv func(string) string, logger *slog.Logge
 	}
 
 	// 协议面（S6）：密钥解封与用途校验都在这里 fail-fast（坏密钥不允许对外服务）。
-	protoSrv, err := newProtocolHandler(ctx, db, cfg, logger)
+	protoSrv, err := newProtocolHandler(ctx, db, cfg, startupCfg, logger)
 	if err != nil {
 		_ = store.Close(db)
 		return nil, err

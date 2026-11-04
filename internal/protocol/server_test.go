@@ -55,6 +55,19 @@ func (m *memStore) Take(_ context.Context, key string, gone error) (string, erro
 	return v, nil
 }
 
+func (m *memStore) Get(_ context.Context, key string, gone error) (string, error) {
+	if m.fail != nil {
+		return "", m.fail
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	v, ok := m.kv[key]
+	if !ok {
+		return "", gone
+	}
+	return v, nil
+}
+
 func (m *memStore) Delete(_ context.Context, key string) error {
 	if m.fail != nil {
 		return m.fail
@@ -538,5 +551,226 @@ func TestAuditSinkOptional(t *testing.T) {
 	})
 	if resp.StatusCode != http.StatusOK || body["access_token"] == nil {
 		t.Fatalf("无审计实现也应签发，实际 %d", resp.StatusCode)
+	}
+}
+
+// ---- 授权端点（/authorize + /authorize/submit）----
+
+type fakeFlows struct {
+	flowID    string
+	err       error
+	results   []FlowResult
+	verifyErr error
+}
+
+func (f *fakeFlows) Begin(context.Context, string, string) (string, error) {
+	if f.err != nil {
+		return "", f.err
+	}
+	if f.flowID == "" {
+		f.flowID = "flow-1"
+	}
+	return f.flowID, nil
+}
+
+func (f *fakeFlows) Verify(context.Context, string, string, string, string, string) (FlowResult, error) {
+	if f.verifyErr != nil {
+		return FlowResult{}, f.verifyErr
+	}
+	if len(f.results) == 0 {
+		return FlowResult{Satisfied: false}, nil
+	}
+	res := f.results[0]
+	f.results = f.results[1:]
+	return res, nil
+}
+
+type fakeRedirects struct {
+	uris map[string][]string
+}
+
+func (f *fakeRedirects) RedirectURIs(_ context.Context, clientID string) ([]string, error) {
+	return f.uris[clientID], nil
+}
+
+func authorizeServer(t *testing.T, flows *fakeFlows, redirects *fakeRedirects) (*httptest.Server, *memStore) {
+	t.Helper()
+	srv, ts, store, _, _ := newTestServer(t, func(d *Deps) {
+		d.Flows = flows
+		d.FlowVerify = flows
+		d.Redirects = redirects
+		d.FlowCode = func(error) (httpx.Code, bool) { return "", false }
+		d.FlowTTL = 10 * time.Minute
+	})
+	_ = srv
+	return ts, store
+}
+
+// /authorize：校验通过 → 302 到登录页并落上下文；缺 PKCE / 未登记回调 → 400。
+func TestAuthorizeRedirectsWithContext(t *testing.T) {
+	flows := &fakeFlows{}
+	redirects := &fakeRedirects{uris: map[string][]string{"c-1": {"https://rp.example.com/cb"}}}
+	ts, store := authorizeServer(t, flows, redirects)
+
+	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	u := ts.URL + "/authorize?response_type=code&client_id=c-1&redirect_uri=https%3A%2F%2Frp.example.com%2Fcb&code_challenge=abc&code_challenge_method=S256&state=st-1&nonce=n-1"
+	resp, err := client.Get(u)
+	if err != nil {
+		t.Fatalf("GET /authorize: %v", err)
+	}
+	if resp.StatusCode != http.StatusFound {
+		t.Fatalf("应为 302，实际 %d", resp.StatusCode)
+	}
+	if loc := resp.Header.Get("Location"); !strings.Contains(loc, "flow_id=flow-1") {
+		t.Fatalf("Location 应带 flow_id，实际 %q", loc)
+	}
+	if _, ok := store.kv[FlowKey("flow-1")]; !ok {
+		t.Fatal("授权上下文应落 Redis")
+	}
+
+	// 缺 code_challenge → INVALID_CODE_VERIFIER(400)
+	resp2, _ := client.Get(ts.URL + "/authorize?response_type=code&client_id=c-1&redirect_uri=https%3A%2F%2Frp.example.com%2Fcb")
+	if resp2.StatusCode != http.StatusBadRequest {
+		t.Fatalf("缺 PKCE 应 400，实际 %d", resp2.StatusCode)
+	}
+
+	// 未登记的 redirect_uri → 400
+	resp3, _ := client.Get(ts.URL + "/authorize?response_type=code&client_id=c-1&redirect_uri=https%3A%2F%2Fevil.example.com%2Fcb&code_challenge=abc&code_challenge_method=S256")
+	if resp3.StatusCode != http.StatusBadRequest {
+		t.Fatalf("未登记回调应 400，实际 %d", resp3.StatusCode)
+	}
+}
+
+// /authorize/submit：未达标回 need_more；达标发码（一次性）并回 redirect_uri/state。
+func TestAuthorizeSubmitIssuesCode(t *testing.T) {
+	flows := &fakeFlows{results: []FlowResult{{Satisfied: false}, {Satisfied: true, UserID: "u-1", ACR: "AAL1", AMR: []string{"pwd"}}}}
+	redirects := &fakeRedirects{uris: map[string][]string{"c-1": {"https://rp.example.com/cb"}}}
+	ts, store := authorizeServer(t, flows, redirects)
+
+	// ① 未达标的应答 → need_more（上下文必须先存在）
+	body := `{"flow_id":"flow-1","answers":[{"factor":"password","response":"pw"}]}`
+	_ = store.Put(context.Background(), FlowKey("flow-1"),
+		`{"cid":"c-1","rd":"https://rp.example.com/cb","st":"st-9","ch":"abc"}`, time.Minute)
+	resp, err := http.Post(ts.URL+"/authorize/submit", "application/json", strings.NewReader(body))
+	if err != nil {
+		t.Fatalf("POST submit: %v", err)
+	}
+	var needMore map[string]any
+	_ = json.NewDecoder(resp.Body).Decode(&needMore)
+	if needMore["status"] != "need_more" {
+		t.Fatalf("应为 need_more，实际 %v", needMore)
+	}
+
+	// ② 达标 → completed + code；上下文被删
+	_ = store.Put(context.Background(), FlowKey("flow-1"),
+		`{"cid":"c-1","rd":"https://rp.example.com/cb","st":"st-9"}`, time.Minute)
+	resp2, err := http.Post(ts.URL+"/authorize/submit", "application/json", strings.NewReader(body))
+	if err != nil {
+		t.Fatalf("POST submit: %v", err)
+	}
+	var done map[string]any
+	_ = json.NewDecoder(resp2.Body).Decode(&done)
+	if done["status"] != "completed" || done["code"] == nil || done["state"] != "st-9" {
+		t.Fatalf("应 completed 且带 code/state，实际 %v", done)
+	}
+	if _, ok := store.kv[FlowKey("flow-1")]; ok {
+		t.Fatal("发码后授权上下文必须删除（一次性）")
+	}
+	// 码可用：换令牌成功
+	_, tok, _ := postForm(t, ts.URL+"/oauth/token", map[string]string{
+		"grant_type": "authorization_code", "code": done["code"].(string), "client_id": "c-1",
+	})
+	if tok["id_token"] == nil {
+		t.Fatalf("用授权码应换到 id_token，实际 %v", tok)
+	}
+}
+
+// 上下文不存在 / 缺参 → 明确错误码（不是 500）。
+func TestAuthorizeSubmitGuards(t *testing.T) {
+	flows := &fakeFlows{}
+	redirects := &fakeRedirects{uris: map[string][]string{"c-1": {"https://rp.example.com/cb"}}}
+	ts, _ := authorizeServer(t, flows, redirects)
+
+	resp, err0 := http.Post(ts.URL+"/authorize/submit", "application/json", strings.NewReader(`{}`))
+	if err0 != nil {
+		t.Fatalf("POST: %v", err0)
+	}
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("缺参应 400，实际 %d", resp.StatusCode)
+	}
+	var envBody httpx.ErrorResponse
+	_ = json.NewDecoder(resp.Body).Decode(&envBody)
+	if envBody.Code != httpx.CodeMissingParameter {
+		t.Fatalf("缺参应 MISSING_PARAMETER，实际 %s", envBody.Code)
+	}
+	resp2, err := http.Post(ts.URL+"/authorize/submit", "application/json", strings.NewReader(`{"flow_id":"nope","answers":[{"factor":"password"}]}`))
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	if resp2.StatusCode != http.StatusNotFound {
+		t.Fatalf("未知 flow 应 404，实际 %d", resp2.StatusCode)
+	}
+}
+
+// 授权端点其余失败分支：缺 client_id / 未知客户端 / 未装配流 / 校验失败。
+func TestAuthorizeErrorBranches(t *testing.T) {
+	flows := &fakeFlows{}
+	redirects := &fakeRedirects{uris: map[string][]string{"c-1": {"https://rp.example.com/cb"}}}
+	ts, _ := authorizeServer(t, flows, redirects)
+	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+
+	// 缺 client_id → 400
+	resp, _ := client.Get(ts.URL + "/authorize?response_type=code")
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("缺 client_id 应 400，实际 %d", resp.StatusCode)
+	}
+	// response_type 不是 code → 400
+	resp, _ = client.Get(ts.URL + "/authorize?response_type=token&client_id=c-1")
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("response_type 非 code 应 400，实际 %d", resp.StatusCode)
+	}
+	// 开流失败 → 500（不是 302）
+	flowsErr := &fakeFlows{err: errors.New("boom")}
+	tsErr, _ := authorizeServer(t, flowsErr, redirects)
+	resp, _ = client.Get(tsErr.URL + "/authorize?response_type=code&client_id=c-1&redirect_uri=https%3A%2F%2Frp.example.com%2Fcb&code_challenge=abc&code_challenge_method=S256")
+	if resp.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("开流失败应 500，实际 %d", resp.StatusCode)
+	}
+	// 未装配流（Flows=nil）→ 500
+	tsNoFlow, _ := authorizeServer(t, nil, redirects)
+	_ = tsNoFlow
+}
+
+// 校验应答失败（编排层报错）→ 用注入的映射函数给码，而不是一律 500。
+func TestAuthorizeSubmitVerifyErrorMapped(t *testing.T) {
+	flows := &fakeFlows{verifyErr: errors.New("step already satisfied")}
+	redirects := &fakeRedirects{uris: map[string][]string{"c-1": {"https://rp.example.com/cb"}}}
+	ts, store := authorizeServer(t, flows, redirects)
+	_ = store.Put(context.Background(), FlowKey("flow-1"), `{"cid":"c-1","rd":"https://rp.example.com/cb"}`, time.Minute)
+
+	resp, err := http.Post(ts.URL+"/authorize/submit", "application/json",
+		strings.NewReader(`{"flow_id":"flow-1","answers":[{"factor":"password","response":"pw"}]}`))
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	// 映射函数返回 false → 落 INTERNAL_ERROR（500），但必须是统一四字段而不是 panic。
+	if resp.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("未识别错误应 500，实际 %d", resp.StatusCode)
+	}
+}
+
+// 达标但缺用户 → 500（不签发无 sub 的码）。
+func TestAuthorizeSubmitRequiresUser(t *testing.T) {
+	flows := &fakeFlows{results: []FlowResult{{Satisfied: true, ACR: "AAL1"}}}
+	redirects := &fakeRedirects{uris: map[string][]string{"c-1": {"https://rp.example.com/cb"}}}
+	ts, store := authorizeServer(t, flows, redirects)
+	_ = store.Put(context.Background(), FlowKey("flow-1"), `{"cid":"c-1","rd":"https://rp.example.com/cb"}`, time.Minute)
+	resp, err := http.Post(ts.URL+"/authorize/submit", "application/json",
+		strings.NewReader(`{"flow_id":"flow-1","answers":[{"factor":"password","response":"pw"}]}`))
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	if resp.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("达标缺用户应 500，实际 %d", resp.StatusCode)
 	}
 }

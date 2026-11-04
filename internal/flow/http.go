@@ -49,6 +49,9 @@ func NewHTTPHandler(orch *Orchestrator, logger *slog.Logger) (*HTTPHandler, erro
 	return &HTTPHandler{orch: orch, logger: logger}, nil
 }
 
+// Orchestrator 暴露编排器本身（协议面要复用同一条编排链路，避免两套 Descriptor 口径）。
+func (h *HTTPHandler) Orchestrator() *Orchestrator { return h.orch }
+
 // Routes 把三个冻结路径挂到 mux 上（方法 + 通配由 `net/http` 的 pattern 表达）。
 func (h *HTTPHandler) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /auth/challenge/{factor}", h.challenge)

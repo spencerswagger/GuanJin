@@ -78,8 +78,17 @@ type Deps struct {
 	Audit    AuditSink
 	// Issuer 是 discovery 与令牌 `iss` 的基址（来自配置，不在代码里写死域名）。
 	Issuer string
-	Logger *slog.Logger
-	Now    func() time.Time
+	// Flows 是授权端点要用的编排入口（`/authorize` 开流、`/authorize/submit` 校验应答）。
+	Flows      FlowStarter
+	FlowVerify FlowVerifier
+	// Redirects 读客户端登记的回调地址（逐字比对）。
+	Redirects RedirectReader
+	// FlowCode 把编排层错误翻成对外码（装配层注入 `flow.CodeOf`，避免本包 import flow）。
+	FlowCode func(error) (httpx.Code, bool)
+	// FlowTTL 授权上下文的存活时间（装配层给，不在本包写常量）。
+	FlowTTL time.Duration
+	Logger  *slog.Logger
+	Now     func() time.Time
 }
 
 // Server 承载协议面端点（无本地状态，多副本一致）。
@@ -125,6 +134,8 @@ func (s *Server) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /oauth/introspect", s.introspect)
 	mux.HandleFunc("GET /userinfo", s.userinfo)
 	mux.HandleFunc("POST /userinfo", s.userinfo)
+	mux.HandleFunc("GET /authorize", s.authorize)
+	mux.HandleFunc("POST /authorize/submit", s.authorizeSubmit)
 }
 
 func (s *Server) discovery(w http.ResponseWriter, r *http.Request) {

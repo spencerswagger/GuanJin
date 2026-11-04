@@ -42,6 +42,8 @@ type CodeStore interface {
 	Put(ctx context.Context, key, value string, ttl time.Duration) error
 	// Take 原子取出并删除（GETDEL）。不存在 → `ErrCodeGone` / `ErrRefreshGone`（由调用方给哨兵）。
 	Take(ctx context.Context, key string, gone error) (string, error)
+	// Get 读一条但不删（授权上下文要被 submit 重读；一次性语义在 `Take`）。
+	Get(ctx context.Context, key string, gone error) (string, error)
 	// Delete 幂等删除（撤销/轮换后的清理）。
 	Delete(ctx context.Context, key string) error
 }
@@ -71,6 +73,18 @@ func (s *RedisStore) Put(ctx context.Context, key, value string, ttl time.Durati
 // Take 见 CodeStore（`GETDEL` 保证"两个并发请求只有一个能拿到"）。
 func (s *RedisStore) Take(ctx context.Context, key string, gone error) (string, error) {
 	val, err := s.rdb.GetDel(ctx, key).Result()
+	if errors.Is(err, redis.Nil) {
+		return "", gone
+	}
+	if err != nil {
+		return "", errors.Join(ErrStoreUnavailable, err)
+	}
+	return val, nil
+}
+
+// Get 见 CodeStore。
+func (s *RedisStore) Get(ctx context.Context, key string, gone error) (string, error) {
+	val, err := s.rdb.Get(ctx, key).Result()
 	if errors.Is(err, redis.Nil) {
 		return "", gone
 	}

@@ -307,3 +307,41 @@ func (r *ClientPolicyRepo) LoadTokenPolicy(ctx context.Context, clientID string)
 	}
 	return chosen, nil
 }
+
+// RedirectURIs 读某业务系统的登记回调地址（`clients.redirect_uris`）。
+//
+// 授权端点必须**逐字比对**登记值（RFC 6749 §3.1.2.3 不允许前缀/通配匹配）：
+// 宽松匹配等于把授权码送给任意站点。
+func (r *ClientPolicyRepo) RedirectURIs(ctx context.Context, clientID string) ([]string, error) {
+	if strings.TrimSpace(clientID) == "" {
+		return nil, errors.New("store: empty client id")
+	}
+	var raw string
+	res := r.db.WithContext(ctx).Raw(
+		`SELECT array_to_string(redirect_uris, '\n') FROM clients WHERE client_id = ?`, clientID).Scan(&raw)
+	if res.Error != nil {
+		return nil, MapError(res.Error)
+	}
+	if res.RowsAffected == 0 {
+		return nil, ErrClientNotFound
+	}
+	return parseRedirectList(raw), nil
+}
+
+// parseRedirectList 把 `array_to_string(redirect_uris, '\n')` 的结果还原成切片。
+//
+// 单独提成纯函数：`text[]` 不能直接扫进 `*[]string`（驱动会把整个数组当一个字符串），
+// 而"怎么拆"是这里唯一容易写错的一步——它不需要数据库就能被测到。
+func parseRedirectList(raw string) []string {
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+	parts := strings.Split(raw, "\n")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}

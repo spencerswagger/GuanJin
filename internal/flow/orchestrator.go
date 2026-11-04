@@ -421,7 +421,24 @@ func (o *Orchestrator) VerifyStep(ctx context.Context, in VerifyInput) (*VerifyR
 	return &VerifyResult{Flow: d, Satisfied: true}, nil
 }
 
-// Finish 在达标之后消费流（一次性，I-F4）。
+// UserOfFlow 返回流绑定的用户（匿名流返回空串）。
+//
+// 授权端点发码时需要 `sub`；用户只从**流**上取（不信请求体），与 `VerifyStep` 同口径。
+func (o *Orchestrator) UserOfFlow(ctx context.Context, flowID uuid.UUID) (string, error) {
+	if flowID == uuid.Nil {
+		return "", ErrFlowNotFound
+	}
+	f, err := o.deps.Reader.Get(ctx, flowID)
+	if err != nil {
+		return "", err
+	}
+	if f.UserID == nil {
+		return "", nil
+	}
+	return f.UserID.String(), nil
+}
+
+// Finish 在达标之后消费流（一次性，F4）。
 //
 // 单独一个方法而不是藏在 VerifyStep 里：消费的时机属于**业务决定**
 // （"发码前消费"还是"令牌换到手再消费"），编排层不替它做主。
