@@ -384,3 +384,28 @@ func TestTOTPOpenShortSecret(t *testing.T) {
 		t.Fatalf("解出短密钥应报 ErrInvalidSecret，实际 %v", err)
 	}
 }
+
+// D15④ 第三行：**存量 v1 信封**与"密文被改"必须能在日志层面区分。
+//
+// 两者对外都是 500，但运维动作完全不同：v1 → 重灌/一次性重加密；被改 → 安全事件。
+// 所以底层 `crypto` 的哨兵必须留在错误链里（靠双 `%w`），不能只进文本。
+func TestTOTPEnvelopeKeepsCryptoVersionSentinel(t *testing.T) {
+	env, _, err := NewTOTPEnvelope(testSM4Key(t), nil, time.Now())
+	if err != nil {
+		t.Fatalf("NewTOTPEnvelope: %v", err)
+	}
+	// 造一段"v1 形态"（`iv||ct`，首字节不是 0x02）：等同"存量密文未重加密"。
+	sealedV1 := make([]byte, crypto.SM4BlockSize*2)
+	for i := range sealedV1 {
+		sealedV1[i] = byte(i + 1)
+	}
+	env.SecretEnc = base64.StdEncoding.EncodeToString(sealedV1)
+
+	_, err = env.Open(testSM4Key(t))
+	if !errors.Is(err, ErrIntegrityMismatch) {
+		t.Fatalf("v1 信封应报 ErrIntegrityMismatch，实际 %v", err)
+	}
+	if !errors.Is(err, crypto.ErrCiphertextVersion) {
+		t.Fatalf("错误链里必须保留底层哨兵（区分'存量未重加密'与'密文被改'），实际 %v", err)
+	}
+}
