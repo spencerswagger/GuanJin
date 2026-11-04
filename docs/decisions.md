@@ -287,7 +287,7 @@
   - **为什么不能用 `challenge_id`**：§3.3.2 的请求体只有 `{register_token, code?, password}`——**没有 `client_id`/`type`/`value`**，而建号必须知道"给哪个 client 注册哪个标识符"。`challenges` 行也**没有任何列**能承载"尚未存在的标识符值"（`identifier_id` 指向还没建的行、`target_masked` 是脱敏值、`response_hash` 是摘要）。
   - **为什么不能为空**：§3.3.2 鉴权行原文是「匿名 + `register_token`」；§3.3.1 允许缺的是 **`challenge_id`**，不是 `register_token`。skip 分支（`AC-REG-05`：仅用户名+密码免验证）照样签发令牌，只是其中 `chid` 为空。
   - **形态**：`v1.<payload_b64url>.<mac_b64url>`；`payload` = 紧凑 JSON `{"v":1,"cid":"<client_id>","typ":"email|phone|username","val":"<归一化标识符>","chid":"<challenge_id 或空>","exp":<unix 秒>}`；`mac` = `HMAC-SM3(K_register, "guanjin/register-token/v1\n" + payload_b64url)`，校验**常量时间**比较。`val` 必须走**与 `identifiers` 落库同一套归一化**（单一来源，不许另写一个）。
-  - **密钥**：新增用途域 **`guanjin/hmac/register`（32B）**，即 **D4-B 的冻结用途域 5 → 6**（`Purpose` 仍是封闭集合，只是集合本身 +1）。**不得复用 `hmac/identifier`**——"一密钥一用途"是密评口径，复用即自废。
+  - **密钥**：新增用途域 **`guanjin/hmac/register`（32B）**，即 **D4-B 的冻结用途域 5 → 6**（`Purpose` 仍是封闭集合，只是集合本身 +1；**后随 ADR-005 再扩到 8，见 D15③**）。**不得复用 `hmac/identifier`**——"一密钥一用途"是密评口径，复用即自废。
   - **绑定（安全要点，必测）**：令牌必须同时绑定 `client_id` + `type` + `value` +（有挑战时）`challenge_id`。缺任何一项都能构造"用自己手机的验证码把别人的号码标成 `verified=true`"（账号接管级缺陷）。
   - **`complete` 校验顺序**：①解析/验 MAC 失败 → `INVALID_PARAMETER`（E1/400）；②`exp` 已过（**以 DB 时间判定**，与 `challenges`/`flows` 同一个钟）→ `CHALLENGE_EXPIRED`（E2/401）；③有 `chid` → 该挑战必须存在、`purpose='register'`、`client_id` 与令牌一致、未消费（已消费 → `CHALLENGE_CONSUMED`）、未过期；④无 `chid` → **按令牌里的 `client_id` 重新校验准入与标识符唯一性**（TOCTOU 必须复查，不能只信 `start` 那次的结论）。
   - **一次性**：有 `chid` 的走 `challenges.consumed_at` 行级原子消费（与建号同一事务）；skip 分支没有挑战行，可重复提交，但由 `identifiers` 唯一性兜住（第二次必然 `IDENTIFIER_ALREADY_BOUND`），**不为此新增 Redis 键**（§5.9：Redis 不作挑战状态权威源）。
@@ -316,6 +316,29 @@
   > 后续同类"为别的模块代落一个窄读取"一律**追加到本表**（格式不变），不新开 D 条、不改 `docs/baseline/`。
 
 - **报备（不需裁定，随本条记录）**：`ACCOUNT_LOCKED` 在接口 §5.4 **E2 组**（→ HTTP **401**）有登记，`internal/httpx` 码表漏收 → Core 补登记并按 **E2/401** 映射；**不得**改挂 E5（那是 `ACCOUNT_TEMP_BLOCKED` 的 429 风控语义）。
+
+---
+
+## D15 SM4 信封 v2（enc-then-MAC）与"完整性失败"的对外码（批 ADR-005）
+
+> 触发：`crypto.EncryptSM4` 原格式 `iv(16) || SM4-CBC(PKCS7)` **只有加密、没有完整性**，`DecryptSM4` 唯一校验是 PKCS#7 填充。后果不是"少一层防护"，而是**故障被误分类**：错钥/篡改约 **0.36%**（本机 18/5000）padding 恰好合法 → 返回乱码明文 → 下游把"密钥不可用"报成"凭据不对"，并让 CI **随机刷红**（同一 commit 重跑即绿，两次命中不同包的不同用例）。
+
+- **① 格式 v2（唯一受支持）**：`0x02 | iv(16) | SM4-CBC(PKCS7(明文)) | HMAC-SM3(32)`，`mac = HMAC-SM3(K_mac, 0x02 || iv || ct)`——**版本号也进 MAC**。校验顺序固定：**先验 MAC（常量时间）再解密**，不返回半截明文。
+- **② v1 一律拒绝**（`ErrCiphertextVersion`）：**不设"没有 MAC 就按 CBC 解"的兼容读路径**——留兼容等于把完整性做成可选项（删掉 MAC 段就降级）。
+- **③ 用途域 6 → 8**（追补 D4-B 的冻结集合）：`guanjin/sm4/field` ↔ **`guanjin/hmac/field`**（32B）、`guanjin/sm4/keywrap` ↔ **`guanjin/hmac/keywrap`**（32B）。两把 MAC 键**各自直接由主密钥派生**（不是从 SM4 键再派生），**两个 MAC 域不合并**——"被包裹的私钥密文挪进 `value_enc` 必须验不过"，靠的正是两把 MAC 键互不通用。
+- **④ 完整性失败的对外码（Edge 问的那条，定死）**：
+
+  | 情况 | 内部哨兵 | 对外 | 为什么 |
+  |---|---|---|---|
+  | 该用途域的键**压根没装配/为空** | `ErrKeyMissing` | **503 `KEY_UNAVAILABLE`** | 这是"依赖/配置暂不可用"，修好键即可恢复 → 503 的"稍后重试"语义成立 |
+  | 键可用但 **MAC 不通过** | `ErrIntegrityMismatch` | **500 `INTERNAL_ERROR`** | 密文来自我们自己的库：不是客户端参数错（**不 400/422**），重试永远不会成功（**不 503**，否则造成重试风暴并掩盖数据损坏）；必须打日志 + 计数指标（`crypto_integrity_failure_total{scope}`）并告警 |
+  | 版本字节非 `0x02`（含 v1 存量） | `ErrCiphertextVersion` | **500 `INTERNAL_ERROR`**，日志点名"存量密文未重加密" | 同上；日志必须指向运维动作（重灌 / 一次性重加密任务），否则只能看到"5xx 变多了" |
+  | **启动期**打不开（如 `signing_keys.private_key_enc`） | 上述任一 | **非 0 退出**（不是 HTTP 码） | D5-₂ 三态口径：数据/配置坏了就起不来，不带着坏密钥对外服务 |
+
+  **禁止**把 MAC 不过报成 400/422（前端会去"改参数"）或 503（伪装成可重试）。
+- **⑤ 存量口径**：项目未上线（P1）→ **不做双读、不做自动重加密**，本地与预发库重灌；上线后轮换走一次性重加密任务，**不引入 v1 读路径**（任何"灰度期同时接受 v1/v2"须另出 ADR）。
+- **落地**：**Edge**（实现 + 变异用例，main `18ed08e`）；**Core**（仅注释同步：`internal/identifier/blindindex.go`、`internal/credential/totp.go` 里"含 IV 前缀"的表述改为"含版本/IV/MAC"）；**Gate**（`AC-AUD-12` 补**反向用例**"篡改任一字节必拒"，当前只断言算法名；再加一条"MAC 失败 = 500 而非 503"）；**Ark**（`docs/adr/ADR-005-SM4信封加密后MAC.md` 状态改 **Accepted** 2026-11-04 + 本条）。
+- **依据**：`数据模型 §3.3/§3.7`、D4-B（一密钥一用途）、`AC-AUD-12`（应用侧国密实证）、ADR-005。
 
 ---
 
@@ -412,6 +435,7 @@
 | `D9 补口 ①②③` | D9 的「补口」 | `SDK契约` §8 真悬空（`since_version`/缓存失效/降级）；`页面规格 §4.1` 误判已否决；《错误码体系》不存在 |
 | `D12` | §**D12** | `acr` 取值域：对外只 `AAL1|AAL2`，**`AAL3` 预留、本期任何路径不得产出** |
 | `D13` | §**D13** | `login_policies` 三档 `tier_default` 必须有 seed（`000017`）+ 启动期恰一行 fail-fast |
+| `D15` | §**D15** | SM4 信封 v2（先验 MAC 再解密）+ 用途域 **8** + "完整性失败 → 500、键缺失 → 503" 的对外码 |
 | `D14①②③④⑤` | §**D14** | 挑战 TTL/次数只从 `runtime_config` 读（`000018`）、`register_token` = HMAC-SM3 签名串、邀请码非空一律 400、`attempts_left` 两处口径、跨模块代落登记表 |
 | `CH-8` | 契约变更清单 | `§3.3.1` 响应新增 `attempts_left`（纯加字段，**待追认**；追认前不作判据依据） |
 | `D6(1)(6)` + `F0-5` | D6 裁定 (1)/(6) + F0 第 5 条 | SDK 配置 **29 键**（缺号 #7/#16/#17 不补）+ 环境变量逐段机械转换 |
