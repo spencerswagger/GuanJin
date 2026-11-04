@@ -133,7 +133,7 @@ S0 文档入库+PR
 ### S3 · crypto/store 基座（负责人 Edge，前置：S2）
 - **目的**：把国密与数据访问的"不可散落"部分先钉死。
 - **动作要点**：**只接受派生键**（D4-B：`Derive(masterKey, purpose, len)`，子密钥 `guanjin/sm4/field|sm4/keywrap|hmac/audit|hmac/identifier|hmac/agent`，编译期不允许把 `masterKey` 直传算法）；`gorm.Open`（禁 `AutoMigrate`）+ `BaseModel/AppendOnlyModel` + UUID v7 `BeforeCreate`；`mapPgError` 全量约束表 —— **按 SQLSTATE + 约束名双键**扩展（`flows_one_active_per_user_client_uniq` 的 23505 → 409、I-F1 的 23514 → 400，禁止"23505 一律 409 / 23514 一律 400"）；**`repo_flows` 必须提供带 tx 的锁读 `LockByID(tx, id)`（内部 `FOR UPDATE`）**，供 Core 在同一事务内完成"锁 → 校验 → 消费 challenge → 累加 amr → 写回"；**`pgxerr` 按 `decisions.md` D4-D₂ 的八行映射表逐条落**（不是"23505 一律 409"）；**`runtime_config` 校验函数要能区分 A/B/C 三态**（D5-₂：env 错 / DB 不可达 / 缺键），接线归 S10；testcontainers（PG16 + redis:7）基架；`runtime_config` 启动校验（**`flow.ttl_seconds` 键缺失即 fail-fast**，代码不留 600 常量）。
-- **验收判据**：`AC-ENG-04` 的运行时部分（已在 S2 列）；`AC-FC-03` 的"启动期 fail-fast"半条 PASS = 主密钥缺失/非 base64/<32B → 启动失败且退出码非 0；`AC-AUD-01` 的 `trace_id` 贯穿由本步提供基础设施（PASS 在 S4 验）。
+- **验收判据**：`AC-ENG-04` 的运行时部分（已在 S2 列）；`AC-FC-03` 的"启动期 fail-fast"半条 PASS = 主密钥缺失/非 base64/<32B → 启动失败且退出码非 0；`AC-AUD-01` 的 `trace_id` 贯穿由本步提供基础设施（PASS 在 S4 验）；**`AC-ENG-01` 增补：`internal/flowstore` 与 `internal/crypto`/`internal/store` 一并纳入逐模块覆盖率下限，其中 `flowstore` = **85%**（口径见 `decisions.md` D8 "覆盖率模块下限补登"行；执行侧由 `scripts/coverage-gate.sh` 的 owner 补一行，本文件只引用）**。
 - **退出条件**：单测用标准向量（SM2 签验 / SM3 / SM4 / PBKDF2-SM3）全绿；派生键用途隔离有单测（同一用途两次派生结果一致、不同用途不同）。
 
 ### S4 · 标识符 + 凭据 + 密码因子 + 注册面（负责人 Core，前置：S3）
