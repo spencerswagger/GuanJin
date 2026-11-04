@@ -36,7 +36,8 @@ var (
 	// ErrPolicyNotConfigured 表示既没有 client_override 也没有该档位的 tier_default 策略行。
 	//
 	// **不返回"默认值"**：那会把 12/3/5/90 抄进代码，变成第二套口径（D5 对 flow.ttl_seconds
-	// 的处理同一条原则）。这是配置缺陷，必须显式报出来 —— M1 部署需要 seed 三个 tier_default 行。
+	// 的处理同一条原则）。这是配置缺陷，必须显式报出来 —— 三档 tier_default 由
+	// `migrations/000017` seed（D13），启动期再由 `VerifyTierDefaults` 兜一道（缺失即不启动）。
 	ErrPolicyNotConfigured = errors.New("store: login policy not configured for client")
 	// ErrUnknownTier 表示 `clients.tier` 不在 L1/L2/L3（DB CHECK 本应拦住，属 schema 漂移）。
 	ErrUnknownTier = errors.New("store: unknown client tier")
