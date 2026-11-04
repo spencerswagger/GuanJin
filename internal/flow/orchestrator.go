@@ -294,9 +294,10 @@ func (o *Orchestrator) VerifyStep(ctx context.Context, in VerifyInput) (*VerifyR
 	if err := ensureFlowUsable(f, o.deps.Now().UTC()); err != nil {
 		return nil, err
 	}
-	// 用户以**流上的 `user_id`** 为准：请求体里的用户标识一律不采信（否则等于让调用方
-	// 指定"验谁的口令"）。登录流在开流时就绑定了用户；匿名流则验不了口令，如实失败。
-	if in.UserID == "" && f.UserID != nil {
+	// 用户以**流上的 `user_id` 为准**：流已绑定用户时，请求体/调用方给的用户标识一律忽略
+	// （否则等于让调用方指定"验谁的口令"）。只有匿名流（`user_id IS NULL`）才采信调用方
+	// 解析出来的用户 —— 那种情况下不采信就没法验（比如登录页先解析标识符再验口令）。
+	if f.UserID != nil {
 		in.UserID = f.UserID.String()
 	}
 	client, err := o.deps.ClientOf(ctx, f.ClientID)

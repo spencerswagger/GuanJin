@@ -505,3 +505,26 @@ func TestChallengeOfRowValidatesPurpose(t *testing.T) {
 		t.Fatalf("作废的 purpose 必须报错，实际 %v", err)
 	}
 }
+
+// 流已绑定用户时，调用方给的用户标识必须被**忽略**（否则等于让调用方指定"验谁的口令"）。
+func TestVerifyStepFlowUserWinsOverCaller(t *testing.T) {
+	st := &fakeStore{}
+	verifier := &fakeVerifier{resp: factor.VerifyResult{Factor: factor.FactorPassword, AMR: "pwd", ACR: factor.ACRAAL1}}
+	orc := newOrc(t, st, verifier)
+	begun, err := orc.Begin(context.Background(), BeginInput{ClientID: "c-1"})
+	if err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+	bound := uuid.New()
+	st.flow.UserID = &bound
+
+	if _, err := orc.VerifyStep(context.Background(), VerifyInput{
+		FlowID: begun.FlowID, Factor: factor.FactorPassword, Response: "pw",
+		UserID: uuid.NewString(), // 冒充另一个用户
+	}); err != nil {
+		t.Fatalf("VerifyStep: %v", err)
+	}
+	if verifier.lastReq.UserID != bound.String() {
+		t.Fatalf("应只用流上的用户 %s 校验，实际 %q", bound, verifier.lastReq.UserID)
+	}
+}
