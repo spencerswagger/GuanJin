@@ -21,8 +21,9 @@ import (
 // 曾经踩过的坑：改了迁移里的约束名而没改映射 → 生产上 23505 一律落到"未映射"，
 // 用户看到 500。这条用例就是那个坑的封条。
 //
-// 实现方式：每个用例跑在**独立事务**里并回滚 —— 所以不需要任何清理，
-// 也不会污染全局状态（比如 `login_policies` 的 tier_default 行）。
+// 实现方式：每个用例跑在**独立事务**里并回滚 —— 所以不需要任何清理。
+// 个别分支（CH-7⑧）需要在事务内**临时删掉一行 seed 参考数据**才能构造出冲突；
+// 删的是业务表行、而且事务必然回滚，所以对外部状态零影响（见该用例的注释）。
 func TestDBEveryUniqueViolationMapsOnce(t *testing.T) {
 	db := openTestDB(t)
 	f := newFixture(t, db)
@@ -161,6 +162,17 @@ func TestDBEveryUniqueViolationMapsOnce(t *testing.T) {
 			wantCode:   httpx.CodeInvalidParam,
 			wantStatus: 400,
 			run: func(tx *gorm.DB, t *testing.T) error {
+				// D13（migrations/000017）已把 L1/L2/L3 三行 tier_default **seed 进库**，
+				// 所以「首次插入档位默认必须成功」这个前置在迁移后的库里不再成立（必然 23505）。
+				//
+				// 这里刻意**不依赖 seed 是否已落**（迁移顺序、单独跑本文件都要成立）：
+				// 事务内先删掉 L1 这一行，再走「首次成功、第二次冲突」两步，回滚即复原。
+				// 只删 `scope='tier_default' AND tier='L1'`——**绝不动 client_override 行**
+				// （那条由下面的用例覆盖，且它不依赖 seed）。
+				if err := tx.Exec(
+					`DELETE FROM login_policies WHERE scope = 'tier_default' AND tier = 'L1'`).Error; err != nil {
+					t.Fatalf("清掉 L1 档位默认行必须成功: %v", err)
+				}
 				insert := func() error {
 					return MapError(tx.Exec(
 						`INSERT INTO login_policies (id, scope, tier, min_acr) VALUES (?, 'tier_default', 'L1', 'AAL1')`,
