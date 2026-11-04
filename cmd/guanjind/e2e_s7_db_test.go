@@ -29,8 +29,9 @@ import (
 // 只有"签发"这一步用测试内的签名键（登录链路的正式签发在 S6 的 `/oauth/token`，
 // 需要授权码与流；这里要证的是**撤销之后令牌失效**，签发来源不影响该结论）。
 //
-// 为什么复查断言 403 `SESSION_REVOKED` 而不是 401：D3-E 把"会话被撤销"定为 E3/403
-// （`AC-SESS-01`①），401 留给"令牌本身不可信"（`TOKEN_INVALID`）。两种都在本文件里有断言。
+// 复查断言 **401 `TOKEN_INVALID`**（spencer 2026-11-04 裁定：会话自助/管理面这两组端点
+// 对"令牌取不到 / 不可信 / 会话已撤销"统一 401；403 `SESSION_REVOKED` 属数据面准入语义，
+// 归 S8 用同一个 resolver 的 `ErrCallerSessionRevoked` 去映射）。
 
 func TestE2E_SessionRevokeMakesTokenUseless(t *testing.T) {
 	db := openTestDB(t)
@@ -167,11 +168,11 @@ func TestE2E_SessionRevokeMakesTokenUseless(t *testing.T) {
 
 	// 7) 同一枚令牌复查 → 403 SESSION_REVOKED（撤销实时生效，无缓存窗口）。
 	resp, body = do(http.MethodGet, "/api/v1/me/sessions", token)
-	if resp.StatusCode != http.StatusForbidden {
-		t.Fatalf("撤销后应 403，实际 %d（body=%v）", resp.StatusCode, body)
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("撤销后应 401，实际 %d（body=%v）", resp.StatusCode, body)
 	}
-	if code, _ := body["code"].(string); code != string(httpx.CodeSessionRevoked) {
-		t.Fatalf("code = %v, want %s", body["code"], httpx.CodeSessionRevoked)
+	if code, _ := body["code"].(string); code != string(httpx.CodeTokenInvalid) {
+		t.Fatalf("code = %v, want TOKEN_INVALID", body["code"])
 	}
 
 	// 8) 反面：没有令牌 → 401 TOKEN_INVALID（与 403 分工照 D3-E）。
