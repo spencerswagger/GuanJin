@@ -50,7 +50,7 @@ type Encoded struct {
 	Normalized string
 	// BlindIndex 盲索引（HMAC-SM3，确定性）：承担 `(type,value)` 全局唯一与等值查询。
 	BlindIndex []byte
-	// Cipher  SM4 密文（随机 IV，含 IV 前缀）：承担还原。
+	// Cipher  SM4 信封（`版本 || IV || 密文 || MAC`）：承担还原，先验 MAC 再解密（ADR-005）。
 	Cipher []byte
 	// Masked 脱敏展示值。
 	Masked string

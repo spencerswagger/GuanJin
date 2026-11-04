@@ -48,7 +48,7 @@ type Identifier struct {
 	Type string `gorm:"column:type;not null"`
 	// Value 盲索引（bytea）。
 	Value []byte `gorm:"column:value;type:bytea;not null"`
-	// ValueEnc SM4 密文（含 IV 前缀）。
+	// ValueEnc SM4 信封（含版本/IV/MAC；ADR-005 enc-then-MAC）。
 	ValueEnc []byte `gorm:"column:value_enc;type:bytea;not null"`
 	// ValueMasked 脱敏展示值。
 	ValueMasked string `gorm:"column:value_masked;not null"`

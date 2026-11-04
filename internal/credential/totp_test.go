@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/spencerswagger/guanjin/internal/crypto"
+	"github.com/spencerswagger/guanjin/internal/httpx"
 )
 
 // testSM4Key 按 D4-B 派生一把 SM4 键（测试也不许自造用途域）。
@@ -96,8 +97,27 @@ func TestTOTPOpenWithWrongKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DeriveSM4: %v", err)
 	}
-	if _, err := env.Open(other); !errors.Is(err, ErrMissingKey) {
-		t.Fatalf("错误密钥解封应报 ErrMissingKey（密钥不可用），实际 %v", err)
+	// D15④：键是给了的、解开失败 → **完整性失败**（数据/密钥不匹配的缺陷，500），
+	// 不是"密钥没装配"（503）。两者混在一个码里会让运维一直等一个不会好的故障。
+	if _, err := env.Open(other); !errors.Is(err, ErrIntegrityMismatch) {
+		t.Fatalf("错误密钥解封应报 ErrIntegrityMismatch，实际 %v", err)
+	}
+	if code, ok := CodeOf(ErrIntegrityMismatch); !ok || code != httpx.CodeInternalError {
+		t.Fatalf("完整性失败应映射 INTERNAL_ERROR，实际 %q", code)
+	}
+	// 键缺失仍是 503 语义。
+	if _, err := env.Open(crypto.SM4Key{}); !errors.Is(err, ErrMissingKey) {
+		t.Fatalf("零值键应报 ErrMissingKey，实际 %v", err)
+	}
+	if code, ok := CodeOf(ErrMissingKey); !ok || code != httpx.CodeKeyUnavailable {
+		t.Fatalf("键缺失应映射 KEY_UNAVAILABLE，实际 %q", code)
+	}
+	// 篡改任一字节也必须被拒（ADR-005 的反向断言，与 D15④ 同一条链路）。
+	sealed, _ := base64.StdEncoding.DecodeString(env.SecretEnc)
+	sealed[len(sealed)-1] ^= 0x01
+	env.SecretEnc = base64.StdEncoding.EncodeToString(sealed)
+	if _, err := env.Open(testSM4Key(t)); !errors.Is(err, ErrIntegrityMismatch) {
+		t.Fatalf("篡改密文应报 ErrIntegrityMismatch，实际 %v", err)
 	}
 }
 

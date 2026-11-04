@@ -282,7 +282,8 @@ func TestTOTPVerifyResponseAndReplay(t *testing.T) {
 		t.Fatalf("错误码应报 ErrInvalidCredential，实际 %v", err)
 	}
 
-	// 解封失败（密钥不对）→ 密钥不可用，不得当成"码错"。
+	// 解封失败（密钥不对）→ **完整性失败**（D15④：键在、信封过不了校验 = 500），
+	// 既不得当成"码错"（401），也不得伪装成"密钥没装配"（503）。
 	raw := make([]byte, 32)
 	for i := range raw {
 		raw[i] = byte(99 - i)
@@ -290,8 +291,8 @@ func TestTOTPVerifyResponseAndReplay(t *testing.T) {
 	mk, _ := crypto.NewMasterKey(raw)
 	otherKey, _ := mk.DeriveSM4(crypto.PurposeSM4Field)
 	wrongKey, _ := NewTOTP(&fakeTOTPStore{recs: []TOTPRecord{{AuthenticatorID: "a-1", Envelope: env}}, consume: true}, otherKey, func() time.Time { return at })
-	if _, err := wrongKey.VerifyResponse(context.Background(), factor.VerifyRequest{UserID: "u-1", Response: code}); !errors.Is(err, credential.ErrMissingKey) {
-		t.Fatalf("错误密钥应报 ErrMissingKey，实际 %v", err)
+	if _, err := wrongKey.VerifyResponse(context.Background(), factor.VerifyRequest{UserID: "u-1", Response: code}); !errors.Is(err, credential.ErrIntegrityMismatch) {
+		t.Fatalf("错误密钥应报 ErrIntegrityMismatch，实际 %v", err)
 	}
 
 	// 仓储错误透出。
