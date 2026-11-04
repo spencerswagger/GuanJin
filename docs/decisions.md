@@ -89,7 +89,7 @@
 ## D4 存储 / 密钥 / 审计链（4 处 DDL 级冲突）
 
 - **冲突 A UUID 默认值**：数据模型 §1.1「全库统一：主键默认值写作 `uuidv7()`」vs 技术栈 §5.0/§6.2「migration 不写 `DEFAULT uuidv7()`」。**裁定**：**一律不写 DB 默认值**，UUID v7 由应用层 `uuid.NewV7()` 生成（GORM `BeforeCreate`），migration 主键只写 `uuid PRIMARY KEY`。依据：①索引 §4.2-13 明确「应用层生成 UUID v7」+ 本机 PG17 亦无 `uuidv7()`（PG18 才有）。
-- **冲突 B 主密钥用法**：数据模型 §3.7 `HMAC-SM3(主密钥, …)` 与技术栈 §5.6 示例代码 `crypto.AuditTag(r.masterKey, …)` **直接使用主密钥** vs 技术栈 §7.3 强制 **HKDF-SM3 派生子密钥**（"不要把主密钥直接用在不同算法上"）。**裁定**：**统一走 HKDF-SM3 派生**，主密钥只做派生输入、不进任何业务算法。冻结用途隔离（`info = salt` domain separator）：`guanjin/sm4/field`→16B（标识符/私钥落库）、`guanjin/sm4/keywrap`→16B、`guanjin/hmac/audit`→32B（审计链）、`guanjin/hmac/identifier`→32B（盲索引）、`guanjin/hmac/agent`→32B（如平台侧需验 HMAC 干线）。依据：③技术栈 §7.3 为专章且与「一密钥一用途」一致；纯软路径（P2）下密钥全在进程内存，用途隔离是唯一可做的止血。
+- **冲突 B 主密钥用法**：数据模型 §3.7 `HMAC-SM3(主密钥, …)` 与技术栈 §5.6 示例代码 `crypto.AuditTag(r.masterKey, …)` **直接使用主密钥** vs 技术栈 §7.3 强制 **HKDF-SM3 派生子密钥**（"不要把主密钥直接用在不同算法上"）。**裁定**：**统一走 HKDF-SM3 派生**，主密钥只做派生输入、不进任何业务算法。冻结用途隔离（`info = salt` domain separator）：`guanjin/sm4/field`→16B（标识符/私钥落库）、`guanjin/sm4/keywrap`→16B、`guanjin/hmac/audit`→32B（审计链）、`guanjin/hmac/identifier`→32B（盲索引）、`guanjin/hmac/agent`→32B（如平台侧需验 HMAC 干线）。依据：③技术栈 §7.3 为专章且与「一密钥一用途」一致；纯软路径（P2）下密钥全在进程内存，用途隔离是唯一可做的止血。**（本条是当时 5 个用途域的原始冻结口径；后经 D14② +1、ADR-005 +2，当前累计 5 → 8，全量清单与生效范围以 D15③ 为准。）**
 - **冲突 C 审计表分区与链**：索引 §4.2-12「按月分区 + `DROP PARTITION` 整段清理（365 天）」vs 数据模型 §3.7 DDL **无分区**、`PRIMARY KEY (id)`、`prev_tag` 首条为 NULL 且**无锚点、无整链校验 Job**，但页面 A11 要求展示「完整性校验状态」。**裁定**：(1) `audit_logs` 按 `occurred_at` **RANGE 月分区**，主键改 `(id, occurred_at)`（分区表主键必须含分区键）；`forbid_mutation` 触发器挂父表（PG≥11 自动下发各分区）。(2) 链**不因 DROP 而悬空**：只允许删除「已归档且已写锚」的最老分区；分区切换与每日定时任务把该段末条 `integrity_tag` 写入既有 `runtime_config`（键 `audit.chain.anchor.<YYYYMM>`，base64），删除分区时把被删段首尾 tag 另存为断点锚（键 `audit.chain.segment.<YYYYMM>`）；跨分区首条的 `prev_tag` 取上一分区末 tag（或断点锚），链保持连续。(3) 「完整性校验状态」= 分区内逐条复算 + 与 `runtime_config` 锚比对，枚举 `verified | broken | unverified(锚缺失)`；校验 Job 落在 `cmd/guanjind` 内定时任务（不新增二进制），Prometheus 暴露 `audit_chain_broken_total`、`audit_anchor_age_seconds`。**(4) `trace_id` 取证口径（Gate 回读 2026-11-02 补）**：`flows.trace_id` **只记创建该流那一次请求的 `trace_id`，补步时不覆盖**；因此同一次登录里 `flows.trace_id` 与后续 `auth_events.trace_id` **本来就会不同**——取证时按"`flows.trace_id` 定位这次登录的入口请求、按各 `auth_events.trace_id` 定位各步动作"，**两者不一致不得判为缺陷**（否则会把正常的补步链路误报成 trace 断链）。若需"一次登录一条链"，用 `flows.id`（`flow_id`）作为关联键，而不是要求 `trace_id` 全链相同。依据：①索引 §4.2-12 为已生效默认；③技术栈 §5.6 单链 + 咨询锁保留；D5 的 `trace_id` 列定义（只写创建那条）。
 - **冲突 D `clients` 缺列 + 一条不可执行 CHECK**：接口/页面引用的 `agent_hmac_secret`、`is_confidential` 在 `clients` 无同名列（实有 `secret_hash` / `secret_enc` / `prev_secret_hash`）。**裁定**：`agent_hmac_secret` 是**概念名**，物理落点即 `secret_hash`（HMAC-SM3 盲索引，验签用）+ `secret_enc`（SM4，还原/重发用）+ 轮换期 `prev_secret_hash`，**不新增列**；`is_confidential` **删除引用**——它与索引 §2「平台不做密级」冲突，受信 introspect 改为「`clients.status='active'` + `runtime_config` 键 `introspect.trusted_clients` 白名单」。附带：数据模型 §3.8 的 `CONSTRAINT clients_redirect_unique CHECK (redirect_uris = (SELECT array_agg(DISTINCT x) FROM unnest(...)))` **PG 禁止 CHECK 内子查询**，照抄会让 `000002` 直接失败 → 迁移里**不写**该 CHECK，改由 `internal/admin` 去重校验 + 单测覆盖（实现细节，不需 spencer 裁决）。
 - **补口 D4-D₂（Edge 复核 2026-11-02 提出、Ark 裁定）：23505/23514 → 对外错误码的完整映射表（8 处）。**
@@ -287,7 +287,7 @@
   - **为什么不能用 `challenge_id`**：§3.3.2 的请求体只有 `{register_token, code?, password}`——**没有 `client_id`/`type`/`value`**，而建号必须知道"给哪个 client 注册哪个标识符"。`challenges` 行也**没有任何列**能承载"尚未存在的标识符值"（`identifier_id` 指向还没建的行、`target_masked` 是脱敏值、`response_hash` 是摘要）。
   - **为什么不能为空**：§3.3.2 鉴权行原文是「匿名 + `register_token`」；§3.3.1 允许缺的是 **`challenge_id`**，不是 `register_token`。skip 分支（`AC-REG-05`：仅用户名+密码免验证）照样签发令牌，只是其中 `chid` 为空。
   - **形态**：`v1.<payload_b64url>.<mac_b64url>`；`payload` = 紧凑 JSON `{"v":1,"cid":"<client_id>","typ":"email|phone|username","val":"<归一化标识符>","chid":"<challenge_id 或空>","exp":<unix 秒>}`；`mac` = `HMAC-SM3(K_register, "guanjin/register-token/v1\n" + payload_b64url)`，校验**常量时间**比较。`val` 必须走**与 `identifiers` 落库同一套归一化**（单一来源，不许另写一个）。
-  - **密钥**：新增用途域 **`guanjin/hmac/register`（32B）**，即 **D4-B 的冻结用途域 5 → 6**（`Purpose` 仍是封闭集合，只是集合本身 +1；**后随 ADR-005 再扩到 8，见 D15③**）。**不得复用 `hmac/identifier`**——"一密钥一用途"是密评口径，复用即自废。
+  - **密钥**：新增用途域 **`guanjin/hmac/register`（32B）**——D4-B 冻结集合的**本步 5 → 6**；**当前累计 5 → 8**（ADR-005 再追加 `hmac/field` / `hmac/keywrap` 两个完整性域，全量清单与生效范围见 **D15③**）。`Purpose` 仍是封闭集合，新增只由本台账决定，调用方**不得**自造 domain separator。**不得复用 `hmac/identifier`**——"一密钥一用途"是密评口径，复用即自废。
   - **绑定（安全要点，必测）**：令牌必须同时绑定 `client_id` + `type` + `value` +（有挑战时）`challenge_id`。缺任何一项都能构造"用自己手机的验证码把别人的号码标成 `verified=true`"（账号接管级缺陷）。
   - **`complete` 校验顺序**：①解析/验 MAC 失败 → `INVALID_PARAMETER`（E1/400）；②`exp` 已过（**以 DB 时间判定**，与 `challenges`/`flows` 同一个钟）→ `CHALLENGE_EXPIRED`（E2/401）；③有 `chid` → 该挑战必须存在、`purpose='register'`、`client_id` 与令牌一致、未消费（已消费 → `CHALLENGE_CONSUMED`）、未过期；④无 `chid` → **按令牌里的 `client_id` 重新校验准入与标识符唯一性**（TOCTOU 必须复查，不能只信 `start` 那次的结论）。
   - **一次性**：有 `chid` 的走 `challenges.consumed_at` 行级原子消费（与建号同一事务）；skip 分支没有挑战行，可重复提交，但由 `identifiers` 唯一性兜住（第二次必然 `IDENTIFIER_ALREADY_BOUND`），**不为此新增 Redis 键**（§5.9：Redis 不作挑战状态权威源）。
@@ -309,7 +309,7 @@
   | 模块（归属） | 新增 / 改动 | 为什么必须在这里 | 复核 |
   |---|---|---|---|
   | `internal/store/runtimeconfig.go`（Edge） | `KeyChallengeTTLSeconds` / `KeyChallengeMaxAttempts`、`RequiredPositiveInt`、`LoadChallengeTTL` / `LoadChallengeMaxAttempts`、`StartupKeys()` 含 3 键、`ValidateStartup` → `StartupConfig{FlowTTL,ChallengeTTL,ChallengeMaxAttempts}` | ①的运行期参数单一读取口径；`max_attempts` 是次数，**不能**借 `RequiredIntSeconds`（会变 5ns） | Edge（main `abde6e0`） |
-  | `internal/crypto/purpose.go`（Edge） | `PurposeHMACRegister` = `guanjin/hmac/register`（32B），用途域 5 → 6 | ②的独立用途域（一密钥一用途） | Edge（main `abde6e0`） |
+  | `internal/crypto/purpose.go`（Edge） | `PurposeHMACRegister` = `guanjin/hmac/register`（32B），用途域本步 5 → 6（**累计 5 → 8**，见 D15③） | ②的独立用途域（一密钥一用途） | Edge（main `abde6e0`） |
   | `internal/store/repo_client_policy.go`（Edge） | `LoadLockoutPolicy(ctx, clientID)`：`client_override` 优先 → 同档 `tier_default` 回落 → 两侧都没有 = `ErrPolicyNotConfigured` | 失败阈值/锁定时长只能来自 `login_policies`，代码里不留 5 / 15 | Edge（Core 在 #32 代落，main `8cd751a`；未反对即默认通过） |
   | `internal/store/db.go`（Edge） | `DBNow(ctx, db)`（`SELECT now()`，返回 UTC） | 权威时钟：挑战过期、注册窗口与 `flows` 用同一个钟（多副本时钟漂移会让同一瞬间得出不同结论） | 同上 |
 
@@ -319,13 +319,32 @@
 
 ---
 
-## D15 SM4 信封 v2（enc-then-MAC）与"完整性失败"的对外码（批 ADR-005）
+## D15 SM4 信封 v2（enc-then-MAC）与"完整性失败"的对外码（批 ADR-005；用途域累计 5 → 8）
 
 > 触发：`crypto.EncryptSM4` 原格式 `iv(16) || SM4-CBC(PKCS7)` **只有加密、没有完整性**，`DecryptSM4` 唯一校验是 PKCS#7 填充。后果不是"少一层防护"，而是**故障被误分类**：错钥/篡改约 **0.36%**（本机 18/5000）padding 恰好合法 → 返回乱码明文 → 下游把"密钥不可用"报成"凭据不对"，并让 CI **随机刷红**（同一 commit 重跑即绿，两次命中不同包的不同用例）。
 
 - **① 格式 v2（唯一受支持）**：`0x02 | iv(16) | SM4-CBC(PKCS7(明文)) | HMAC-SM3(32)`，`mac = HMAC-SM3(K_mac, 0x02 || iv || ct)`——**版本号也进 MAC**。校验顺序固定：**先验 MAC（常量时间）再解密**，不返回半截明文。
 - **② v1 一律拒绝**（`ErrCiphertextVersion`）：**不设"没有 MAC 就按 CBC 解"的兼容读路径**——留兼容等于把完整性做成可选项（删掉 MAC 段就降级）。
-- **③ 用途域 6 → 8**（追补 D4-B 的冻结集合）：`guanjin/sm4/field` ↔ **`guanjin/hmac/field`**（32B）、`guanjin/sm4/keywrap` ↔ **`guanjin/hmac/keywrap`**（32B）。两把 MAC 键**各自直接由主密钥派生**（不是从 SM4 键再派生），**两个 MAC 域不合并**——"被包裹的私钥密文挪进 `value_enc` 必须验不过"，靠的正是两把 MAC 键互不通用。
+- **③ 用途域累计 5 → 8（唯一口径，以代码为准）**——追补 D4-B 的冻结集合。
+  - **事实来源**：`internal/crypto/purpose.go` 的 `Purposes()`（main `7ea144c` 核对，2026-11-04）；`internal/crypto/doc.go` 同步写「8 个用途域」。**本条是本文档对用途域条数的唯一口径**；文中出现的「5 → 6」「6 → 8」只作分段历史，**当前值一律 = 8**。
+  - **沿革**：D4-B 冻结 **5 个**（`sm4/field`、`sm4/keywrap`、`hmac/audit`、`hmac/identifier`、`hmac/agent`）→ **D14②** 追加 `hmac/register`（**5 → 6**，注册窗口令牌 `register_token`）→ **ADR-005** 为 SM4 信封配套追加 `hmac/field`、`hmac/keywrap`（**6 → 8**，enc-then-MAC 的 MAC 键）。两段增量合计 **5 → 8**。
+  - **冻结清单（按代码 `Purposes()` 顺序，成对的加密/完整性相邻）**：
+
+    | # | 用途域 | 长度 | 用途 | 引入 |
+    |---|---|---|---|---|
+    | 1 | `guanjin/sm4/field` | 16B | 敏感字段加密（`identifiers.value_enc` 等） | D4-B |
+    | 2 | `guanjin/hmac/field` | 32B | 上条信封的完整性（MAC 覆盖 `版本‖iv‖ct`） | **ADR-005（新增）** |
+    | 3 | `guanjin/sm4/keywrap` | 16B | 密钥封装（`signing_keys.private_key_enc`） | D4-B |
+    | 4 | `guanjin/hmac/keywrap` | 32B | 上条信封的完整性 | **ADR-005（新增）** |
+    | 5 | `guanjin/hmac/audit` | 32B | 审计链 `audit_logs.integrity_tag` | D4-B |
+    | 6 | `guanjin/hmac/identifier` | 32B | 标识符盲索引（`identifiers.value`） | D4-B |
+    | 7 | `guanjin/hmac/agent` | 32B | Agent 面 HMAC（`clients.secret_hash`） | D4-B |
+    | 8 | `guanjin/hmac/register` | 32B | `register_token` 签名（`cid+typ+val+chid+exp`） | D14② |
+
+  - **为什么两把 MAC 键不合并**：两把 MAC 键**各自直接由主密钥按本用途域派生**（HKDF-SM3，`salt = info = purpose`），**不是**从 SM4 键再派生；两个 MAC 域也不合并——"被包裹的私钥密文挪进 `value_enc` 必须验不过"，靠的正是两把 MAC 键互不通用。用途表另有编译期一致性自检（`validatePurposeSpecs`）：每个 SM4 用途**必须**有配套 32B HMAC 用途，否则接线时就会报错（不允许出现"某条加密路径忘了带完整性"）。
+  - **与 ADR-005 的关系**：这两个域是 ADR-005「先验 MAC 再解密」的组成部分，**不是**独立扩展；ADR-005 状态已由 `Proposed` 改 **`Accepted`**（2026-11-04，接受依据 = Owl 追认 #33 无阻断 + 代码现状已按该 ADR 落地），接受不改其已定内容。
+  - **生效范围（冻结 ≠ 已接线）**：8 个域全部是封闭集合成员，未知 `Purpose` 一律报错；**装配期当前实际派生 4 个**——`cmd/guanjind/wiring.go` 三处调用：`DeriveHMAC(hmac/identifier)`、`DeriveSM4(sm4/field)`（该调用同时派生配套的 `hmac/field`）、`DeriveHMAC(hmac/register)`。其余 **4 个已冻结、尚无调用点**，按各切片接入：`sm4/keywrap`+`hmac/keywrap` → S6（签名私钥解封）、`hmac/audit` → S10（审计链）、`hmac/agent` → Agent 面（`secret_hash`）。**"没调用点"不等于"可用别的域替代"**。
+  - **变更成本**：8 个域同由一把主密钥派生，主密钥不变则派生值不变；**轮换任一域**（尤其 `hmac/field`/`hmac/keywrap`）会使对应历史密文不可读，须走 ⑤ 的一次性重加密口径。历史的 v1 密文（`iv‖ct`）不属本清单管辖，一律按 ② 拒绝。
 - **④ 完整性失败的对外码（Edge 问的那条，定死）**：
 
   | 情况 | 内部哨兵 | 对外 | 为什么 |
@@ -337,7 +356,7 @@
 
   **禁止**把 MAC 不过报成 400/422（前端会去"改参数"）或 503（伪装成可重试）。
 - **⑤ 存量口径**：项目未上线（P1）→ **不做双读、不做自动重加密**，本地与预发库重灌；上线后轮换走一次性重加密任务，**不引入 v1 读路径**（任何"灰度期同时接受 v1/v2"须另出 ADR）。
-- **落地**：**Edge**（实现 + 变异用例，main `18ed08e`）；**Core**（仅注释同步：`internal/identifier/blindindex.go`、`internal/credential/totp.go` 里"含 IV 前缀"的表述改为"含版本/IV/MAC"）；**Gate**（`AC-AUD-12` 补**反向用例**"篡改任一字节必拒"，当前只断言算法名；再加一条"MAC 失败 = 500 而非 503"）；**Ark**（`docs/adr/ADR-005-SM4信封加密后MAC.md` 状态改 **Accepted** 2026-11-04 + 本条）。
+- **落地**：**Edge**（实现 + 变异用例，main `18ed08e`）；**Core**（仅注释同步：`internal/identifier/blindindex.go`、`internal/credential/totp.go` 里"含 IV 前缀"的表述改为"含版本/IV/MAC"）；**Gate**（`AC-AUD-12` 补**反向用例**"篡改任一字节必拒"，当前只断言算法名；再加一条"MAC 失败 = 500 而非 503"）；**Ark**（**已完成 2026-11-04**：`docs/adr/ADR-005-SM4信封加密后MAC.md` 状态改 **Accepted**（依据 = Owl 追认 #33 无阻断 + 代码现状）+ 本条 + 本文档用途域口径统一为 **8**，见 ③）。
 - **依据**：`数据模型 §3.3/§3.7`、D4-B（一密钥一用途）、`AC-AUD-12`（应用侧国密实证）、ADR-005。
 
 ---
@@ -435,7 +454,7 @@
 | `D9 补口 ①②③` | D9 的「补口」 | `SDK契约` §8 真悬空（`since_version`/缓存失效/降级）；`页面规格 §4.1` 误判已否决；《错误码体系》不存在 |
 | `D12` | §**D12** | `acr` 取值域：对外只 `AAL1|AAL2`，**`AAL3` 预留、本期任何路径不得产出** |
 | `D13` | §**D13** | `login_policies` 三档 `tier_default` 必须有 seed（`000017`）+ 启动期恰一行 fail-fast |
-| `D15` | §**D15** | SM4 信封 v2（先验 MAC 再解密）+ 用途域 **8** + "完整性失败 → 500、键缺失 → 503" 的对外码 |
+| `D15` | §**D15** | SM4 信封 v2（先验 MAC 再解密）+ 用途域 **5 → 8（现 8，唯一清单见 D15③）** + "完整性失败 → 500、键缺失 → 503" 的对外码 + ADR-005 已 `Accepted` |
 | `D14①②③④⑤` | §**D14** | 挑战 TTL/次数只从 `runtime_config` 读（`000018`）、`register_token` = HMAC-SM3 签名串、邀请码非空一律 400、`attempts_left` 两处口径、跨模块代落登记表 |
 | `CH-8` | 契约变更清单 | `§3.3.1` 响应新增 `attempts_left`（纯加字段，**待追认**；追认前不作判据依据） |
 | `D6(1)(6)` + `F0-5` | D6 裁定 (1)/(6) + F0 第 5 条 | SDK 配置 **29 键**（缺号 #7/#16/#17 不补）+ 环境变量逐段机械转换 |
