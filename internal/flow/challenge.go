@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/spencerswagger/guanjin/internal/credential"
 	"github.com/spencerswagger/guanjin/internal/factor"
 	"github.com/spencerswagger/guanjin/internal/httpx"
 )
@@ -161,6 +162,25 @@ func CodeOf(err error) (httpx.Code, bool) {
 		return httpx.CodeAttemptsExceeded, true
 	case errors.Is(err, ErrChallengeNotFound):
 		return httpx.CodeChallengeInvalid, true
+	case errors.Is(err, ErrFlowExpired):
+		return httpx.CodeFlowExpired, true
+	case errors.Is(err, ErrInvalidClient):
+		return httpx.CodeInvalidClient, true
+	case errors.Is(err, ErrFlowNotFound):
+		return httpx.CodeFlowNotFound, true
+	case errors.Is(err, ErrFlowIDRequired):
+		// CH-1：login/step_up 缺 `flow_id` 属**缺参数**，不是"流不存在"。
+		return httpx.CodeMissingParameter, true
+	case errors.Is(err, ErrPurposeRequired):
+		return httpx.CodeMissingParameter, true
+	case errors.Is(err, factor.ErrUnknownPurpose):
+		return httpx.CodeInvalidParam, true
+	// 因子层（`internal/credential`）的哨兵：不翻会落到 default 变 500，
+	// 而 AC-LOGIN-02 要求"凭据不对"必须是 **401 `INVALID_CREDENTIAL`** 且带可复制 trace_id。
+	case errors.Is(err, credential.ErrInvalidCredential):
+		return httpx.CodeInvalidCredential, true
+	case errors.Is(err, credential.ErrTemporalCodeReused):
+		return httpx.CodeTemporalCodeReused, true
 	case errors.Is(err, ErrFactorDisabled):
 		return httpx.CodeFactorDisabled, true
 	case errors.Is(err, ErrFactorNotSupported):

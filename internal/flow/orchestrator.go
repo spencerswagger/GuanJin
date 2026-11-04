@@ -129,6 +129,11 @@ type Deps struct {
 	Consumer Consumer
 	// Verifiers 按因子类型索引的"能力断言后的校验入口"（来自 SPI 的 `Authenticatable`）。
 	Verifiers map[factor.FactorType]factor.Authenticatable
+	// Challenges 是 `challenges` 的能力（有状态挑战的一次性消费与次数扣减）。
+	//
+	// **允许为 nil**：口令/TOTP 是无状态挑战，不需要它；一旦真要用（`challenge_id` 非空）
+	// 而它缺失，就返回 `ErrNilChallengeStore`（fail-closed，不存在"缺了也能验"的降级路径）。
+	Challenges ChallengeStore
 	// Factors 平台已装配的因子事实（`FactorInfosOf(registry.Descriptors())`）。
 	Factors []FactorInfo
 	// DisabledFactors 读某业务系统的禁用因子（`login_policies.disabled_factors`）。
@@ -283,6 +288,16 @@ func (o *Orchestrator) VerifyStep(ctx context.Context, in VerifyInput) (*VerifyR
 	f, err := o.deps.Reader.Get(ctx, in.FlowID)
 	if err != nil {
 		return nil, err
+	}
+	// 读路径也判状态与过期：过期行仍在（第一段不删行），不判就会把 `FLOW_EXPIRED`
+	// 拖到 `Advance` 的事务里才报，且在中间白做一次 PBKDF2。
+	if err := ensureFlowUsable(f, o.deps.Now().UTC()); err != nil {
+		return nil, err
+	}
+	// 用户以**流上的 `user_id`** 为准：请求体里的用户标识一律不采信（否则等于让调用方
+	// 指定"验谁的口令"）。登录流在开流时就绑定了用户；匿名流则验不了口令，如实失败。
+	if in.UserID == "" && f.UserID != nil {
+		in.UserID = f.UserID.String()
 	}
 	client, err := o.deps.ClientOf(ctx, f.ClientID)
 	if err != nil {
