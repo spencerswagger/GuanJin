@@ -181,3 +181,74 @@ func splitFactors(raw string) []string {
 	}
 	return out
 }
+
+// LockoutPolicy 是失败处理参数（`login_policies` 的 C 组两列）。
+//
+// 单独一个读方法而不是并进 `ClientRegistrationPolicy`：
+// 前者是**注册准入**快照，后者是**登录失败处理**参数，被两条不同的链路消费；
+// 合成一个结构会让"注册要读 15 列"变成常态（也更容易被顺手改写出别的东西）。
+type LockoutPolicy struct {
+	// FailThreshold 连败多少次触发锁定（`fail_threshold`，DB CHECK > 0）。
+	FailThreshold int
+	// LockDurationMinutes 锁定时长（`lock_duration_min`，DB CHECK > 0）。
+	LockDurationMinutes int
+}
+
+// LoadLockoutPolicy 读某业务系统的失败处理参数（client_override 优先，其次同档 tier_default）。
+//
+// **不返回默认值**：两者都没有 → `ErrPolicyNotConfigured`（配置缺陷，不是用户错）。
+func (r *ClientPolicyRepo) LoadLockoutPolicy(ctx context.Context, clientID string) (*LockoutPolicy, error) {
+	if strings.TrimSpace(clientID) == "" {
+		return nil, errors.New("store: empty client id")
+	}
+	var c clientRow
+	if res := r.db.WithContext(ctx).Raw(
+		`SELECT client_id, tier, status FROM clients WHERE client_id = ?`, clientID).Scan(&c); res.Error != nil {
+		return nil, MapError(res.Error)
+	}
+	if c.ClientID == "" {
+		return nil, ErrClientNotFound
+	}
+
+	var over *lockoutRow
+	if row, err := r.lockoutRow(ctx, `scope = 'client_override' AND client_id = ?`, clientID); err != nil {
+		return nil, err
+	} else {
+		over = row
+	}
+	var tierDefault *lockoutRow
+	if c.Tier != "" {
+		row, err := r.lockoutRow(ctx, `scope = 'tier_default' AND tier = ?`, c.Tier)
+		if err != nil {
+			return nil, err
+		}
+		tierDefault = row
+	}
+	chosen := over
+	if chosen == nil {
+		chosen = tierDefault
+	}
+	if chosen == nil {
+		return nil, ErrPolicyNotConfigured
+	}
+	return &LockoutPolicy{FailThreshold: chosen.FailThreshold, LockDurationMinutes: chosen.LockDurationMin}, nil
+}
+
+type lockoutRow struct {
+	FailThreshold   int `gorm:"column:fail_threshold"`
+	LockDurationMin int `gorm:"column:lock_duration_min"`
+}
+
+// lockoutRow 按 where 条件读一条策略行（client_override 与 tier_default 共用）。
+func (r *ClientPolicyRepo) lockoutRow(ctx context.Context, where string, arg any) (*lockoutRow, error) {
+	var row lockoutRow
+	res := r.db.WithContext(ctx).Raw(
+		`SELECT fail_threshold, lock_duration_min FROM login_policies WHERE `+where+` LIMIT 1`, arg).Scan(&row)
+	if res.Error != nil {
+		return nil, MapError(res.Error)
+	}
+	if res.RowsAffected == 0 {
+		return nil, nil
+	}
+	return &row, nil
+}

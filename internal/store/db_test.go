@@ -196,3 +196,38 @@ func TestFlowPatchSessionBackfill(t *testing.T) {
 		t.Fatalf("achieved_amr value type = %T", v)
 	}
 }
+
+// DBNow：nil db 必须拒绝；DryRun 下只验 SQL 形态（`SELECT now()`，**不用应用时钟**）。
+func TestDBNowSQLShape(t *testing.T) {
+	if _, err := DBNow(context.Background(), nil); err == nil {
+		t.Fatal("nil db 必须拒绝")
+	}
+	db, capture := dryRunDB(t)
+	// DryRun 不执行 SQL：`Scan` 一律返回 `ErrDryRunModeUnsupported`（已知限制）。
+	// 这里只验"确实发的是取库时间那条语句"，真实返回值由真库用例覆盖。
+	if _, err := DBNow(context.Background(), db); !errors.Is(err, gorm.ErrDryRunModeUnsupported) {
+		t.Fatalf("DryRun 下应是 ErrDryRunModeUnsupported，实际 %v", err)
+	}
+	if sql := capture.last(t); !strings.Contains(strings.ToLower(sql), "select now()") {
+		t.Fatalf("必须取库时间，实际 SQL：%s", sql)
+	}
+}
+
+// LoadLockoutPolicy：空 client_id 直接拒绝；DryRun 下验查询形态（clients / client_override / tier_default）。
+func TestLoadLockoutPolicySQLShape(t *testing.T) {
+	db, capture := dryRunDB(t)
+	repo := NewClientPolicyRepo(db)
+
+	if _, err := repo.LoadLockoutPolicy(context.Background(), "  "); err == nil {
+		t.Fatal("空 client_id 必须拒绝")
+	}
+	// DryRun 不真正执行（Scan 返回 ErrDryRunModeUnsupported）：只验"确实去查了这些列"。
+	if _, err := repo.LoadLockoutPolicy(context.Background(), "c-1"); !errors.Is(err, gorm.ErrDryRunModeUnsupported) {
+		t.Fatalf("DryRun 下应是 ErrDryRunModeUnsupported，实际 %v", err)
+	}
+	// 第一条语句是 `clients` 快照（档位决定回落哪一行 tier_default）；随后的策略行查询
+	// 在 DryRun 下就返回了，所以只断言首条语句形态。
+	if sql := capture.last(t); !strings.Contains(strings.ToLower(sql), "from clients") {
+		t.Fatalf("首条 SQL 应查 clients 档位，实际：%s", sql)
+	}
+}

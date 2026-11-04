@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"gorm.io/gorm"
 
@@ -14,6 +15,8 @@ import (
 	"github.com/spencerswagger/guanjin/internal/store"
 	"github.com/spencerswagger/guanjin/internal/store/model"
 )
+
+const testRegisterCode = "123456"
 
 func testConfig(t *testing.T) Config {
 	t.Helper()
@@ -33,11 +36,21 @@ func testConfig(t *testing.T) Config {
 	if err != nil {
 		t.Fatalf("DeriveSM4: %v", err)
 	}
+	registerKey, err := mk.DeriveHMAC(crypto.PurposeHMACRegister)
+	if err != nil {
+		t.Fatalf("DeriveHMAC(register): %v", err)
+	}
 	return Config{
-		IndexKey:       idx,
-		FieldKey:       field,
-		PasswordParams: crypto.PasswordParams{Iterations: crypto.MinPBKDF2Iterations, KeyLen: crypto.MinPasswordKeyLen},
-		FlowTTL:        10 * 60 * 1e9, // 10 分钟（显式给，不从代码里取默认值）
+		IndexKey:         idx,
+		FieldKey:         field,
+		RegisterTokenKey: registerKey,
+		PasswordParams:   crypto.PasswordParams{Iterations: crypto.MinPBKDF2Iterations, KeyLen: crypto.MinPasswordKeyLen},
+		FlowTTL:          10 * 60 * 1e9, // 10 分钟（显式给，不从代码里取默认值）
+		// 挑战参数显式给（真实来源是 runtime_config 的 challenge.* 两键）。
+		ChallengeTTL:         5 * time.Minute,
+		ChallengeMaxAttempts: 5,
+		// 测试里固定验证码，才能走完"拿到码再校验"的链路。
+		GenerateCode: func() (string, error) { return testRegisterCode, nil },
 	}
 }
 
@@ -113,7 +126,7 @@ func TestCodeOfMapping(t *testing.T) {
 		{nil, ""},
 		{ErrMissingClientID, httpx.CodeMissingParameter},
 		{ErrRegistrationNotAllowed, httpx.CodeRegistrationNotAllowed},
-		{ErrPasswordRequired, httpx.CodeWeakPassword},
+		{ErrPasswordRequired, httpx.CodeMissingParameter},
 		{ErrIdentifierNotFound, httpx.CodeIdentifierNotFound},
 		{ErrAuthenticatorNotFound, httpx.CodeIdentifierNotFound},
 		{store.ErrClientNotFound, httpx.CodeInvalidClient},

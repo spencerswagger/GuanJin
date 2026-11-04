@@ -115,7 +115,12 @@ func newOrc(t *testing.T, st *fakeStore, verifier *fakeVerifier, opts ...func(*D
 		DisabledFactors: func(context.Context, string) ([]factor.FactorType, error) { return nil, nil },
 		TierOf:          func(context.Context, string) (string, error) { return "L2", nil },
 		ClientOf:        func(context.Context, string) (Client, error) { return Client{ID: "c-1"}, nil },
-		Now:             func() time.Time { return time.Unix(1_760_000_000, 0).UTC() },
+		// 默认给一个"永不锁定、阈值 3"的桩：个别用例需要真实计数时自行替换（见 risk_test.go）。
+		Lockout: func(context.Context, string) (LockoutPolicy, error) {
+			return LockoutPolicy{FailThreshold: 3, LockDuration: 10 * time.Minute}, nil
+		},
+		Guard: &fakeGuard{threshold: 3},
+		Now:   func() time.Time { return time.Unix(1_760_000_000, 0).UTC() },
 	}
 	for _, o := range opts {
 		o(&deps)
@@ -377,7 +382,11 @@ func TestNewValidatesDeps(t *testing.T) {
 			Reader: st, Starter: st, Advancer: st, Consumer: st,
 			DisabledFactors: func(context.Context, string) ([]factor.FactorType, error) { return nil, nil },
 			TierOf:          func(context.Context, string) (string, error) { return "L2", nil },
-			Now:             time.Now,
+			Lockout: func(context.Context, string) (LockoutPolicy, error) {
+				return LockoutPolicy{FailThreshold: 3, LockDuration: time.Minute}, nil
+			},
+			Guard: &fakeGuard{threshold: 3},
+			Now:   time.Now,
 		}
 	}
 	if _, err := New(full()); err != nil {
@@ -391,6 +400,8 @@ func TestNewValidatesDeps(t *testing.T) {
 		"缺禁用因子读取":    func(d *Deps) { d.DisabledFactors = nil },
 		"缺档位读取":      func(d *Deps) { d.TierOf = nil },
 		"缺时钟":        func(d *Deps) { d.Now = nil },
+		"缺风控计数":      func(d *Deps) { d.Guard = nil },
+		"缺失败处理策略":    func(d *Deps) { d.Lockout = nil },
 	}
 	for name, mut := range cases {
 		d := full()

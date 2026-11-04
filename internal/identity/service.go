@@ -14,6 +14,7 @@ package identity
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"io"
@@ -81,6 +82,19 @@ type Config struct {
 	PasswordParams crypto.PasswordParams
 	// FlowTTL 注册流的 TTL（来自 `runtime_config.flow.ttl_seconds`；**代码不留 600 常量**）。
 	FlowTTL time.Duration
+	// RegisterTokenKey 注册窗口令牌的 HMAC 键（`guanjin/hmac/register`，D14②）。
+	//
+	// **独立用途域**：不复用盲索引键（D4-B 一密钥一用途），否则"换盲索引密钥要不要作废
+	// 在途令牌"这件事就永远说不清。
+	RegisterTokenKey crypto.HMACKey
+	// ChallengeTTL / ChallengeMaxAttempts 一次性挑战的有效期与次数上限
+	// （`runtime_config` 的 `challenge.ttl_seconds` / `challenge.max_attempts`，D14①）。
+	//
+	// 两者都是**必填**：代码里不留 300 / 5，读不到就是配置缺陷（AC-REG-01 要求"改键值必须跟着变"）。
+	ChallengeTTL         time.Duration
+	ChallengeMaxAttempts int
+	// GenerateCode 生成一次性验证码（默认 6 位数字；测试可注入以拿到明文码）。
+	GenerateCode func() (string, error)
 	// Now 可注入时钟（测试用）；nil → time.Now。
 	Now func() time.Time
 	// Random 可注入随机源（口令盐/TOTP 密钥）；nil → crypto/rand。
@@ -95,6 +109,7 @@ type Service struct {
 	authenticators *store.AuthenticatorRepo
 	flows          *store.FlowRepo
 	policies       *store.ClientPolicyRepo
+	challenges     *store.ChallengeRepo
 	events         *store.AuthEventRepo
 	cfg            Config
 }
@@ -113,8 +128,19 @@ func New(db *gorm.DB, cfg Config) (*Service, error) {
 	if cfg.FlowTTL <= 0 {
 		return nil, ErrInvalidTTL
 	}
+	if cfg.RegisterTokenKey.IsZero() {
+		// 没有签名键就没有注册窗口令牌：宁可不启动，也不发明"不签名的令牌"。
+		return nil, fmt.Errorf("%w: register token key", ErrMissingKey)
+	}
+	if cfg.ChallengeTTL <= 0 || cfg.ChallengeMaxAttempts <= 0 {
+		return nil, fmt.Errorf("%w: challenge ttl=%s max_attempts=%d",
+			ErrInvalidTTL, cfg.ChallengeTTL, cfg.ChallengeMaxAttempts)
+	}
 	if cfg.Now == nil {
 		cfg.Now = time.Now
+	}
+	if cfg.Random == nil {
+		cfg.Random = rand.Reader
 	}
 	return &Service{
 		db:             db,
@@ -123,6 +149,7 @@ func New(db *gorm.DB, cfg Config) (*Service, error) {
 		authenticators: store.NewAuthenticatorRepo(db),
 		flows:          store.NewFlowRepo(db),
 		policies:       store.NewClientPolicyRepo(db),
+		challenges:     store.NewChallengeRepo(db),
 		events:         store.NewAuthEventRepo(db),
 		cfg:            cfg,
 	}, nil
@@ -419,8 +446,26 @@ func CodeOf(err error) (httpx.Code, bool) {
 		return httpx.CodeMissingParameter, true
 	case errors.Is(err, ErrRegistrationNotAllowed):
 		return httpx.CodeRegistrationNotAllowed, true
+	case errors.Is(err, ErrInviteCodeInvalid):
+		return httpx.CodeInviteCodeInvalid, true
+	case errors.Is(err, ErrFactorDisabled):
+		return httpx.CodeFactorDisabled, true
+	case errors.Is(err, ErrIdentifierAlreadyBound):
+		return httpx.CodeIdentifierAlreadyBound, true
+	case errors.Is(err, ErrInvalidRegisterToken):
+		return httpx.CodeInvalidParam, true
+	case errors.Is(err, ErrRegisterTokenExpired):
+		return httpx.CodeChallengeExpired, true
+	case errors.Is(err, ErrRegisterChallengeConsumed):
+		return httpx.CodeChallengeConsumed, true
+	case errors.Is(err, ErrInvalidRegisterCode):
+		return httpx.CodeInvalidCredential, true
+	case errors.Is(err, ErrRegisterAttemptsExceeded):
+		return httpx.CodeAttemptsExceeded, true
 	case errors.Is(err, ErrPasswordRequired):
-		return httpx.CodeWeakPassword, true
+		// 缺必填字段是 **参数缺失**（D14③ 的第一顺位），不是"给了但不合规"；
+		// `WEAK_PASSWORD` 只用于口令值本身命中了黑名单。
+		return httpx.CodeMissingParameter, true
 	case errors.Is(err, ErrIdentifierNotFound), errors.Is(err, ErrAuthenticatorNotFound):
 		return httpx.CodeIdentifierNotFound, true
 	case errors.Is(err, identifier.ErrInvalidIdentifier), errors.Is(err, identifier.ErrUnsupportedType),

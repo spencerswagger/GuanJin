@@ -66,6 +66,8 @@ jobs:
     env:
       CGO_ENABLED: '0'
       GUANJIN_TEST_DSN: postgres://guanjin:guanjin@localhost:5432/guanjin_test?sslmode=disable
+      # 账号级失败计数（D3-D）的权威存储在 Redis，AC-LOGIN-03 的两个冻结键只能在真 Redis 上断言。
+      GUANJIN_TEST_REDIS_ADDR: localhost:6379
     services:
       postgres:
         image: postgres:16
@@ -77,6 +79,15 @@ jobs:
           - 5432:5432
         options: >-
           --health-cmd "pg_isready -U guanjin -d guanjin_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 12
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 12
@@ -130,6 +141,13 @@ jobs:
           echo "flows_if1_check=$chk"; [ "$chk" = "1" ] || { echo "[FAIL] 缺 I-F1 CHECK"; exit 1; }
           ttl=$(q "SELECT value FROM runtime_config WHERE key='flow.ttl_seconds';")
           echo "ttl_seed=$ttl"; [ "$ttl" = "600" ] || { echo "[FAIL] flow.ttl_seconds seed 期望 600，实际 $ttl"; exit 1; }
+          # D14①：挑战配置的两键与"单一来源"不变式（000018 的核心，不靠 e2e 兜）
+          cttl=$(q "SELECT value FROM runtime_config WHERE key='challenge.ttl_seconds';")
+          echo "challenge_ttl_seed=$cttl"; [ "$cttl" = "300" ] || { echo "[FAIL] challenge.ttl_seconds seed 期望 300，实际 $cttl"; exit 1; }
+          cmax=$(q "SELECT value FROM runtime_config WHERE key='challenge.max_attempts';")
+          echo "challenge_max_attempts_seed=$cmax"; [ "$cmax" = "5" ] || { echo "[FAIL] challenge.max_attempts seed 期望 5，实际 $cmax"; exit 1; }
+          cdef=$(q "SELECT coalesce(column_default,'<NULL>') FROM information_schema.columns WHERE table_schema='public' AND table_name='challenges' AND column_name='max_attempts';")
+          echo "challenges_max_attempts_default=$cdef"; [ "$cdef" = "<NULL>" ] || { echo "[FAIL] challenges.max_attempts 不得有 DB 默认值（D14①），实际 $cdef"; exit 1; }
       - name: 集成测试（-tags=integration；无集成用例 = 红、有 SKIP = 红、有例即真跑）
         run: |
           set -euo pipefail

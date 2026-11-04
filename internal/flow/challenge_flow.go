@@ -158,7 +158,25 @@ func (o *Orchestrator) BeginChallenge(ctx context.Context, in BeginChallengeInpu
 		return nil, ErrFactorNotSupported
 	}
 
-	// ⑤ 因子自己决定要不要落一次性码（口令：不落；短信/邮箱：落）。
+	// ⑤ 账号级锁定（D3-D）：已锁定就不再下发挑战。
+	//
+	// **注意字段语义**：`IssuedChallenge.AttemptsLeft` 是**单挑战**的剩余次数（`challenges.attempts`
+	// 的对立面），**不是**账号级计数——D3-D 明确两者是两个对象。账号级剩余次数只在内部用于
+	// "还能试几次"的判定，不占用这个字段（要对外暴露得新增字段并走契约变更）。
+	// 匿名流（`user_id IS NULL`）没有账号可锁，不查也不计数。
+	if userID != "" {
+		policy, perr := o.deps.Lockout(ctx, clientID)
+		if perr != nil {
+			return nil, perr
+		}
+		if _, locked, gerr := o.deps.Guard.Status(ctx, userID, policy); gerr != nil {
+			return nil, gerr
+		} else if locked {
+			return nil, ErrAccountLocked
+		}
+	}
+
+	// ⑥ 因子自己决定要不要落一次性码（口令：不落；短信/邮箱：落）。
 	ticket, err := verifier.BeginChallenge(ctx, factor.ChallengeRequest{
 		FlowID:   flowIDString(f),
 		ClientID: clientID,
