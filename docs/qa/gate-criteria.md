@@ -6,7 +6,7 @@
 | 项 | 内容 |
 |---|---|
 | 文档类型 | **执行判据**（工程门禁层）：把「三闸绿了」变成第三人/CI 都能照做的判定规则；**不是**新契约、**不改**任何 `AC-*` 编号与账目 |
-| 版本 | **v1.1**（2026-11-03 归档调整：文件迁 `qa/` → `docs/qa/`；**退役 `compliance-precheck.md`**，其口径已并入 `decisions.md` D8-B/D8-E 第二版与 `acceptance-criteria.md` §11.1；判据与账目零改动）。**v1.1 判据**（2026-11-02 增补：**§9 门控 SKIP 判定 / 真库验收环境与责任 / 覆盖率分层**——应 Edge 报的「沙盒无 root、`initdb` 降权失败、7 条真库用例由 DSN 门控 SKIP」与「全局覆盖率 60% 是否够」两个口径问题；**判据口径、不替任何人定实现**）。v1（首版）：把「三闸绿」落成可照做的规则；依 hugo 裁决「只落判据、不写测试代码」 |
+| 版本 | **v1.2**（2026-11-04：①核实第四道门禁 `integration` 真跑并**把它写死为「唯一权威真库环境」**，附实测锚点 run `41800113745`；②新增 **§9.5 机器强制清单**——空题库只 `echo INFO`、`test-summary.sh` 不把 `skip>0` 判红、branch protection 未要求 status checks，共 3 处「纸面门禁」；③只改判据与证据，`AC-*` 与账目零改动）。**v1.1**（2026-11-03 归档调整：迁 `docs/qa/`、退役 `compliance-precheck.md`）
 | 主笔 / 归属 | Gate（测试 · 合规）。**本文件 owner = Gate**，其他人只引用、不复制（P6 一人一文件） |
 | 上位依据 | 《技术栈与工程约定》§9.2/§9.3/§9.4（CI 步骤与覆盖率下限）｜`docs/decisions.md` **P1**（不自动迁移）、**P6**（短特性分支）、**D12**（`acr` 白名单）、**D8-E 第二版**（密评不进强制项）｜`docs/m1-slices.md` **S0/S1/S11**｜`docs/acceptance-criteria.md` **`AC-ENG-01/03/05/06/07/08`**（本文件是这几条的**可执行化**，不新增期望值） |
 | 判据对象 | ①骨架分支 `feat/skeleton`（Ark）②M1 各切片（S1–S11）③**任何改到代码面的 PR**；文档-only PR 见 §0.2 |
@@ -277,6 +277,7 @@ tsc_exit=0  tsc_errors=0
 ### 9.2 真库验收在哪台环境跑、谁跑
 
 **权威环境只有一个：CI 的 `integration` job**（《技术栈》§9.3：testcontainers `postgres:16` + `redis:7`），产出 `artifacts/<sha>/gate/db/`。理由：可复现、不依赖任何人的沙盒，且能把「环境差异」从判据里剔掉。
+> **v1.2 实测锚点（2026-11-04，main `2ef3bd7` / run `41800113745`）**：该 job 已真跑通五步链——① `postgres:16` service（healthcheck `pg_isready`）+ **再确认一次**的等库循环（失败 `exit 1`）；② 安装 `golang-migrate` → `migrate up` **逐条执行 16 个迁移**（日志 `0/u common_functions` … `15/u create_flows`）→ `migrate version`；③ **schema 断言**（六项全是**真断言**，形如 `[ "$x" = "y" ] || { echo "[FAIL] …"; exit 1; }`，不是打印后不看）：`logical_tables=15`、`audit_logs_partitions=3`、`flows_columns=13`、`flows_named_indexes=4`、`flows_if1_check=1`、`ttl_seed=600`；④ `go test -tags=integration ./... -count=1 -v` + `test-summary.sh`（`tests_run=19 tests_pass=19 tests_skip=0 tests_fail=0 packages_ok=5 cached=no`）；⑤ 四个 job（`go`/`race`/`web`/`integration`）全 success。**但必须写清界限**：run `41800113745` 的日志里有 `[INFO] 暂无 integration 测试文件（S3 起随切片落地）`——即**这 19 条是普通单测，没有一条真连 Postgres**；该 run 真正证明的是「**环境就绪 + 迁移 + schema**」，**不是** DB 行为。
 
 **过渡期（CI 的 integration job 尚未接线时）**：由**宿主（hugo）指定的那一台**有 PG17 三库 + Redis 的环境代跑。**不按人复制环境**——现在的事实是「Ark 那台能跑、Edge/Core 的沙盒不能」，各自复制环境既慢又会引出"我的库版本和你不一样"的新争议。
 
@@ -341,8 +342,21 @@ verdict=PARTIAL
 
 ---
 
+### 9.5 四道门禁的「机器强制」清单（v1.2 实测：3 处未落实，全部只报不改）
+
+> 起因：v1.1 已定「SKIP = 未验证 = 红」，但 run `41800113745` 证明这条目前**只写在纸上、没有机器执行**。三条各自给了改法与归属；**在补齐前，「四道门禁全绿」不等于「真库已验证」**。
+
+| # | 现状（实测证据） | 风险 | 建议改法 | 归属 |
+|---|---|---|---|---|
+| ① | `integration` job 的测试步骤在**没有任何 `//go:build integration` 文件时只 `echo "[INFO] 暂无…"` 然后继续**（run `41800113745` 实测） | **0 条真库用例也能绿**——「空题库」被当成通过 | 该步开头加 `[ -n "$test_files" ] \|\| { echo "[FAIL] 无 integration 用例"; exit 1; }`（S3 起必须非空；S3 前的既有 commit 不受影响） | Edge（S3 同批）+ Ark（工作流） |
+| ② | `scripts/test-summary.sh` 只 `print` `tests_skip`，**判红条件只有 `fail>0` / `cached=yes` / `run=0`**，`skip>0` 不判红 | SKIP 会被静默计入「绿」，违反 §9.1 | 加一行 `[ "$skip" -eq 0 ] \|\| { echo "[FAIL] 存在 SKIP（=未验证=红）：$skip"; exit 1; }` | Ark（脚本 owner） |
+| ③ | **branch protection 未要求 status checks**（`gh api repos/…/branches/main/protection` 的返回里没有 `required_status_checks`） | 四道门禁是**自律门禁**：红着也能点 merge，等于门禁可被绕过 | 打开 `required_status_checks`，至少包含 `go` / `race` / `web` / `integration` 四个 check 名 | **spencer（唯一 admin）**，团队无权限 |
+
+> 判据立场：①②未修前，「真库类判据」一律按**未验证**记账（`AC-ENG-04` / `AC-FLOW-11` DB 侧 / `AC-AUD-02`）；③未修前，「四道门禁全绿」只能作为**过程证据**，不能作为「合并不可绕过」的保证。
+
 ## 10. 变更记录
 
+- **v1.2（2026-11-04，只改判据、不动 `AC-*` 与账目）**：①按 main `2ef3bd7` 的 run `41800113745` 核实 `integration` job **真跑**（`postgres:16` + `pg_isready` → `migrate up` 16 条逐条 → schema 六项**真断言** → `go test -tags=integration`，`tests_skip=0`、`cached=no`），并在 §9.2 把「**唯一权威真库环境 = CI `integration` job**、本机无 docker 不算证据」写死；②**点名界限**：该 run 日志明写 `[INFO] 暂无 integration 测试文件`，19 条全是普通单测，**没有任何一条真连 Postgres** → `AC-ENG-04` / `AC-FLOW-11` DB 侧 / `AC-AUD-02` 在 S3 落地前按**未验证**处理；③新增 **§9.5** 三条机器强制缺口（空题库只 `echo INFO`、`test-summary.sh` 不把 `skip>0` 判红、branch protection 无 `required_status_checks`），每条给改法与归属，**只报不改**。
 - **v1.1 归档调整（2026-11-03，判据零改动）**：①本文件由 `qa/gate-criteria.md` **迁到 `docs/qa/gate-criteria.md`**（按 Ark 裁定统一到 `docs/`，仓库根不再放 `qa/`；门禁脚本对 `qa/*` 与 `docs/qa/*` 双豁免，迁移不点红）；②**删除 `qa/compliance-precheck.md`（退役，不留 RETIRED 副本）**——其口径已被 `decisions.md` **D8-B【正式裁定】/ D8-E 第二版**（密评整体后置、密评不进门禁）与 `acceptance-criteria.md` **§11.1**（重启密评的 I-1~I-7 输入清单）吸收，保留两份会造成"两套有效口径"；③正文两处指向该退役文件的引用改指上述两处。**未改任何 `AC-*`、未改账目（仍 v11 = 83/0/0/6/0/1）。**
 - **v1.1（2026-11-02）**：增补 §9 —— ①**门控 SKIP = 未验证 = 红**（本地 `PARTIAL` 允许、PR 准入与 S11 不允许；`verdict` 三值算法；SKIP 合法性边界：只准环境缺失、单一门控函数、禁过滤/摘包/mock 顶替）；②**真库验收的权威环境 = CI integration job**，过渡期由 hugo 指定的那一台代跑、owner 提供命令与 sha、**Gate 复核归档**，**不得拿别人环境的绿当自己证据**；③**覆盖率按基线 §9.3 逐模块下限**（crypto 90 / store 75 …），**全局 60% 只作兜底、不得替代、也不另设更高阈值**，并写明按包聚合 / 排除项 / 向下取整的统计口径。`summary.txt` 由四行扩为**六行**（增 `tests_skip` / `db_verified`·`db_env` / `verdict`），旧四行自 v1.1 起不再判绿。**未改任何 `AC-*` 与账目（现 v11 = 83/0/0/6/0/1）。**
 - **v1（2026-11-02）**：首版。把「三闸绿」落成可照做的判据：§1 逐闸绿的条件、§2 本地怎么跑（PG 三库 + Redis）、§3 十三条红名单、§4 证据格式（`artifacts/<sha>/gate/`）、§5 闸自证（A–F 已实测，G 待 `web/` 落地）、§6 十一项 PR 准入清单、§7 与 `AC-ENG-*` 的关系（**不改账目**）、§8 四处不一致。**只落判据、不写测试代码**（依 hugo 裁决）；测试与验收任务等骨架落地后再落。
