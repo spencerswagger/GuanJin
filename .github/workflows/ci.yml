@@ -147,6 +147,21 @@ jobs:
           # ③ 真跑并留证据；SKIP/失败/缓存/空跑一律由 test-summary.sh 判红
           go test -tags=integration ./... -count=1 -v | tee integration-test.log
           ./scripts/test-summary.sh integration-test.log | tee integration-summary.txt
+      - name: 集成覆盖率采集（integration profile；供 flowstore 85% 判定）
+        run: |
+          set -euo pipefail
+          # 与上一步同一批用例再次编译执行，只是多产出一份 profile。
+          # **刻意不加 -coverpkg**：加了以后每个测试二进制都会为所有包各写一份块记录，
+          # 同一代码块在 profile 里重复出现（多数 count=0），coverage-gate 的逐模块分母被放大，
+          # 实测会把 flowstore 从 85% 误判成 6%。默认模式（各包自己的测试）才是口径正确的做法：
+          # flowstore 的用例本身带 //go:build integration，故本 profile 里它有真实语句与覆盖。
+          go test -tags=integration ./... -count=1 -coverprofile=integration-cover.out
+          echo "[OK] integration-cover.out 已生成（$(wc -l < integration-cover.out | tr -d ' ') 行）"
+      - name: 集成覆盖率门禁（flowstore 85% 在此判定；unit profile 判不了）
+        run: |
+          set -euo pipefail
+          COVERAGE_TAGS=integration COVERAGE_PROFILE=integration-cover.out COVERAGE_MIN=60 \
+            ./scripts/coverage-gate.sh | tee integration-coverage.txt
 
   web:
     runs-on: ubuntu-latest
