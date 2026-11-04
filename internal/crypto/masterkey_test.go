@@ -55,7 +55,7 @@ func TestDeriveIsDeterministic(t *testing.T) {
 	}
 }
 
-// 用途隔离：5 个用途域必须两两不同（同主密钥下不允许出现"两个用途同键"）。
+// 用途隔离：6 个用途域必须两两不同（同主密钥下不允许出现"两个用途同键"）。
 func TestDerivePurposesAreIsolated(t *testing.T) {
 	mk := mustMasterKey(t)
 	seen := map[string]Purpose{}
@@ -83,6 +83,59 @@ func TestDerivePurposesAreIsolated(t *testing.T) {
 			t.Fatalf("purposes %q and %q derived the same key (isolation broken)", prev, p)
 		}
 		seen[hexKey] = p
+	}
+}
+
+// D14②：`hmac/register`（注册窗口令牌）必须与其余 5 个用途**派生出不同密钥**。
+//
+// 单看 TestDerivePurposesAreIsolated 已经覆盖两两隔离，但这条独立钉住"新用途不许
+// 复用 hmac/identifier"这个具体裁定：如果将来有人把 register 的用途值改成 identifier，
+// 下面第一条（用途名）与第二条（密钥不同）会分别报错，评审不必靠肉眼比对 hash。
+func TestRegisterPurposeIsDistinctFromTheOtherFive(t *testing.T) {
+	if PurposeHMACRegister != Purpose("guanjin/hmac/register") {
+		t.Fatalf("用途域冻结为 guanjin/hmac/register，实际 %q", string(PurposeHMACRegister))
+	}
+	if PurposeHMACRegister == PurposeHMACIdentifier {
+		t.Fatal("register_token 不得复用 hmac/identifier（一密钥一用途）")
+	}
+	kind, err := PurposeHMACRegister.Kind()
+	if err != nil {
+		t.Fatalf("kind: %v", err)
+	}
+	if kind != KindHMAC {
+		t.Fatalf("hmac/register kind = %v, want KindHMAC", kind)
+	}
+	if length, err := PurposeHMACRegister.Length(); err != nil || length != 32 {
+		t.Fatalf("hmac/register length = %d, %v; want 32", length, err)
+	}
+
+	mk := mustMasterKey(t)
+	registerKey, err := mk.DeriveHMAC(PurposeHMACRegister)
+	if err != nil {
+		t.Fatalf("derive hmac/register: %v", err)
+	}
+	if registerKey.IsZero() {
+		t.Fatal("derived hmac/register key must not be zero")
+	}
+	for _, other := range Purposes() {
+		if other == PurposeHMACRegister {
+			continue
+		}
+		otherKind, err := other.Kind()
+		if err != nil {
+			t.Fatalf("kind(%s): %v", other, err)
+		}
+		// 同为 HMAC 的用途才能直接比字节；SM4 用途已由"密钥空间不同"天然隔开。
+		if otherKind != KindHMAC {
+			continue
+		}
+		otherKey, err := mk.DeriveHMAC(other)
+		if err != nil {
+			t.Fatalf("derive %s: %v", other, err)
+		}
+		if registerKey.Equal(otherKey) {
+			t.Fatalf("hmac/register 与 %s 派生出同一把密钥（用途隔离被破坏）", other)
+		}
 	}
 }
 
@@ -115,6 +168,11 @@ func TestPurposeLengths(t *testing.T) {
 		PurposeHMACAudit:      {KindHMAC, 32},
 		PurposeHMACIdentifier: {KindHMAC, 32},
 		PurposeHMACAgent:      {KindHMAC, 32},
+		PurposeHMACRegister:   {KindHMAC, 32},
+	}
+	// 逐用途的期望表必须覆盖**全部**冻结用途：漏写一条就等于给"新用途随便定长度"开门。
+	if len(want) != len(Purposes()) {
+		t.Fatalf("期望表 %d 条 ≠ 冻结用途 %d 条（新增用途要同时补长度断言）", len(want), len(Purposes()))
 	}
 	for p, exp := range want {
 		kind, err := p.Kind()
@@ -273,8 +331,8 @@ func TestKeyKindAndPurposeString(t *testing.T) {
 			KindSM4.String(), KindHMAC.String(), KeyKind(99).String())
 	}
 	list := Purposes()
-	if len(list) != 5 {
-		t.Fatalf("Purposes() must return the 5 frozen purposes, got %d", len(list))
+	if len(list) != 6 {
+		t.Fatalf("Purposes() must return the 6 frozen purposes, got %d", len(list))
 	}
 	if _, err := Purpose("bogus").Kind(); err == nil {
 		t.Fatal("unknown purpose Kind must fail")

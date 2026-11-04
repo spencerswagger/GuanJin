@@ -1,11 +1,12 @@
 // Package crypto 是「国密封装：SM2/SM3/SM4 + 主密钥派生」的唯一边界。
 //
 // 口径（decisions.md / 基线）：
-//   - 索引 §2；D4-B（HKDF-SM3 派生、5 个用途域）
+//   - 索引 §2；D4-B / D14②（HKDF-SM3 派生、6 个用途域）
 //   - **主密钥只做派生输入、不进任何业务算法**：`MasterKey` 没有任何导出方法交出原文，
 //     算法入口只接受派生得到的 `SM4Key` / `HMACKey`（字段不导出、无导出构造函数），
 //     因此"把未派生的输入塞进算法"在**编译期**就写不出来；
-//   - 用途域：`guanjin/sm4/field` | `sm4/keywrap` | `hmac/audit` | `hmac/identifier` | `hmac/agent`；
+//   - 用途域：`guanjin/sm4/field` | `sm4/keywrap` | `hmac/audit` | `hmac/identifier` | `hmac/agent` |
+//     `hmac/register`（D14② 注册窗口令牌，与盲索引分开：一密钥一用途）；
 //     未知用途一律报错（禁自造 domain separator）；
 //   - 纯软国密（P2①）：不接密码机/密码卡，底层用 `tjfoc/gmsm`；
 //   - 算法固定最高级、与档位无关（技术栈 §2）：SM3 / HMAC-SM3 / SM4 / PBKDF2-SM3 /
