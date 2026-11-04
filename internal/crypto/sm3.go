@@ -37,6 +37,25 @@ func HMACSM3Hex(key HMACKey, msg []byte) string {
 	return hexLower(HMACSM3(key, msg))
 }
 
+// HMACSM3WithUserSecret 计算 HMAC-SM3(secret, msg)，secret 为**用户侧共享密钥**（任意长度）。
+//
+// 它存在的唯一理由是 TOTP/HOTP：动态口令的 HMAC 键是**每个用户各自的随机共享密钥**
+// （`authenticators.credential_data.secret_enc` 解密后得到），它既不是平台密钥、也不可能由
+// `MasterKey.Derive*` 派生出来。若无此入口，`internal/credential` 只能自己手写一遍 HMAC
+// ——那会让"SM3 实现只有一个调用点"（本包包注释的承诺）当场失效。
+//
+// **调用边界（写进评审口径）**：
+//   - 允许：`internal/credential` 的 TOTP/HOTP；
+//   - 禁止：任何以「平台密钥」为键的场景（审计链、盲索引、Agent HMAC、字段加密）——
+//     那些必须走 `MasterKey.DeriveHMAC` 得到 `HMACKey` 再调 `HMACSM3`，编译期挡住"未派生"。
+//   - 本函数**不接受** `MasterKey`/`HMACKey`（类型不同，传错编译不过）。
+func HMACSM3WithUserSecret(secret, msg []byte) []byte {
+	if len(secret) == 0 {
+		return nil
+	}
+	return hmacSM3Raw(secret, msg)
+}
+
 // hkdfSM3 是 RFC 5869 定义的 HKDF，哈希原语固定为 SM3（D4-B：`HKDF(SM3, masterKey,
 // salt=purpose, info=purpose)`）。
 //

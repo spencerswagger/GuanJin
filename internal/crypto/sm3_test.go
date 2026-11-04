@@ -85,6 +85,40 @@ func TestHMACSM3KeyAndMessageSensitivity(t *testing.T) {
 	}
 }
 
+// HMACSM3WithUserSecret 是 TOTP/HOTP 的唯一入口（键是**用户侧**共享密钥，不是平台密钥）。
+//
+// 它必须与 `hmacSM3Raw`（以及 stdlib 的 RFC 2104 构造）逐字节一致 —— 否则动态口令的
+// 校验值与其他实现（含旧系统、第三方 authenticator）对不上，而这类错**只在联调时**才暴露。
+func TestHMACSM3WithUserSecret(t *testing.T) {
+	cases := [][]byte{
+		[]byte("12345678901234567890"), // RFC 4226 附录 D 的经典 20B 种子
+		[]byte(strings.Repeat("s", 20)),
+		[]byte(strings.Repeat("k", 100)), // 长键（> 64B 分组）也要走"先哈希"分支
+	}
+	msgs := [][]byte{nil, []byte("hotp-counter-1"), []byte(strings.Repeat("z", 512))}
+	for _, secret := range cases {
+		for _, msg := range msgs {
+			want := hmac.New(sm3.New, secret)
+			want.Write(msg)
+			got := HMACSM3WithUserSecret(secret, msg)
+			if !hmac.Equal(got, want.Sum(nil)) {
+				t.Fatalf("HMACSM3WithUserSecret mismatch (secret len %d, msg len %d)", len(secret), len(msg))
+			}
+			if len(got) != SM3Size {
+				t.Fatalf("must be %d bytes, got %d", SM3Size, len(got))
+			}
+		}
+	}
+}
+
+// 空密钥必须直接返回 nil：HMAC 的零长键在 RFC 2104 里会被补成全零 pad，
+// 等于"任何人可算"，绝不能悄悄算出一个看起来合法的标签。
+func TestHMACSM3WithUserSecretRejectsEmptyKey(t *testing.T) {
+	if got := HMACSM3WithUserSecret(nil, []byte("m")); got != nil {
+		t.Fatalf("empty secret must yield nil, got %x", got)
+	}
+}
+
 // HKDF-SM3（RFC 5869 §2）与参考实现逐字节一致，且长度语义正确。
 func TestHKDFSM3MatchesReference(t *testing.T) {
 	mk := mustMasterKey(t)
