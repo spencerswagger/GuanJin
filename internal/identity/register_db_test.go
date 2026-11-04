@@ -175,11 +175,12 @@ func TestAC_REG_06_RegisterCreatesRows(t *testing.T) {
 	}
 
 	// ③ authenticators：password 信封能解回来并校验通过（证明写入的不是坏数据）。
-	var raw []byte
+	var rawJSON string
 	if err := db.WithContext(ctx).Raw(
-		`SELECT credential_data FROM authenticators WHERE id = ?`, res.AuthenticatorID).Scan(&raw).Error; err != nil {
+		`SELECT credential_data FROM authenticators WHERE id = ?`, res.AuthenticatorID).Scan(&rawJSON).Error; err != nil {
 		t.Fatalf("读 authenticators: %v", err)
 	}
+	raw := []byte(rawJSON)
 	env, err := credential.ParsePasswordEnvelope(raw)
 	if err != nil {
 		t.Fatalf("落库的口令信封必须合法：%v", err)
@@ -394,13 +395,32 @@ func TestDB_IdentifierInvariants(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Register: %v", err)
 		}
-		if err := svc.UnbindIdentifier(ctx, res.UserID, res.IdentifierID); !errors.Is(err, identifier.ErrLastVerifiedIdentifier) {
-			t.Fatalf("期望 ErrLastVerifiedIdentifier，实际 %v", err)
+		// 只有一条（已验证）：先撞 I2 —— 两个不变式对外同码（LAST_IDENTIFIER_CANNOT_UNBIND），
+		// 但内部错误要能分开，否则排障时不知道"是数量问题还是验证状态问题"。
+		if err := svc.UnbindIdentifier(ctx, res.UserID, res.IdentifierID); !errors.Is(err, identifier.ErrLastIdentifier) {
+			t.Fatalf("只剩一条时应报 I2（总量），实际 %v", err)
 		}
-		// 再绑一个已验证邮箱 → 这时可以解绑第一个。
+		// 再绑一条**未验证**的 → 总量 2、已验证 1：解绑那条已验证的 → 这时才是 I1。
+		if _, err := svc.BindIdentifier(ctx, BindRequest{
+			UserID: res.UserID, Type: identifier.TypeEmail,
+			Value: "i1b-" + uuid.NewString()[:10] + "@example.com",
+		}); err != nil {
+			t.Fatalf("BindIdentifier: %v", err)
+		}
+		if err := svc.UnbindIdentifier(ctx, res.UserID, res.IdentifierID); !errors.Is(err, identifier.ErrLastVerifiedIdentifier) {
+			t.Fatalf("解绑最后一条已验证标识符应报 I1，实际 %v", err)
+		}
+	})
+
+	t.Run("I1/I2 的边界：两条都验证过则允许解绑其一", func(t *testing.T) {
+		f, svc := setup(t, true)
+		res, err := f.register(t, svc, "i1c-"+uuid.NewString()[:10]+"@example.com", "GuanJin#S4b-Strong1")
+		if err != nil {
+			t.Fatalf("Register: %v", err)
+		}
 		second, err := svc.BindIdentifier(ctx, BindRequest{
 			UserID: res.UserID, Type: identifier.TypeEmail,
-			Value:    "i1b-" + uuid.NewString()[:10] + "@example.com",
+			Value:    "i1d-" + uuid.NewString()[:10] + "@example.com",
 			Verified: true, VerifyMethod: "email_otp", TrustLevel: 2,
 		})
 		if err != nil {
@@ -424,8 +444,7 @@ func TestDB_IdentifierInvariants(t *testing.T) {
 
 	t.Run("I2 最后一个标识符不可解绑", func(t *testing.T) {
 		f, svc := setup(t, true)
-		// 只有**未验证**标识符的账号才可能真的把"总量"降到 0：
-		// 只要还有一条已验证的，I1 会先拦住（它比 I2 更严格，这个优先级本身也要测）。
+		// 只有**未验证**标识符的账号才可能真的把"可用名字"降到 0（已验证的会被 I1 拦住）。
 		res, err := svc.Register(ctx, RegisterRequest{
 			ClientID: f.clientID, Type: identifier.TypeEmail,
 			Value:    "i2-" + uuid.NewString()[:10] + "@example.com",
@@ -439,7 +458,7 @@ func TestDB_IdentifierInvariants(t *testing.T) {
 			t.Fatalf("总量为 1 时应被 I2 拦住，实际 %v", err)
 		}
 
-		// 再绑一条（未验证）→ 两条就允许解绑第一条了。
+		// 再绑一条（未验证）→ 两条就允许解绑第一条；解到只剩一条时再次被 I2 拦住。
 		second, err := svc.BindIdentifier(ctx, BindRequest{
 			UserID: res.UserID, Type: identifier.TypeEmail,
 			Value: "i2b-" + uuid.NewString()[:10] + "@example.com",
@@ -452,24 +471,6 @@ func TestDB_IdentifierInvariants(t *testing.T) {
 		}
 		if err := svc.UnbindIdentifier(ctx, res.UserID, second.ID); !errors.Is(err, identifier.ErrLastIdentifier) {
 			t.Fatalf("解到只剩一条时应再次被 I2 拦住，实际 %v", err)
-		}
-	})
-
-	t.Run("I1 优先于 I2（已验证明细）", func(t *testing.T) {
-		f, svc := setup(t, true)
-		res, err := f.register(t, svc, "i1p-"+uuid.NewString()[:10]+"@example.com", "GuanJin#S4b-Strong1")
-		if err != nil {
-			t.Fatalf("Register: %v", err)
-		}
-		if _, err := svc.BindIdentifier(ctx, BindRequest{
-			UserID: res.UserID, Type: identifier.TypeEmail,
-			Value: "i1pb-" + uuid.NewString()[:10] + "@example.com", // 未验证
-		}); err != nil {
-			t.Fatalf("BindIdentifier: %v", err)
-		}
-		// 总量 2、已验证 1：解绑那条已验证的 → I1 先拦（而不是 I2）。
-		if err := svc.UnbindIdentifier(ctx, res.UserID, res.IdentifierID); !errors.Is(err, identifier.ErrLastVerifiedIdentifier) {
-			t.Fatalf("应被 I1 拦住（比 I2 更严格），实际 %v", err)
 		}
 	})
 

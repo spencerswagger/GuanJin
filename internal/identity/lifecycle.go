@@ -40,7 +40,7 @@ func (s *Service) Snapshot(ctx context.Context, tx *gorm.DB, userID uuid.UUID) (
 	now := s.cfg.Now().UTC()
 	var snap identifier.Snapshot
 	var err error
-	if snap.Total, err = s.identifiers.CountByUser(ctx, tx, userID); err != nil {
+	if snap.Total, err = s.identifiers.CountActiveByUser(ctx, tx, userID); err != nil {
 		return snap, err
 	}
 	if snap.Verified, err = s.identifiers.CountVerified(ctx, tx, userID); err != nil {

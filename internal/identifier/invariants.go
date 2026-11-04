@@ -28,12 +28,13 @@ var (
 // Snapshot 是判定不变式所需的**全部读数**（一次事务内取，别分两次查）。
 //
 // 字段口径：
-//   - Total：该用户标识符总数（含 disabled？**含**——I2 说的是"标识符"这个事实，
-//     停用行仍然占着 `(type,value)` 唯一约束，把它算进去才守得住"别把最后一个也关掉"）；
+//   - Total：该用户**可用**（status='active'）标识符数。已解绑的行是墓碑
+//     （仍占 `(type,value)` 唯一约束、留着审计），**不计入** —— 否则解一条还剩一堆墓碑，
+//     I2 永远不会触发；
 //   - Verified：`verified AND status='active'`；
 //   - VerifiedAuthable：`verified AND status='active' AND type IN (phone,email)`；
 //   - UsableHolding：可用持有型认证器（active + 未锁定 + 未过期）；
-//   - Primary：`is_primary` 计数。
+//   - Primary：可用主标识符计数（`is_primary AND status='active'`）。
 type Snapshot struct {
 	Total            int64
 	Verified         int64

@@ -155,9 +155,13 @@ func (r *IdentifierRepo) ListByUser(ctx context.Context, userID uuid.UUID) ([]mo
 	return out, nil
 }
 
-// CountByUser 统计该用户的标识符总数（I2："不能解绑最后一个"）。
-func (r *IdentifierRepo) CountByUser(ctx context.Context, tx *gorm.DB, userID uuid.UUID) (int64, error) {
-	return r.count(ctx, tx, userID, "user_id = ?", userID)
+// CountActiveByUser 统计该用户**可用**（status='active'）的标识符数（I2："不能解绑最后一个"）。
+//
+// 为什么只数 active：I2 保护的是"账号不能一个可用的名字都不剩"。已经解绑的行是
+// **墓碑**（占着 `(type,value)` 唯一约束、留着审计），它不是"名字"。
+// 把它们数进去会让 I2 永远不触发（解一条、还剩一堆墓碑）。
+func (r *IdentifierRepo) CountActiveByUser(ctx context.Context, tx *gorm.DB, userID uuid.UUID) (int64, error) {
+	return r.count(ctx, tx, userID, "user_id = ? AND status = 'active'", userID)
 }
 
 // CountVerified 统计已验证标识符数（I1："至少一个已验证"）。
@@ -182,9 +186,9 @@ func (r *IdentifierRepo) CountVerifiedAuthable(ctx context.Context, tx *gorm.DB,
 	return n, nil
 }
 
-// CountPrimary 统计主标识符数（I6 的前置读数）。
+// CountPrimary 统计**可用**主标识符数（I6 的前置读数）。
 func (r *IdentifierRepo) CountPrimary(ctx context.Context, tx *gorm.DB, userID uuid.UUID) (int64, error) {
-	return r.count(ctx, tx, userID, "user_id = ? AND is_primary", userID)
+	return r.count(ctx, tx, userID, "user_id = ? AND is_primary AND status = 'active'", userID)
 }
 
 func (r *IdentifierRepo) count(ctx context.Context, tx *gorm.DB, userID uuid.UUID, where string, args ...any) (int64, error) {

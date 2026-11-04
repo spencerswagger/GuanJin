@@ -269,7 +269,7 @@ func TestIdentityReposAllMethodsSmoke(t *testing.T) {
 	}
 	_, _ = ids.GetByID(ctx, uid)
 	_, _ = ids.ListByUser(ctx, uid)
-	_, _ = ids.CountByUser(ctx, db, uid)
+	_, _ = ids.CountActiveByUser(ctx, db, uid)
 	_, _ = ids.CountVerified(ctx, nil, uid)
 	_, _ = ids.CountPrimary(ctx, db, uid)
 

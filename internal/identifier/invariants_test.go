@@ -162,6 +162,18 @@ func TestInvariants(t *testing.T) {
 		}
 	})
 
+	t.Run("I2 优先于 I1（只剩一条且已验证时）", func(t *testing.T) {
+		// 只剩一条、且它是已验证的：两条不变式都被违反，对外同码（LAST_IDENTIFIER_CANNOT_UNBIND），
+		// 但内部错误取**数量**那条——"账号没有名字可用"比"没有已验证名字"更贴近事实。
+		if err := CheckUnbind(Snapshot{Total: 1, Verified: 1}, true, true); !errors.Is(err, ErrLastIdentifier) {
+			t.Fatalf("期望 ErrLastIdentifier，实际 %v", err)
+		}
+		// 总量 2、已验证 1：这时才是 I1。
+		if err := CheckUnbind(Snapshot{Total: 2, Verified: 1}, true, true); !errors.Is(err, ErrLastVerifiedIdentifier) {
+			t.Fatalf("期望 ErrLastVerifiedIdentifier，实际 %v", err)
+		}
+	})
+
 	t.Run("I2 最后一个标识符不可解绑", func(t *testing.T) {
 		if err := CheckUnbind(Snapshot{Total: 1, Verified: 0}, false, true); !errors.Is(err, ErrLastIdentifier) {
 			t.Fatalf("期望 ErrLastIdentifier，实际 %v", err)
