@@ -70,11 +70,10 @@ const (
 	CodeThreePowerViolation Code = "THREE_POWER_VIOLATION" // E7 / 403
 	CodeACRInsufficient     Code = "ACR_INSUFFICIENT"      // E3 / 403 + details.flow
 	CodeSessionNotFound     Code = "SESSION_NOT_FOUND"     // E3 / 404
-	// CodeSessionNotOwned 表示"这条会话不属于你"（接口 §3.6.2 的错误码，§5.4 E4 组已登记）。
+	// CodeSessionNotOwned 表示"会话存在，但不属于当前调用者"（§5.4 E4 的 SESSION_NOT_OWNED）。
 	//
-	// 用 404 而不是 403：E4 前缀的默认区间是 404/409/422，而 403 会告诉调用方
-	// "这个 id 真实存在"——把别人的会话 id 变成可探测的。§5.4 首句允许接口覆盖状态码，
-	// 但这里**没有**覆盖的必要，404 既不泄露存在性又符合 E4 前缀。
+	// 与 `SESSION_NOT_FOUND` 分开：越权访问别人的会话必须能被审计区分出来，
+	// 而"查不到"可能是自己删掉了。对外都是 404（不回"存在但不属于你"，避免枚举）。
 	CodeSessionNotOwned Code = "SESSION_NOT_OWNED" // E4 / 404
 
 	// 资源与不变式（E4）
@@ -139,8 +138,7 @@ var knownCodes = []Code{
 	CodeTokenInvalid, CodeTokenExpired, CodeTokenRevoked, CodeSessionRevoked,
 	CodeInvalidCredential, CodeTemporalCodeReused, CodeAccountLocked,
 	CodeInvalidGrant, CodeRefreshTokenReused, CodePKCEFailed, CodeInvalidCodeVerifier,
-	CodeInsufficientRole, CodeThreePowerViolation, CodeACRInsufficient, CodeSessionNotFound,
-	CodeSessionNotOwned,
+	CodeInsufficientRole, CodeThreePowerViolation, CodeACRInsufficient, CodeSessionNotFound, CodeSessionNotOwned,
 	CodeIdentifierAlreadyBound, CodeIdentifierNotFound, CodeUserNotFound, CodeClientNotFound,
 	CodeKeyNotFound, CodeSnapshotNotFound, CodePolicySnapshotConflict, CodeCooldownActive,
 	CodePasswordPolicyViolation, CodeWeakPassword, CodePasswordReused,
@@ -183,9 +181,8 @@ func HTTPStatus(c Code) int {
 		CodeFlowExpired, CodePageSizeExceeded, CodeIdentifierInvalidFormat, CodeInviteCodeInvalid,
 		CodeInvalidCodeVerifier:
 		return http.StatusBadRequest
-	case CodeFlowNotFound, CodeSessionNotFound, CodeSessionNotOwned, CodeIdentifierNotFound,
-		CodeUserNotFound, CodeClientNotFound, CodeKeyNotFound, CodeSnapshotNotFound,
-		CodeBindingNotFound:
+	case CodeFlowNotFound, CodeSessionNotFound, CodeSessionNotOwned, CodeIdentifierNotFound, CodeUserNotFound,
+		CodeClientNotFound, CodeKeyNotFound, CodeSnapshotNotFound, CodeBindingNotFound:
 		return http.StatusNotFound
 	case CodeTokenInvalid, CodeTokenExpired, CodeTokenRevoked,
 		CodeInvalidCredential, CodeTemporalCodeReused, CodeAccountLocked,

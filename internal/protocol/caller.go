@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/spencerswagger/guanjin/internal/httpx"
@@ -75,6 +76,36 @@ func (r *CallerResolver) Resolve(ctx context.Context, token string) (httpx.Calle
 		}
 	}
 	return caller, nil
+}
+
+// ResolveCaller 是数据面/S8 的唯一入口：解析 Bearer 令牌并把失败写成对外码。
+//
+// **状态码按 D3-E 分工**（不是一律 401）：令牌不可信（缺/坏/过期）→ `TOKEN_INVALID` 401；
+// 令牌有效但会话已撤销/过期 → `SESSION_REVOKED` 403。二者是"凭证状态"与"准入状态"的区别。
+// 失败响应只回统一四字段（`code/message/trace_id`），**不带内部原因**。
+func (s *Server) ResolveCaller(w http.ResponseWriter, r *http.Request) (httpx.Caller, bool) {
+	if s.d.Caller == nil {
+		s.fail(w, r, httpx.CodeInternalError, "身份解析未装配")
+		return httpx.Caller{}, false
+	}
+	token := bearer(r)
+	if token == "" {
+		s.fail(w, r, httpx.CodeTokenInvalid, "缺少或无法解析 Bearer 令牌")
+		return httpx.Caller{}, false
+	}
+	caller, err := s.d.Caller.Resolve(r.Context(), token)
+	switch {
+	case err == nil:
+		return caller, true
+	case errors.Is(err, httpx.ErrCallerSessionRevoked):
+		s.fail(w, r, httpx.CodeSessionRevoked, "会话已失效，请重新登录")
+		return httpx.Caller{}, false
+	default:
+		// 细节只进日志（按 trace_id 可查），对外统一"令牌无效"。
+		s.d.Logger.WarnContext(r.Context(), "protocol: caller resolution failed", "trace_id", traceID(r), "error", err)
+		s.fail(w, r, httpx.CodeTokenInvalid, "令牌无效或已过期")
+		return httpx.Caller{}, false
+	}
 }
 
 // withinWindow 校验 exp/nbf（iat 不单独拒：它由签发侧写入，时钟偏移由 Skew 吸收）。

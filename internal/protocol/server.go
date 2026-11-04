@@ -87,8 +87,10 @@ type Deps struct {
 	FlowCode func(error) (httpx.Code, bool)
 	// FlowTTL 授权上下文的存活时间（装配层给，不在本包写常量）。
 	FlowTTL time.Duration
-	Logger  *slog.Logger
-	Now     func() time.Time
+	// Caller 是令牌解析器（`httpx.CallerResolver`；数据面与 `/userinfo` 之外的鉴权入口）。
+	Caller httpx.CallerResolver
+	Logger *slog.Logger
+	Now    func() time.Time
 }
 
 // Server 承载协议面端点（无本地状态，多副本一致）。
@@ -217,7 +219,10 @@ func (s *Server) exchangeCode(w http.ResponseWriter, r *http.Request) {
 
 	// ① `redirect_uri` 必须与**码内保存的那一份**逐字一致（RFC 6749 §4.1.3）：
 	// 否则攻击者拿到码后可以把回调改到自己的站点去换令牌 —— 授权码等于白送。
-	// 拒绝路径**不消费码**（码已在上面 Take 掉，所以这里只拒绝、不再写 success 审计）。
+	//
+	// **令牌换取即作废**：码在上面已用 `GETDEL` 取出，所以这个分支一旦走到，码就已经不可再用
+	// （补一次正确回调也换不到令牌）。这是有意的取舍：宁可让合法用户重走一次授权，
+	// 也不给"试错回调"留下可用窗口。
 	if p.Redirect != "" && r.PostFormValue("redirect_uri") != p.Redirect {
 		s.audit(r, AuditEvent{EventType: "token", ClientID: clientID, UserID: p.Sub, Result: "failure", Reason: "redirect_mismatch"})
 		s.fail(w, r, httpx.CodeInvalidGrant, "redirect_uri 与授权请求不一致")

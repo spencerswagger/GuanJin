@@ -910,3 +910,100 @@ func TestPKCEFailureAuditsFailure(t *testing.T) {
 		}
 	}
 }
+
+// 裁定 1：回调不一致 → 码作废；补一次正确回调也换不到令牌。
+func TestRedirectMismatchBurnsCode(t *testing.T) {
+	_, ts, store, _, _ := newTestServer(t, nil)
+	payload, _ := json.Marshal(codePayload{Sub: "u-1", ClientID: "c-1", ACR: "AAL1",
+		Redirect: "https://rp.example.com/cb"})
+	_ = store.Put(context.Background(), CodeKey("code-burn"), string(payload), time.Minute)
+
+	// 第一次：错误回调 → 401（码已被 GETDEL 取出，等于作废）
+	resp, _, env := postForm(t, ts.URL+"/oauth/token", map[string]string{
+		"grant_type": "authorization_code", "code": "code-burn", "client_id": "c-1",
+		"redirect_uri": "https://evil.example.com/cb",
+	})
+	if resp.StatusCode != http.StatusUnauthorized || env.Code != httpx.CodeInvalidGrant {
+		t.Fatalf("错误回调应 401，实际 %d / %s", resp.StatusCode, env.Code)
+	}
+	// 第二次：正确回调 → **仍失败**（钉住"码不可再用"）
+	resp2, _, env2 := postForm(t, ts.URL+"/oauth/token", map[string]string{
+		"grant_type": "authorization_code", "code": "code-burn", "client_id": "c-1",
+		"redirect_uri": "https://rp.example.com/cb",
+	})
+	if resp2.StatusCode != http.StatusUnauthorized || env2.Code != httpx.CodeInvalidGrant {
+		t.Fatalf("作废后的码再用应仍失败，实际 %d / %s", resp2.StatusCode, env2.Code)
+	}
+}
+
+// 裁定 2：ResolveCaller 的三种失败（无令牌 / 坏令牌 → 401 TOKEN_INVALID；
+// 会话已撤销 → **403 SESSION_REVOKED**，按 D3-E 的"凭证状态 vs 准入状态"分工）。
+func TestResolveCallerHTTPSemantics(t *testing.T) {
+	keys := testKeys(t)
+	now := time.Unix(1_760_000_000, 0).UTC()
+	sessions := &fakeSessionState{status: "active"}
+	resolver := &CallerResolver{Keys: keys, Sessions: sessions, Now: func() time.Time { return now }}
+
+	srv, err := New(Deps{
+		Keys: keys, Codes: newMemStore(), Sessions: &fakeSessions{},
+		Clients: &fakeClients{policy: ClientPolicy{ACR: "AAL1", AccessTTL: time.Minute, RefreshTTL: time.Hour}},
+		Issuer:  "https://auth.example.com",
+		Logger:  slog.New(slog.NewJSONHandler(io.Discard, nil)), Now: func() time.Time { return now },
+		Caller: resolver,
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /_caller", func(w http.ResponseWriter, r *http.Request) {
+		caller, ok := srv.ResolveCaller(w, r)
+		if !ok {
+			return
+		}
+		writeJSON(w, srv.d.Logger, http.StatusOK, map[string]any{"sub": caller.Sub})
+	})
+	ts := httptest.NewServer(httpx.TraceMiddleware(mux, "X-Trace-Id", srv.d.Logger))
+	t.Cleanup(ts.Close)
+
+	do := func(hdr string) (*http.Response, httpx.ErrorResponse) {
+		req, _ := http.NewRequest(http.MethodGet, ts.URL+"/_caller", nil)
+		if hdr != "" {
+			req.Header.Set("Authorization", hdr)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("GET: %v", err)
+		}
+		var env httpx.ErrorResponse
+		if resp.StatusCode >= 400 {
+			_ = json.NewDecoder(resp.Body).Decode(&env)
+		}
+		return resp, env
+	}
+
+	// ① 无令牌 → 401 TOKEN_INVALID
+	resp, env := do("")
+	if resp.StatusCode != http.StatusUnauthorized || env.Code != httpx.CodeTokenInvalid {
+		t.Fatalf("无令牌应 401 TOKEN_INVALID，实际 %d / %s", resp.StatusCode, env.Code)
+	}
+	// ② 坏令牌 → 401 TOKEN_INVALID，且不泄露内部原因
+	resp, env = do("Bearer garbage")
+	if resp.StatusCode != http.StatusUnauthorized || env.Code != httpx.CodeTokenInvalid {
+		t.Fatalf("坏令牌应 401，实际 %d / %s", resp.StatusCode, env.Code)
+	}
+	if env.Message == "" || strings.Contains(env.Message, "signature") || strings.Contains(env.Message, "sm2") {
+		t.Fatalf("对外文案不得泄露内部细节：%q", env.Message)
+	}
+	// ③ 正常令牌 → 200
+	tok := mintToken(t, keys, map[string]any{"sub": "u-1", "sid": "sid-1", "exp": now.Add(time.Minute).Unix()})
+	resp, _ = do("Bearer " + tok)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("正常令牌应 200，实际 %d", resp.StatusCode)
+	}
+	// ④ 会话撤销 → 403 SESSION_REVOKED（D3-E）
+	sessions.status = "revoked"
+	resp, env = do("Bearer " + tok)
+	if resp.StatusCode != http.StatusForbidden || env.Code != httpx.CodeSessionRevoked {
+		t.Fatalf("会话撤销应 403 SESSION_REVOKED，实际 %d / %s", resp.StatusCode, env.Code)
+	}
+}

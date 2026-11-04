@@ -300,6 +300,10 @@ func newProtocolHandler(ctx context.Context, db *gorm.DB, cfg *config.Config, st
 		return nil, err
 	}
 	orch := flowHandler.Orchestrator()
+	caller, err := newCallerResolver(keys, db)
+	if err != nil {
+		return nil, err
+	}
 	return protocol.New(protocol.Deps{
 		Keys:       keys,
 		Codes:      codeStore,
@@ -314,6 +318,7 @@ func newProtocolHandler(ctx context.Context, db *gorm.DB, cfg *config.Config, st
 		Redirects:  &redirects{repo: policies},
 		FlowCode:   flow.CodeOf,
 		FlowTTL:    startup.FlowTTL,
+		Caller:     caller,
 	})
 }
 
