@@ -252,3 +252,58 @@ func (r *ClientPolicyRepo) lockoutRow(ctx context.Context, where string, arg any
 	}
 	return &row, nil
 }
+
+// TokenPolicy 是签发令牌需要的会话/令牌参数（`login_policies` 的 A/B 组）。
+type TokenPolicy struct {
+	MinACR              string `gorm:"column:min_acr"`
+	AccessTokenTTLSec   int    `gorm:"column:access_token_ttl_sec"`
+	RefreshTokenTTLSec  int    `gorm:"column:refresh_token_ttl_sec"`
+	SessionIdleTimeoutM int    `gorm:"column:session_idle_timeout_min"`
+	SessionAbsoluteMin  int    `gorm:"column:session_absolute_timeout_min"`
+}
+
+// LoadTokenPolicy 读某业务系统的令牌与会话参数（client_override 优先，其次同档 tier_default）。
+//
+// **不返回默认值**：两者都没有 → `ErrPolicyNotConfigured`（配置缺陷，不是用户错）。
+func (r *ClientPolicyRepo) LoadTokenPolicy(ctx context.Context, clientID string) (*TokenPolicy, error) {
+	if strings.TrimSpace(clientID) == "" {
+		return nil, errors.New("store: empty client id")
+	}
+	var c clientRow
+	if res := r.db.WithContext(ctx).Raw(
+		`SELECT client_id, tier, status FROM clients WHERE client_id = ?`, clientID).Scan(&c); res.Error != nil {
+		return nil, MapError(res.Error)
+	}
+	if c.ClientID == "" {
+		return nil, ErrClientNotFound
+	}
+	query := func(where string, arg any) (*TokenPolicy, error) {
+		var row TokenPolicy
+		res := r.db.WithContext(ctx).Raw(
+			`SELECT min_acr, access_token_ttl_sec, refresh_token_ttl_sec,
+			        session_idle_timeout_min, session_absolute_timeout_min
+			   FROM login_policies WHERE `+where+` LIMIT 1`, arg).Scan(&row)
+		if res.Error != nil {
+			return nil, MapError(res.Error)
+		}
+		if res.RowsAffected == 0 {
+			return nil, nil
+		}
+		return &row, nil
+	}
+	over, err := query(`scope = 'client_override' AND client_id = ?`, clientID)
+	if err != nil {
+		return nil, err
+	}
+	chosen := over
+	if chosen == nil && c.Tier != "" {
+		chosen, err = query(`scope = 'tier_default' AND tier = ?`, c.Tier)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if chosen == nil {
+		return nil, ErrPolicyNotConfigured
+	}
+	return chosen, nil
+}

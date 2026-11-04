@@ -32,6 +32,10 @@ type Config struct {
 	MasterKey *crypto.MasterKey
 	// TraceHeader 是贯穿日志、auth_events、audit_logs 的 trace 头名（D4-C）。
 	TraceHeader string
+	// Issuer 是 OIDC `iss` 与 discovery 文档的基址（如 `https://auth.example.com`）。
+	//
+	// **可选**：只有装配协议面（S6）时才必需；未配置时由装配层报错（不在代码里写死域名）。
+	Issuer string
 }
 
 // Load 读取环境变量并做 fail-fast 校验。
@@ -49,6 +53,7 @@ func Load(getenv func(string) string) (*Config, error) {
 		RedisAddr:     strings.TrimSpace(getenv("GUANJIN_REDIS_ADDR")),
 		RedisPassword: getenv("GUANJIN_REDIS_PASSWORD"),
 		TraceHeader:   strings.TrimSpace(getenv("GUANJIN_TRACE_HEADER")),
+		Issuer:        strings.TrimRight(strings.TrimSpace(getenv("GUANJIN_ISSUER")), "/"),
 	}
 	if c.HTTPAddr == "" {
 		c.HTTPAddr = ":8080"

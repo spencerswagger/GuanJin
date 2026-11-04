@@ -77,6 +77,13 @@ func startup(ctx context.Context, getenv func(string) string, logger *slog.Logge
 		return nil, fmt.Errorf("startup: runtime_config: %w", err)
 	}
 
+	// 协议面（S6）：密钥解封与用途校验都在这里 fail-fast（坏密钥不允许对外服务）。
+	protoSrv, err := newProtocolHandler(ctx, db, cfg, logger)
+	if err != nil {
+		_ = store.Close(db)
+		return nil, err
+	}
+
 	mux := http.NewServeMux()
 	w, err := newWiring(ctx, db, cfg, startupCfg, logger)
 	if err != nil {
@@ -87,6 +94,8 @@ func startup(ctx context.Context, getenv func(string) string, logger *slog.Logge
 	w.flowHandler.Routes(mux)
 	// 注册面（S4）：`/auth/register/start|complete`。
 	w.registerHandler.Routes(mux)
+	// 协议面（S6）：discovery / jwks / token / revoke / introspect / userinfo。
+	protoSrv.Routes(mux)
 
 	mux.HandleFunc("/livez", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -130,6 +139,17 @@ func (a *app) close() error {
 
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
+
+	// `guanjind keygen`：离线生成签名密钥（幂等）。生成只走 CLI，启动期只解封。
+	if len(os.Args) > 1 && os.Args[1] == "keygen" {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if err := runKeygen(ctx, os.Getenv, os.Stdout); err != nil {
+			logger.Error("keygen failed", "error", err)
+			os.Exit(2)
+		}
+		return
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()

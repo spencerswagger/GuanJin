@@ -7,6 +7,8 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/google/uuid"
+	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 
 	"github.com/spencerswagger/guanjin/internal/config"
@@ -16,8 +18,10 @@ import (
 	"github.com/spencerswagger/guanjin/internal/flow"
 	"github.com/spencerswagger/guanjin/internal/flowstore"
 	"github.com/spencerswagger/guanjin/internal/identity"
+	"github.com/spencerswagger/guanjin/internal/protocol"
 	"github.com/spencerswagger/guanjin/internal/risk"
 	"github.com/spencerswagger/guanjin/internal/store"
+	"github.com/spencerswagger/guanjin/internal/store/model"
 )
 
 // 本文件是**装配层**：把仓储、因子、风控、编排器接成一根可用的业务线。
@@ -269,4 +273,114 @@ func parseFactorTypes(raw []string) ([]factor.FactorType, error) {
 		out = append(out, t)
 	}
 	return out, nil
+}
+
+// newProtocolHandler 装出协议面（S6）。
+//
+// 启动期顺序（任何一步失败都非 0 退出）：读 `signing_keys` → **解封**（坏密钥不起来）→
+// 校验两个用途都有可用键（缺键提示跑 `guanjind keygen`）→ 才构造处理器。
+func newProtocolHandler(ctx context.Context, db *gorm.DB, cfg *config.Config, logger *slog.Logger) (*protocol.Server, error) {
+	keys, err := loadSigningKeys(ctx, db, cfg)
+	if err != nil {
+		return nil, err
+	}
+	if cfg.Issuer == "" {
+		return nil, errors.New("startup: GUANJIN_ISSUER is required to serve the protocol endpoints")
+	}
+	rdb := redis.NewClient(&redis.Options{Addr: cfg.RedisAddr, Password: cfg.RedisPassword})
+	codeStore, err := protocol.NewRedisStore(rdb)
+	if err != nil {
+		return nil, fmt.Errorf("startup: code store: %w", err)
+	}
+	policies := store.NewClientPolicyRepo(db)
+	return protocol.New(protocol.Deps{
+		Keys:     keys,
+		Codes:    codeStore,
+		Sessions: &sessionIssuer{repo: store.NewSessionRepo(db), policies: policies},
+		Clients:  &clientPolicies{repo: policies},
+		Audit:    &auditSink{repo: store.NewAuthEventRepo(db)},
+		Issuer:   cfg.Issuer,
+		Logger:   logger,
+		Now:      time.Now,
+	})
+}
+
+// clientPolicies 把 `login_policies` 的 A/B 组折成协议面要的 TTL 与 ACR。
+type clientPolicies struct{ repo *store.ClientPolicyRepo }
+
+func (c *clientPolicies) Policy(ctx context.Context, clientID string) (protocol.ClientPolicy, error) {
+	p, err := c.repo.LoadTokenPolicy(ctx, clientID)
+	if err != nil {
+		return protocol.ClientPolicy{}, clientError(err)
+	}
+	return protocol.ClientPolicy{
+		ACR:         p.MinACR,
+		AccessTTL:   time.Duration(p.AccessTokenTTLSec) * time.Second,
+		RefreshTTL:  time.Duration(p.RefreshTokenTTLSec) * time.Second,
+		IdleTimeout: time.Duration(p.SessionIdleTimeoutM) * time.Minute,
+		AbsTimeout:  time.Duration(p.SessionAbsoluteMin) * time.Minute,
+	}, nil
+}
+
+// sessionIssuer 是 S6 的**最小写路径**（S7 负责续期/撤销/列表）。
+type sessionIssuer struct {
+	repo     *store.SessionRepo
+	policies *store.ClientPolicyRepo
+}
+
+func (s *sessionIssuer) Issue(ctx context.Context, spec protocol.SessionSpec) (string, error) {
+	uid, err := uuid.Parse(spec.UserID)
+	if err != nil {
+		return "", fmt.Errorf("startup: invalid user id in session spec: %w", err)
+	}
+	p, err := s.policies.LoadTokenPolicy(ctx, spec.ClientID)
+	if err != nil {
+		return "", clientError(err)
+	}
+	now := time.Now().UTC()
+	row := &model.Session{
+		UserID:        uid,
+		ClientID:      spec.ClientID,
+		ACR:           spec.ACR,
+		AMR:           model.StringArray(spec.AMR),
+		Status:        "active",
+		IssuedAt:      now,
+		ExpiresAt:     now.Add(time.Duration(p.SessionAbsoluteMin) * time.Minute),
+		IdleExpiresAt: now.Add(time.Duration(p.SessionIdleTimeoutM) * time.Minute),
+	}
+	row.ID = uuid.Must(uuid.NewV7())
+	if err := s.repo.Create(ctx, row); err != nil {
+		return "", err
+	}
+	return row.ID.String(), nil
+}
+
+// auditSink 把令牌面的消费/轮换/撤销写成 `auth_events`。
+type auditSink struct{ repo *store.AuthEventRepo }
+
+func (a *auditSink) Append(ctx context.Context, ev protocol.AuditEvent) error {
+	row := &model.AuthEvent{
+		EventType:  ev.EventType,
+		Result:     ev.Result,
+		AMR:        model.StringArray{},
+		OccurredAt: time.Now().UTC(),
+	}
+	if ev.ClientID != "" {
+		cid := ev.ClientID
+		row.ClientID = &cid
+	}
+	if ev.UserID != "" {
+		if uid, err := uuid.Parse(ev.UserID); err == nil {
+			row.UserID = &uid
+		}
+	}
+	if ev.Reason != "" {
+		reason := ev.Reason
+		row.Reason = &reason
+	}
+	if ev.TraceID != "" {
+		trace := ev.TraceID
+		row.TraceID = &trace
+	}
+	return a.repo.Append(ctx, row)
 }
