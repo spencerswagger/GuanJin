@@ -1,9 +1,11 @@
 package identity
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -13,6 +15,7 @@ import (
 	"time"
 
 	"github.com/spencerswagger/guanjin/internal/credential"
+	"github.com/spencerswagger/guanjin/internal/crypto"
 	"github.com/spencerswagger/guanjin/internal/factor"
 	"github.com/spencerswagger/guanjin/internal/httpx"
 	"github.com/spencerswagger/guanjin/internal/identifier"
@@ -244,5 +247,36 @@ func TestHTTPCompleteEmitsViolationsDetails(t *testing.T) {
 	// 元素形状按 D3-B″ 冻结的 `{code, hint?}`（`rule` 是附加键），顺序固定 weak → reused → policy。
 	if first["hint"] != "常见弱口令" || first["code"] != string(httpx.CodeWeakPassword) {
 		t.Fatalf("第一条应是弱口令且带 hint，实际 %v", first)
+	}
+}
+
+// D15④：注册面的完整性失败同样是**不可重试**的 500，并落一条带 `crypto_sentinel` 的日志。
+func TestHTTPRegisterIntegrityMismatchIsNonRetryable(t *testing.T) {
+	var logBuf bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	boom := fmt.Errorf("%w: open secret: %w", credential.ErrIntegrityMismatch, crypto.ErrIntegrityMismatch)
+	h, err := NewRegisterHTTP(&fakeRegistrar{compErr: boom}, logger)
+	if err != nil {
+		t.Fatalf("NewRegisterHTTP: %v", err)
+	}
+	mux := http.NewServeMux()
+	h.Routes(mux)
+	srv := httptest.NewServer(httpx.TraceMiddleware(mux, "X-Trace-Id", logger))
+	t.Cleanup(srv.Close)
+
+	resp, body := postRegister(t, srv.URL+"/auth/register/complete",
+		`{"register_token":"v1.a.b","password":"x"}`)
+	// 字面量断言（评审 P3）：不用常量自比，否则文案被改回"请稍后重试"也不会红。
+	const wantMessage = "数据完整性校验失败，不可重试，请携带 trace_id 联系支持"
+	if resp.StatusCode != http.StatusInternalServerError || body.Message != wantMessage {
+		t.Fatalf("应为 500 + 不可重试文案（%q），实际 %d / %q", wantMessage, resp.StatusCode, body.Message)
+	}
+	details, _ := body.Details.(map[string]any)
+	if details["crypto_sentinel"] != "mac_mismatch" {
+		t.Fatalf("哨兵标签应为 mac_mismatch，实际 %v", body.Details)
+	}
+	logs := logBuf.String()
+	if !strings.Contains(logs, `"crypto_sentinel":"mac_mismatch"`) || !strings.Contains(logs, `"retryable":false`) {
+		t.Fatalf("必须落一条带 crypto_sentinel 的日志，实际 %q", logs)
 	}
 }

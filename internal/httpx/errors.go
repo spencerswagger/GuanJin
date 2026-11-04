@@ -10,7 +10,11 @@ package httpx
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
+	"sync/atomic"
+
+	"github.com/spencerswagger/guanjin/internal/crypto"
 )
 
 // Code 是错误码类型。字符串值即对外错误码，**三语言 SDK 只消费不新增**。
@@ -211,4 +215,45 @@ func WriteErrorStatus(w http.ResponseWriter, traceID string, c Code, status int,
 	}
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(ErrorResponse{Code: c, Message: msg, TraceID: traceID, Details: details})
+}
+
+// integrityMismatchTotal 是**完整性失败**的进程内计数器（D15④ / ADR-005 的运维切口）。
+//
+// 为什么单独一个计数器：这类失败被 `CodeOf` 归到 `INTERNAL_ERROR`(500)，与"其它未识别内部错误"
+// 混在同一个码里；只有把它单调计数 + 结构化日志带 `crypto_sentinel`，运维才能区分
+// 「存量 v1 未重加密（重灌/一次性重加密）」与「MAC 不过（按安全事件处理）」。
+//
+// **缺件说明（如实登记）**：平台目前还没有指标/告警底座（`audit_chain_broken_total` 等
+// 同类指标要等 S10 的观测接线）。所以这里是"进程内计数 + 结构化日志"，抓取与告警规则
+// 待 S10 接入；在那之前**不要**把它当成"已接告警"。
+var integrityMismatchTotal atomic.Int64
+
+// IncIntegrityMismatch 记一次完整性失败，返回累计值（用于日志里的 `count` 字段）。
+func IncIntegrityMismatch() int64 { return integrityMismatchTotal.Add(1) }
+
+// IntegrityMismatchTotal 读累计值（进程级；重启归零，这正是需要 S10 落指标的原因）。
+func IntegrityMismatchTotal() int64 { return integrityMismatchTotal.Load() }
+
+// IntegrityMessage 是完整性失败唯一允许的对外文案（**不可重试**）。
+//
+// 与其它 500 的区别是硬要求：客户端对 5xx 普遍带重试，而"存量 v1 未重加密 / 密文被改"
+// 是**永久性缺陷**，重试只会打出重试风暴（Owl 追认 #35 的 P1-1）。
+const IntegrityMessage = "数据完整性校验失败，不可重试，请携带 trace_id 联系支持"
+
+// CryptoIntegritySentinel 把错误链里的 `crypto` 哨兵压成一个**稳定标签**，进日志/指标。
+//
+// 两个标签对应两套完全不同的运维动作：
+//   - `ciphertext_version`：存量 v1（无认证格式）未重加密 → 重灌 / 一次性重加密；
+//   - `mac_mismatch`：键对不上或密文被改 → 按安全事件处理。
+func CryptoIntegritySentinel(err error) string {
+	switch {
+	case err == nil:
+		return ""
+	case errors.Is(err, crypto.ErrCiphertextVersion):
+		return "ciphertext_version"
+	case errors.Is(err, crypto.ErrIntegrityMismatch):
+		return "mac_mismatch"
+	default:
+		return "unknown"
+	}
 }

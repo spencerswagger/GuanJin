@@ -2,6 +2,9 @@ package httpx
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
+	"github.com/spencerswagger/guanjin/internal/crypto"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -87,5 +90,31 @@ func TestPasswordAndCredentialCodeStatus(t *testing.T) {
 		if got := HTTPStatus(code); got != want {
 			t.Errorf("HTTPStatus(%s) = %d, want %d", code, got, want)
 		}
+	}
+}
+
+// 完整性失败的三个出口必须自洽：稳定标签、单调计数、唯一文案。
+func TestIntegrityMismatchSurface(t *testing.T) {
+	wrapVersion := fmt.Errorf("credential: %w: %w", crypto.ErrIntegrityMismatch, crypto.ErrCiphertextVersion)
+	if got := CryptoIntegritySentinel(wrapVersion); got != "ciphertext_version" {
+		t.Fatalf("存量 v1 应压成 ciphertext_version，实际 %q", got)
+	}
+	wrapMac := fmt.Errorf("credential: %w: %w", crypto.ErrIntegrityMismatch, crypto.ErrIntegrityMismatch)
+	if got := CryptoIntegritySentinel(wrapMac); got != "mac_mismatch" {
+		t.Fatalf("MAC 不过应压成 mac_mismatch，实际 %q", got)
+	}
+	if got := CryptoIntegritySentinel(errors.New("other")); got != "unknown" {
+		t.Fatalf("其它错误应回 unknown，实际 %q", got)
+	}
+	if got := CryptoIntegritySentinel(nil); got != "" {
+		t.Fatalf("nil 应回空串，实际 %q", got)
+	}
+
+	before := IntegrityMismatchTotal()
+	if after := IncIntegrityMismatch(); after != before+1 {
+		t.Fatalf("计数应单调 +1：before=%d after=%d", before, after)
+	}
+	if IntegrityMessage == "" || !strings.Contains(IntegrityMessage, "不可重试") {
+		t.Fatalf("文案必须写明不可重试，实际 %q", IntegrityMessage)
 	}
 }
