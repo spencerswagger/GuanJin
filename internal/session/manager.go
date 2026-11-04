@@ -19,6 +19,9 @@ import (
 // 职责边界（与 Core 的 S6 协议面、Edge 的 S8 数据面严格分工）：
 //   - 本包**不签发令牌、不解析令牌**（S6 的事），也不做转发与断言注入（S8 的事）；
 //   - 本包只回答两个问题：**这条会话现在还能不能用**（`Validate`）、**撤销了没有**（`Revoke*`）；
+//   - **会话创建归 S6**（spencer 裁定 2026-11-04）：建会话、双超时取值、并发上限与 `sid` 落点
+//     都在协议面（S6）。本包只做 S7 的"创建之后"——续期（`Touch`）、过期（`ExpireStale`）、
+//     撤销/踢出（`Revoke*`/`Logout`）与管理面查询，**不实现第二套创建逻辑**；
 //   - 会话的权威状态在 `sessions` 表（索引 §2「挑战落库、Redis 只承载限流计数与热缓存」）。
 //     **撤销不走 Redis**：Redis 在本仓既有约定里只放限流计数与热缓存（D3-D / 索引 §2），
 //     撤销事实必须落库，否则"Redis 一抖就把已撤销的会话放回来"就是降级放行。
@@ -31,7 +34,6 @@ import (
 // 用窄接口而不是直接吃 `*store.SessionRepo`：撤销级联、并发上限这些判定要在**不建库**
 // 的前提下被测到（单测用内存假实现），真库只用来验 SQL 形状与约束。
 type SessionStore interface {
-	Create(ctx context.Context, s *model.Session) error
 	GetByID(ctx context.Context, id uuid.UUID) (*model.Session, error)
 	ListByUser(ctx context.Context, userID uuid.UUID, limit int) ([]model.Session, error)
 	ActiveIDsByUser(ctx context.Context, userID uuid.UUID) ([]uuid.UUID, error)
@@ -39,8 +41,6 @@ type SessionStore interface {
 	RevokeByID(ctx context.Context, id uuid.UUID, reason string, at time.Time) (int64, error)
 	RevokeAllByUser(ctx context.Context, userID uuid.UUID, reason string, at time.Time) (int64, error)
 	RevokeOthers(ctx context.Context, userID, keepID uuid.UUID, reason string, at time.Time) (int64, error)
-	CountActiveByUserClient(ctx context.Context, userID uuid.UUID, clientID string) (int64, error)
-	EvictOldestActive(ctx context.Context, userID uuid.UUID, clientID, reason string, at time.Time) (uuid.UUID, error)
 	TouchLastSeen(ctx context.Context, id uuid.UUID, at, idleExpiresAt time.Time) (int64, error)
 	LoadSessionPolicy(ctx context.Context, clientID string) (*store.SessionPolicy, error)
 	ClientNames(ctx context.Context, clientIDs []string) (map[string]string, error)
@@ -70,12 +70,14 @@ type RevokeReason string
 
 // 撤销原因取值。
 const (
-	ReasonLogout          RevokeReason = "logout"
-	ReasonLogoutAll       RevokeReason = "logout_all"
-	ReasonAdmin           RevokeReason = "admin"
-	ReasonRisk            RevokeReason = "risk"
-	ReasonRoleChange      RevokeReason = "role_change"
-	ReasonPasswordChange  RevokeReason = "password_change"
+	ReasonLogout         RevokeReason = "logout"
+	ReasonLogoutAll      RevokeReason = "logout_all"
+	ReasonAdmin          RevokeReason = "admin"
+	ReasonRisk           RevokeReason = "risk"
+	ReasonRoleChange     RevokeReason = "role_change"
+	ReasonPasswordChange RevokeReason = "password_change"
+	// ReasonConcurrentLimit 由 S6 的建会话路径使用（并发上限"挤掉最旧"）：
+	// 按 S6/S7 边界，**创建会话归 S6**，本包只承接"撤销之后"的生命周期。
 	ReasonConcurrentLimit RevokeReason = "concurrent_limit"
 )
 
@@ -123,107 +125,6 @@ func NewManager(st SessionStore, flows FlowAbandoner, events EventWriter, opt Op
 		m.logger = slog.Default()
 	}
 	return m, nil
-}
-
-// CreateInput 是建会话的入参（由 S6 在登录/注册成功时给）。
-//
-// **不含令牌**：本包不碰令牌材料；`ACR`/`AMR` 由签发方按已达成的因子组合给。
-type CreateInput struct {
-	UserID    uuid.UUID
-	ClientID  string
-	ACR       string
-	AMR       []string
-	IP        *string
-	UserAgent *string
-	DeviceID  *string
-	TraceID   *string
-}
-
-// Create 建一条会话，并按 `login_policies` 的并发上限决定"拒新"还是"挤掉最旧"。
-//
-// 双超时都在这里算死：`idle_expires_at = now + idle`、`expires_at = now + absolute`；
-// 两者都来自策略（`session_idle_timeout_min` / `session_absolute_timeout_min`），
-// 代码里**没有** 30/720 这类常量（D5 对 `flow.ttl_seconds` 的同一条原则）。
-func (m *Manager) Create(ctx context.Context, in CreateInput) (*model.Session, error) {
-	if in.UserID == uuid.Nil || strings.TrimSpace(in.ClientID) == "" {
-		return nil, fmt.Errorf("%w: user_id and client_id are required", ErrInvalidInput)
-	}
-	if strings.TrimSpace(in.ACR) == "" {
-		return nil, fmt.Errorf("%w: acr is required", ErrInvalidInput)
-	}
-
-	policy, err := m.store.LoadSessionPolicy(ctx, in.ClientID)
-	if err != nil {
-		return nil, err
-	}
-	if policy.IdleTimeout > policy.AbsoluteTimeout {
-		// 不 clamp：把空闲超时悄悄压到绝对超时以内，等于替运维改策略（隐性逻辑）。
-		return nil, fmt.Errorf("%w: idle=%s absolute=%s client=%s",
-			ErrPolicyTimeOrder, policy.IdleTimeout, policy.AbsoluteTimeout, in.ClientID)
-	}
-
-	now := m.now().UTC()
-	if policy.MaxConcurrent != nil {
-		active, err := m.store.CountActiveByUserClient(ctx, in.UserID, in.ClientID)
-		if err != nil {
-			return nil, err
-		}
-		if active >= int64(*policy.MaxConcurrent) {
-			switch policy.OverflowAction {
-			case "deny_new":
-				return nil, ErrConcurrentLimit
-			case "evict_oldest", "evict_oldest_alert":
-				// 挤掉最旧：撤销原因记 `concurrent_limit`（不冒充 risk）。
-				evicted, err := m.store.EvictOldestActive(ctx, in.UserID, in.ClientID,
-					string(ReasonConcurrentLimit), now)
-				if err != nil {
-					return nil, err
-				}
-				if evicted != uuid.Nil {
-					// 级联作废被挤会话的活跃流（D5 I-F6⑤）；失败不阻断新建——
-					// 会话已被撤销是事实，流的下次推进会被 `abandoned` 状态挡住。
-					if _, err := m.flows.AbandonBySession(ctx, evicted); err != nil {
-						m.logger.Warn("session: abandon flows of evicted session failed",
-							"session_id", evicted, "error", err)
-					}
-					m.appendEvent(ctx, evicted, in.UserID, in.ClientID, EventRevoke,
-						string(ReasonConcurrentLimit), in.TraceID, &in.ACR)
-				}
-				if policy.OverflowAction == "evict_oldest_alert" {
-					// 告警通道属 S10 的可观测性底座（仓内暂无 alerter/metrics），
-					// 这里只留结构化日志字段，不假装已经告警。
-					m.logger.Warn("session: concurrent overflow evicted oldest session",
-						"user_id", in.UserID, "client_id", in.ClientID,
-						"evicted_session_id", evicted, "metric", "session_evicted_total")
-				}
-			default:
-				// DB CHECK 只允许三个值；走到这里说明 schema/策略漂移，按配置缺陷报错。
-				return nil, fmt.Errorf("%w: unknown overflow action %q", ErrInvalidInput, policy.OverflowAction)
-			}
-		}
-	}
-
-	amr := model.StringArray(in.AMR)
-	if amr == nil {
-		amr = model.StringArray{}
-	}
-	s := &model.Session{
-		UserID:        in.UserID,
-		ClientID:      in.ClientID,
-		ACR:           in.ACR,
-		AMR:           amr,
-		Status:        model.SessionStatusActive,
-		IssuedAt:      now,
-		ExpiresAt:     now.Add(policy.AbsoluteTimeout),
-		IdleExpiresAt: now.Add(policy.IdleTimeout),
-		IP:            in.IP,
-		UserAgent:     in.UserAgent,
-		DeviceID:      in.DeviceID,
-	}
-	if err := m.store.Create(ctx, s); err != nil {
-		return nil, err
-	}
-	return s, nil
 }
 
 // Validate 判定一条会话现在能不能用（数据面 S8 的准入依据）。

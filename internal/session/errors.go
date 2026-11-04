@@ -26,21 +26,14 @@ var (
 	// 用 404 而不是 403：403 会告诉调用方"这个 id 真实存在"，等于把别人的会话 id
 	// 变成可探测的。E4 前缀默认区间（404/409/422）里 404 是唯一不泄露存在的选择。
 	ErrSessionNotOwned = errors.New("session: not owned by caller")
-	// ErrConcurrentLimit 并发会话数已达上限且策略为 `deny_new`。
-	//
-	// **对外码尚未冻结**：接口 §5.4 没有"并发会话超限"这个码，本切片**不自行造码**
-	// （D3-B：码表只有一套）。该哨兵目前没有 `CodeOf` 映射，接线方（S6 登录流程）
-	// 在拿到裁定前不得给它编一个码。
-	ErrConcurrentLimit = errors.New("session: concurrent session limit reached")
-	// ErrPolicyTimeOrder 策略自身矛盾：空闲超时 > 绝对超时（DB CHECK `sessions_time_order` 会拒）。
-	ErrPolicyTimeOrder = errors.New("session: idle timeout exceeds absolute timeout")
 	// ErrInvalidInput 入参不成立（`INVALID_PARAMETER`，E1/400）。
 	ErrInvalidInput = errors.New("session: invalid input")
 )
 
 // CodeOf 把本包的哨兵映射成冻结错误码；无法映射返回空串（调用方按 500 处理并留日志）。
 //
-// 只映射 §5.4 里**已有**的码：`ErrConcurrentLimit` 故意留空，见其注释。
+// 只映射 §5.4 里**已有**的码；并发上限（`deny_new`）的对外码尚未冻结，相关判定归 S6 的创建路径，
+// 本包不再持有那个哨兵。
 func CodeOf(err error) httpx.Code {
 	switch {
 	case err == nil:

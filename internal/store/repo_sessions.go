@@ -59,10 +59,11 @@ type SessionPage struct {
 	NextCursor string
 }
 
-// Create 落一条会话。
+// Create 落一条会话——**调用方是 S6 的协议面**（spencer 裁定 2026-11-04：会话创建归 S6）。
 //
-// 状态、时间、ACR 一律由调用方显式给（模型侧没有 `default:active` tag）：漏传要当场失败，
-// 而不是由 DB 兜一个值出来。
+// S7 只提供这个数据原语，不在本包再实现一套"建会话"（双超时取值、并发上限、`sid` 落点
+// 都在 S6）。状态、时间、ACR 一律由调用方显式给（模型侧没有 `default:active` tag）：
+// 漏传要当场失败，而不是由 DB 兜一个值出来。
 func (r *SessionRepo) Create(ctx context.Context, s *model.Session) error {
 	switch {
 	case s == nil:
