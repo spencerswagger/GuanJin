@@ -26,13 +26,24 @@ var (
 	ErrMasterKeyEmpty = errors.New("crypto: master key is empty")
 	// ErrKeyKindMismatch 表示用途与派生方法不匹配（如用 SM4 用途派生 HMAC 键）。
 	ErrKeyKindMismatch = errors.New("crypto: key kind mismatch")
+	// ErrNoIntegrityKey 表示 SM4 用途没有配套的完整性（MAC）用途域（ADR-005：不许无认证）。
+	ErrNoIntegrityKey = errors.New("crypto: sm4 purpose has no paired mac purpose")
 )
 
-// SM4Key 是派生得到的 SM4 密钥。**只由 MasterKey.DeriveSM4 构造**：
-// 字段不导出、无导出的构造函数，因此算法入口（EncryptSM4/DecryptSM4）在编译期就
-// 拿不到"未经派生的输入"——这正是 D4-B 要求的"主密钥不进业务算法"。
+// SM4Key 是派生得到的 **SM4 信封密钥**：加密材料 + 配套 HMAC-SM3 完整性材料。
+//
+// **只由 MasterKey.DeriveSM4 构造**：字段不导出、无导出的构造函数，因此算法入口
+// （EncryptSM4/DecryptSM4）在编译期就拿不到"未经派生的输入"——这正是 D4-B 要求的
+// "主密钥不进业务算法"。
+//
+// 为什么一个类型里放两把键（ADR-005）：SM4-CBC 自身**无认证**，错钥解密有约 1/256
+// 的概率 padding 恰好合法，于是"密钥不可用"被下游误判成"凭据不对"（CI 随机刷红）。
+// 完整性键与加密键**成对**出现，调用方就无法只拿一半：
+// 两把都由主密钥按各自的用途域派生（`sm4/field` + `hmac/field`，
+// `sm4/keywrap` + `hmac/keywrap`），**不是**从 SM4 键再派生，所以「一密钥一用途」不变。
 type SM4Key struct {
 	material [SM4KeySize]byte
+	mac      [HMACKeySize]byte
 }
 
 // HMACKey 是派生得到的 HMAC-SM3 密钥。构造路径与 SM4Key 相同（只由 MasterKey 派生）。
@@ -40,13 +51,16 @@ type HMACKey struct {
 	material [HMACKeySize]byte
 }
 
-// Zero 清空密钥材料（用于进程内"用完即弃"的场景）。
+// Zero 清空密钥材料（用于进程内"用完即弃"的场景）。加密与完整性两把都清。
 func (k *SM4Key) Zero() {
 	if k == nil {
 		return
 	}
 	for i := range k.material {
 		k.material[i] = 0
+	}
+	for i := range k.mac {
+		k.mac[i] = 0
 	}
 }
 
@@ -60,9 +74,10 @@ func (k *HMACKey) Zero() {
 	}
 }
 
-// Equal 做常量时间比较（避免按字节提前返回泄露前缀）。
+// Equal 做常量时间比较（避免按字节提前返回泄露前缀）。加密与完整性两把都要相等。
 func (k SM4Key) Equal(other SM4Key) bool {
-	return subtle.ConstantTimeCompare(k.material[:], other.material[:]) == 1
+	return subtle.ConstantTimeCompare(k.material[:], other.material[:]) == 1 &&
+		subtle.ConstantTimeCompare(k.mac[:], other.mac[:]) == 1
 }
 
 // Equal 做常量时间比较。
@@ -71,9 +86,14 @@ func (k HMACKey) Equal(other HMACKey) bool {
 }
 
 // IsZero 报告密钥是否为全零（只用于测试/断言，不用于业务判断）。
+//
+// 加密与完整性**任一**为全零都算不可用：只派生出加密键、忘了配套 MAC 键的"半把钥匙"
+// 必须在入口就被挡住，而不是写出一条没有完整性保护的密文。
 func (k SM4Key) IsZero() bool {
-	var zero [SM4KeySize]byte
-	return subtle.ConstantTimeCompare(k.material[:], zero[:]) == 1
+	var zeroEnc [SM4KeySize]byte
+	var zeroMAC [HMACKeySize]byte
+	return subtle.ConstantTimeCompare(k.material[:], zeroEnc[:]) == 1 ||
+		subtle.ConstantTimeCompare(k.mac[:], zeroMAC[:]) == 1
 }
 
 // IsZero 报告密钥是否为全零。
@@ -143,10 +163,14 @@ func (m *MasterKey) String() string { return "crypto.MasterKey(<redacted>)" }
 // GoString 让 %#v 也脱敏。
 func (m *MasterKey) GoString() string { return m.String() }
 
-// DeriveSM4 按用途派生 SM4 密钥（HKDF-SM3，salt = info = purpose）。
+// DeriveSM4 按用途派生 **SM4 信封密钥**（加密键 + 配套 HMAC-SM3 完整性键）。
 //
 // 用途必须是 SM4 类（field / keywrap），否则返回 ErrKeyKindMismatch ——
 // 种类不符是编码缺陷，不允许"改个长度凑合过"。
+//
+// 两把钥匙各自用**自己的用途域**派生（HKDF-SM3，salt = info = purpose）：
+// `sm4/field` → 16B、`hmac/field` → 32B。**不是**"从 SM4 键再派生 MAC 键"——
+// 那样两把钥匙同源同命，用途隔离就名存实亡。
 func (m *MasterKey) DeriveSM4(p Purpose) (SM4Key, error) {
 	var out SM4Key
 	spec, err := p.spec()
@@ -156,6 +180,11 @@ func (m *MasterKey) DeriveSM4(p Purpose) (SM4Key, error) {
 	if spec.kind != KindSM4 {
 		return out, fmt.Errorf("%w: purpose %q is %s, not SM4", ErrKeyKindMismatch, string(p), spec.kind)
 	}
+	if spec.mac == "" {
+		// 用途表自检会先挡住（validatePurposeSpecs），这里再兜一层：
+		// 没有配套完整性键的 SM4 信封一律不许派生（ADR-005：无认证的 CBC 不接受）。
+		return out, fmt.Errorf("%w: SM4 purpose %q has no paired MAC purpose", ErrNoIntegrityKey, string(p))
+	}
 	if err := m.checkUsable(); err != nil {
 		return out, err
 	}
@@ -164,6 +193,11 @@ func (m *MasterKey) DeriveSM4(p Purpose) (SM4Key, error) {
 		return out, err
 	}
 	copy(out.material[:], dk)
+	macDK, err := hkdfSM3(m.material, []byte(spec.mac), []byte(spec.mac), HMACKeySize)
+	if err != nil {
+		return out, err
+	}
+	copy(out.mac[:], macDK)
 	return out, nil
 }
 
