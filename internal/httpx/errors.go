@@ -43,6 +43,12 @@ const (
 	CodeTokenExpired   Code = "TOKEN_EXPIRED"   // E2 / 401
 	CodeTokenRevoked   Code = "TOKEN_REVOKED"   // E2 / 401：令牌被 revoke 端点撤销（D3-E）
 	CodeSessionRevoked Code = "SESSION_REVOKED" // E3 / 403：会话被撤销（D3-E）
+	// CodeInvalidCredential 是"凭据本身不对"的唯一码（口令错、TOTP 码错、恢复码错）。
+	// 接口 §5.4 E2；AC-LOGIN-02 要求它带可复制 trace_id 且 message 无区分性文案。
+	CodeInvalidCredential Code = "INVALID_CREDENTIAL" // E2 / 401
+	// CodeTemporalCodeReused 是"同一个动态口令被用第二次"（窗口内重放），与"码错"分开：
+	// 前者是重放攻击信号（§5.4 E2 的 TEMPORAL_CODE_REUSED），后者是输错。
+	CodeTemporalCodeReused Code = "TEMPORAL_CODE_REUSED" // E2 / 401
 
 	// 授权与档位（E3）
 	CodeInsufficientRole    Code = "INSUFFICIENT_ROLE"     // E3 / 403
@@ -60,6 +66,11 @@ const (
 	CodePolicySnapshotConflict  Code = "POLICY_SNAPSHOT_CONFLICT"  // E4 / 409
 	CodeCooldownActive          Code = "COOLDOWN_ACTIVE"           // E4 / 409
 	CodePasswordPolicyViolation Code = "PASSWORD_POLICY_VIOLATION" // E4 / 422
+	// CodeWeakPassword / CodePasswordReused 是 AC-REG-10 冻结的三码之一（D3-B′ 补登记）：
+	// 三码同时命中时对外只回**首个**，顺序固定 WEAK_PASSWORD → PASSWORD_REUSED → PASSWORD_POLICY_VIOLATION，
+	// 全量命中项放 details.violations[]。三码都在 E4 组，HTTP 一律 422。
+	CodeWeakPassword   Code = "WEAK_PASSWORD"   // E4 / 422
+	CodePasswordReused Code = "PASSWORD_REUSED" // E4 / 422
 
 	// 管理面与策略（E7）
 	CodeBindingAlreadyExists   Code = "BINDING_ALREADY_EXISTS"   // E7 / 409
@@ -79,10 +90,11 @@ var knownCodes = []Code{
 	CodeInvalidRequest, CodeInvalidParam, CodeMissingParameter, CodeInvalidClient,
 	CodeFlowNotFound, CodeFlowExpired, CodePageSizeExceeded,
 	CodeTokenInvalid, CodeTokenExpired, CodeTokenRevoked, CodeSessionRevoked,
+	CodeInvalidCredential, CodeTemporalCodeReused,
 	CodeInsufficientRole, CodeThreePowerViolation, CodeACRInsufficient, CodeSessionNotFound,
 	CodeIdentifierAlreadyBound, CodeIdentifierNotFound, CodeUserNotFound, CodeClientNotFound,
 	CodeKeyNotFound, CodeSnapshotNotFound, CodePolicySnapshotConflict, CodeCooldownActive,
-	CodePasswordPolicyViolation,
+	CodePasswordPolicyViolation, CodeWeakPassword, CodePasswordReused,
 	CodeBindingAlreadyExists, CodeBindingNotFound, CodeTierDirectionViolation,
 }
 
@@ -120,14 +132,16 @@ func HTTPStatus(c Code) int {
 	case CodeFlowNotFound, CodeSessionNotFound, CodeIdentifierNotFound, CodeUserNotFound,
 		CodeClientNotFound, CodeKeyNotFound, CodeSnapshotNotFound, CodeBindingNotFound:
 		return http.StatusNotFound
-	case CodeTokenInvalid, CodeTokenExpired, CodeTokenRevoked:
+	case CodeTokenInvalid, CodeTokenExpired, CodeTokenRevoked,
+		CodeInvalidCredential, CodeTemporalCodeReused:
 		return http.StatusUnauthorized
 	case CodeSessionRevoked, CodeInsufficientRole, CodeThreePowerViolation, CodeACRInsufficient:
 		return http.StatusForbidden
 	case CodeIdentifierAlreadyBound, CodePolicySnapshotConflict, CodeCooldownActive,
 		CodeBindingAlreadyExists:
 		return http.StatusConflict
-	case CodePasswordPolicyViolation, CodeTierDirectionViolation:
+	case CodePasswordPolicyViolation, CodeTierDirectionViolation,
+		CodeWeakPassword, CodePasswordReused:
 		return http.StatusUnprocessableEntity
 	case CodeRedisUnavailable, CodeDBUnavailable, CodeKeyUnavailable,
 		CodeDependencyUnavail, CodeUpstreamUnavailable:

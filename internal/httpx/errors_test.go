@@ -66,3 +66,26 @@ func TestDeprecatedCodesAreNotMapped(t *testing.T) {
 		}
 	}
 }
+
+// 口令三码 + 凭据两码的状态映射（AC-REG-10 / 接口 §5.4 分组表）。
+//
+// 判据钉的是**分组**而不是"某个实现恰好这么写"：E4 组一律 422（WEAK / REUSED / POLICY），
+// E2 组一律 401（INVALID_CREDENTIAL / TEMPORAL_CODE_REUSED）。三码的**顺序**不在这里判，
+// 它在 internal/credential 的 Policy.Evaluate 里（AC-REG-10 的排序部分）。
+func TestPasswordAndCredentialCodeStatus(t *testing.T) {
+	cases := map[Code]int{
+		CodeWeakPassword:            http.StatusUnprocessableEntity,
+		CodePasswordReused:          http.StatusUnprocessableEntity,
+		CodePasswordPolicyViolation: http.StatusUnprocessableEntity,
+		CodeInvalidCredential:       http.StatusUnauthorized,
+		CodeTemporalCodeReused:      http.StatusUnauthorized,
+	}
+	for code, want := range cases {
+		if !IsKnownCode(code) {
+			t.Errorf("%s 必须在冻结码表里（新增码要同时进 knownCodes，否则跨包一致性测试查不到）", code)
+		}
+		if got := HTTPStatus(code); got != want {
+			t.Errorf("HTTPStatus(%s) = %d, want %d", code, got, want)
+		}
+	}
+}
