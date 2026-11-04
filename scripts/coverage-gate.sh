@@ -135,12 +135,21 @@ if [ "$relax" != "1" ]; then
   done
 fi
 
-# ---- 1b) integration scope 必判项：profile 里必须真有 flowstore 的语句 ----
+# ---- 1b) integration scope 必判项：profile 里必须真有这些模块的语句 ----
+# 为什么必须**逐个**显式查：上面 1) 的循环只遍历「profile 里出现过的模块」——某个模块的行
+# 在 profile 里整段消失时，它连一次比较都不会发生，阈值写得再对也是静默绿。
+# `flowstore` 与 `identity` 的下限只在 integration profile 判定，所以这两个模块在
+# integration profile 里没有语句 = 判据不成立 = 红（不是跳过，也不是放行）。
 case ",${COVERAGE_TAGS:-}," in
   *,integration,*)
-    if [ -z "${stmts[internal/flowstore]:-}" ]; then
-      echo "[FAIL] integration profile 里没有 internal/flowstore 的语句 → 85% 下限无法判定（判据不成立即为红）"
-      fail=1
+    # relax 模式下 stmts 未声明（1) 整段被跳过）：此时按放宽语义不判，不做存在性检查。
+    if declare -p stmts >/dev/null 2>&1; then
+      for required in internal/flowstore internal/identity; do
+        if [ -z "${stmts[$required]:-}" ]; then
+          echo "[FAIL] integration profile 里没有 ${required} 的语句 → 85% 下限无法判定（判据不成立即为红）"
+          fail=1
+        fi
+      done
     fi ;;
 esac
 
