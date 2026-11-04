@@ -67,21 +67,49 @@ func (a *Adapter) Advance(ctx context.Context, in flow.AdvanceInput) (*model.Flo
 	if in.AMR == "" {
 		return nil, ErrFactorRequired
 	}
-	return a.svc.Advance(ctx, AdvanceRequest{
+	f, err := a.svc.Advance(ctx, AdvanceRequest{
 		FlowID:      in.FlowID,
 		Factor:      in.AMR,
 		ChallengeID: in.ChallengeID,
 		At:          in.At,
 	})
+	if err != nil {
+		return f, mapFlowError(err)
+	}
+	return f, nil
+}
+
+// mapFlowError 把**持久化层的错误**翻成编排层的哨兵。
+//
+// 为什么必须在这里翻：`flow` 不认识 `flowstore` 的错误（否则成环），而 `CodeOf` 只认
+// 本包哨兵 —— 不翻的话 `FLOW_EXPIRED` 会落到 default 变成 500，AC-FLOW-10① 就永远是错的码。
+//   - 过期 → `FLOW_EXPIRED`（E1/400，行仍在所以稳定）；
+//   - 已完成/已放弃/已消费 → `FLOW_NOT_FOUND`（I-F4 的"流已不在"，AC-FLOW-10②）；
+//   - 其余（含"行在锁与写回之间消失"）原样上抛，那是缺陷，不该有业务码。
+func mapFlowError(err error) error {
+	switch {
+	case err == nil:
+		return nil
+	case errors.Is(err, ErrFlowExpired):
+		return flow.ErrFlowExpired
+	case errors.Is(err, ErrFlowNotActive), errors.Is(err, ErrFlowConsumed):
+		return flow.ErrFlowNotFound
+	default:
+		return err
+	}
 }
 
 // Consume 一次性消费（completed + consumed_at；I-F4）。
 func (a *Adapter) Consume(ctx context.Context, in flow.ConsumeInput) (*model.Flow, error) {
-	return a.svc.Consume(ctx, ConsumeRequest{
+	f, err := a.svc.Consume(ctx, ConsumeRequest{
 		FlowID:    in.FlowID,
 		UserID:    in.UserID,
 		SessionID: in.SessionID,
 	})
+	if err != nil {
+		return f, mapFlowError(err)
+	}
+	return f, nil
 }
 
 // 编译期断言：适配器必须同时满足编排层的四个接口（改名即构建失败）。

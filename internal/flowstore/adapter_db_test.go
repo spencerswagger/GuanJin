@@ -206,8 +206,10 @@ func TestDBAdapterAdvanceExpiredKeepsRow(t *testing.T) {
 	_, err = a.Advance(ctx, flow.AdvanceInput{
 		FlowID: fl.ID, Factor: factor.FactorPassword, AMR: "pwd", At: time.Now().UTC(),
 	})
-	if !errors.Is(err, ErrFlowExpired) {
-		t.Fatalf("want ErrFlowExpired，实际 %v", err)
+	// 适配层把持久化错误翻成**编排层哨兵**（`CodeOf` 只认 flow 的哨兵：不翻就会落到 500，
+	// 而 AC-FLOW-10① 要求 `FLOW_EXPIRED` 是 400）。
+	if !errors.Is(err, flow.ErrFlowExpired) {
+		t.Fatalf("want flow.ErrFlowExpired，实际 %v", err)
 	}
 
 	got := reload(t, db, fl.ID) // 行还在 = 没被删（能读出来就说明还在）
@@ -296,8 +298,8 @@ func TestDBAdapterConsumeBackfillsSessionOnce(t *testing.T) {
 	}
 
 	// 同值重试：幂等（仍按"已消费"），不是越权。
-	if _, err := a.Consume(ctx, flow.ConsumeInput{FlowID: fl.ID, UserID: &uid, SessionID: &session}); !errors.Is(err, ErrFlowConsumed) {
-		t.Fatalf("同值重试 want ErrFlowConsumed，实际 %v", err)
+	if _, err := a.Consume(ctx, flow.ConsumeInput{FlowID: fl.ID, UserID: &uid, SessionID: &session}); !errors.Is(err, flow.ErrFlowNotFound) {
+		t.Fatalf("同值重试 want flow.ErrFlowNotFound（I-F4 的「流已不在」），实际 %v", err)
 	}
 	// 异值：I-F7 拒绝。
 	other := f.newSession(t, db)

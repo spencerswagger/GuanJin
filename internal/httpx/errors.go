@@ -184,11 +184,21 @@ func HTTPStatus(c Code) int {
 
 // WriteError 写出统一错误响应；traceID 由调用方从请求上下文取（不得为空）。
 func WriteError(w http.ResponseWriter, traceID string, c Code, msg string, details any) {
+	WriteErrorStatus(w, traceID, c, HTTPStatus(c), msg, details)
+}
+
+// WriteErrorStatus 与 `WriteError` 相同，但允许调用方指定 HTTP 状态。
+//
+// 存在的理由只有一个：**码表之外那一个码**（`STEP_ALREADY_SATISFIED`，D3-F）。
+// 它的常量按 D3-F 只能定义在 `internal/flow`（禁码扫描的边界），所以本包不认识它，
+// `HTTPStatus` 会落到 default 变成 500 —— 而它必须回 409。**不要**用它绕过码表：
+// 除了那一个码，其余一律走 `WriteError`。
+func WriteErrorStatus(w http.ResponseWriter, traceID string, c Code, status int, msg string, details any) {
 	h := w.Header()
 	h.Set("Content-Type", "application/json; charset=utf-8")
-	if HTTPStatus(c) == http.StatusServiceUnavailable {
+	if status == http.StatusServiceUnavailable {
 		h.Set("Retry-After", "5")
 	}
-	w.WriteHeader(HTTPStatus(c))
+	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(ErrorResponse{Code: c, Message: msg, TraceID: traceID, Details: details})
 }
