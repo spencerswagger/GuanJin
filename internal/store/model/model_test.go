@@ -55,6 +55,25 @@ func TestNoSoftDeleteField(t *testing.T) {
 	}
 }
 
+// D14①：`challenges.max_attempts` 在模型侧**不得**声明默认值。
+//
+// 取值唯一来源是 `runtime_config('challenge.max_attempts')`；`000018` 已把列的 DB 默认值
+// `DROP DEFAULT`。模型上再写 `default:5` 就多出一套"漏传也有 5 兜底"的暗示（D4-A：禁 DB 默认值），
+// 判据「改键值必须跟着变」（AC-REG-01）会被悄悄破坏。
+func TestChallengeMaxAttemptsHasNoModelDefault(t *testing.T) {
+	s := parseSchema(t, &Challenge{})
+	f := s.LookUpField("MaxAttempts")
+	if f == nil {
+		t.Fatal("Challenge.MaxAttempts not found")
+	}
+	if f.HasDefaultValue {
+		t.Fatalf("MaxAttempts 不得有 GORM/DB 默认值（D14①），实际 default=%q", f.DefaultValue)
+	}
+	if !f.NotNull {
+		t.Fatal("MaxAttempts 必须 not null（漏传要当场失败，不许落 NULL）")
+	}
+}
+
 // 匿名/可空列的映射要对：这些是最容易"以为是 NULL 其实写成了零值"的地方。
 func TestFlowFieldNullability(t *testing.T) {
 	s := parseSchema(t, &Flow{})

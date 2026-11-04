@@ -2,14 +2,15 @@ package crypto
 
 import "fmt"
 
-// Purpose 是 HKDF-SM3 的用途域（domain separator）。**封闭集合**：只有 D4-B 冻结的 5 个值。
+// Purpose 是 HKDF-SM3 的用途域（domain separator）。**封闭集合**：只有 D4-B 冻结的 6 个值
+// （原 5 个 + D14② 新增的 `hmac/register`）。
 //
 // 口径（decisions.md D4-B）：主密钥只做派生输入、不进任何业务算法；派生时
 // `salt = info = purpose`。用途域一旦可自造，「一密钥一用途」就形同虚设
 // （任何人加个新字符串就能拿到一把"新钥匙"），故本包对未知用途直接报错。
 type Purpose string
 
-// 冻结的 5 个用途域（decisions.md D4-B；长度与用途绑定，不可协商）。
+// 冻结的 6 个用途域（decisions.md D4-B / D14②；长度与用途绑定，不可协商）。
 const (
 	// PurposeSM4Field 敏感字段加密（identifiers.value_enc 等），16 字节。
 	PurposeSM4Field Purpose = "guanjin/sm4/field"
@@ -21,6 +22,14 @@ const (
 	PurposeHMACIdentifier Purpose = "guanjin/hmac/identifier"
 	// PurposeHMACAgent Agent 面 HMAC（clients.secret_hash），32 字节。
 	PurposeHMACAgent Purpose = "guanjin/hmac/agent"
+	// PurposeHMACRegister 注册窗口令牌 `register_token` 的 HMAC（D14②），32 字节。
+	//
+	// **不复用 `hmac/identifier`**：register_token 签的是
+	// `cid + typ + val + chid + exp`（谁、给谁、哪个标识符、哪次挑战、何时失效），
+	// 与"按值算盲索引"是完全不同的用途。一密钥一用途是密评口径，复用即自废：
+	// 一旦盲索引密钥被换（重建索引需要重算全表），在途的 register_token 要么全废、
+	// 要么被迫与盲索引共用同一把钥匙——两条都不合规。
+	PurposeHMACRegister Purpose = "guanjin/hmac/register"
 )
 
 // KeyKind 是派生结果的算法种类。种类错误（如拿 HMAC 用途派生 SM4 键）必须报错，
@@ -58,6 +67,7 @@ var purposeSpecs = map[Purpose]purposeSpec{
 	PurposeHMACAudit:      {kind: KindHMAC, length: HMACKeySize},
 	PurposeHMACIdentifier: {kind: KindHMAC, length: HMACKeySize},
 	PurposeHMACAgent:      {kind: KindHMAC, length: HMACKeySize},
+	PurposeHMACRegister:   {kind: KindHMAC, length: HMACKeySize},
 }
 
 // spec 返回用途的规格；未知用途一律报错（禁自造用途域）。
@@ -96,6 +106,7 @@ func Purposes() []Purpose {
 		PurposeHMACAudit,
 		PurposeHMACIdentifier,
 		PurposeHMACAgent,
+		PurposeHMACRegister,
 	}
 }
 

@@ -86,3 +86,41 @@ func TestChallengeRecordAttemptSQLGuards(t *testing.T) {
 		t.Fatal("没有生成 UPDATE challenges ... attempts = attempts + 1")
 	}
 }
+
+// D14①：`challenges.max_attempts` 的 INSERT **必须显式带上值**，不许靠 DB 默认值。
+//
+// 这条钉住的是"列真的出现在 INSERT 里"：有人给它加 `->`（只读）或 `omitempty` 之类的 tag，
+// 列就会从 INSERT 里消失，库里的 NOT NULL / CHECK 立刻把每次建挑战打成 23502 / 23514。
+// （模型侧**不得**声明默认值这一条由 `model.TestChallengeMaxAttemptsHasNoModelDefault` 钉住。）
+//
+// 现实威胁不是假设：`internal/identity` 的一条真库用例用裸 SQL 建挑战、没写 max_attempts，
+// 过去靠 `DEFAULT 5` 兜着；`000018` 一 DROP DEFAULT 就当场 23502（见 PR #30 的 integration 红）。
+func TestChallengeCreateWritesMaxAttemptsExplicitly(t *testing.T) {
+	db, cap := dryRunDB(t)
+	repo := NewChallengeRepo(db)
+	ctx := context.Background()
+
+	row := &model.Challenge{
+		Purpose:      "register",
+		FactorType:   "email",
+		ResponseHash: []byte{0x01},
+		ExpiresAt:    time.Now().UTC().Add(5 * time.Minute),
+		// MaxAttempts 故意留零值：模拟"调用方忘了从 runtime_config 取值"。
+	}
+	if err := repo.Create(ctx, row); err != nil {
+		t.Logf("Create (dry-run) 返回：%v", err)
+	}
+	found := false
+	for _, q := range cap.queries {
+		if !strings.Contains(q, "INSERT INTO") || !strings.Contains(q, `"challenges"`) {
+			continue
+		}
+		found = true
+		if !strings.Contains(q, "max_attempts") {
+			t.Fatalf("INSERT 必须显式写 max_attempts（禁 DB 默认值，D14①），实际：%s", q)
+		}
+	}
+	if !found {
+		t.Fatal("没有生成 INSERT challenges")
+	}
+}
