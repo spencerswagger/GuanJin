@@ -5,6 +5,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -16,12 +17,14 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
+	"github.com/spencerswagger/guanjin/internal/config"
 	"github.com/spencerswagger/guanjin/internal/crypto"
 	"github.com/spencerswagger/guanjin/internal/factor"
 	"github.com/spencerswagger/guanjin/internal/flow"
 	"github.com/spencerswagger/guanjin/internal/flowstore"
 	"github.com/spencerswagger/guanjin/internal/httpx"
 	"github.com/spencerswagger/guanjin/internal/identity"
+	"github.com/spencerswagger/guanjin/internal/risk"
 	"github.com/spencerswagger/guanjin/internal/store"
 	"github.com/spencerswagger/guanjin/internal/store/model"
 )
@@ -91,24 +94,25 @@ func newFlowFixture(t *testing.T, db *gorm.DB, tier, disabledFactors string) *fl
 		t.Fatalf("insert login_policies: %v", err)
 	}
 
-	// TTL 从 `runtime_config` 读（D5：代码里没有 600 常量）；读不到就是配置缺陷。
-	ttl, err := store.LoadFlowTTL(ctx, store.NewRuntimeConfigRepo(db))
+	// 运行期参数从 `runtime_config` 读（D5/D14：代码里没有 600/300/5 常量）。
+	startupCfg, err := store.ValidateStartup(ctx, store.NewRuntimeConfigRepo(db))
 	if err != nil {
-		t.Fatalf("LoadFlowTTL: %v", err)
+		t.Fatalf("ValidateStartup: %v", err)
 	}
-	f.ttl = ttl
+	f.ttl = startupCfg.FlowTTL
 
-	handler, err := newFlowHandler(ctx, db, ttl, discardLogger())
+	w, err := newWiring(ctx, db, testConfig(t), startupCfg, discardLogger())
 	if err != nil {
-		t.Fatalf("newFlowHandler: %v", err)
+		t.Fatalf("newWiring: %v", err)
 	}
 	mux := http.NewServeMux()
-	handler.Routes(mux)
+	w.flowHandler.Routes(mux)
+	w.registerHandler.Routes(mux)
 	f.srv = httptest.NewServer(httpx.TraceMiddleware(mux, "X-Trace-Id", discardLogger()))
 	t.Cleanup(f.srv.Close)
 
 	f.flowRepo = store.NewFlowRepo(db)
-	f.flows, err = flowstore.New(db, f.flowRepo, ttl)
+	f.flows, err = flowstore.New(db, f.flowRepo, startupCfg.FlowTTL)
 	if err != nil {
 		t.Fatalf("flowstore.New: %v", err)
 	}
@@ -376,11 +380,22 @@ func (f *flowFixture) registerUser(t *testing.T, db *gorm.DB, password string) u
 	if err != nil {
 		t.Fatalf("DeriveSM4: %v", err)
 	}
+	registerKey, err := mk.DeriveHMAC(crypto.PurposeHMACRegister)
+	if err != nil {
+		t.Fatalf("DeriveHMAC(register): %v", err)
+	}
+	startupCfg, err := store.ValidateStartup(context.Background(), store.NewRuntimeConfigRepo(db))
+	if err != nil {
+		t.Fatalf("ValidateStartup: %v", err)
+	}
 	svc, err := identity.New(db, identity.Config{
-		IndexKey:       indexKey,
-		FieldKey:       fieldKey,
-		PasswordParams: crypto.PasswordParams{Iterations: crypto.MinPBKDF2Iterations, KeyLen: crypto.MinPasswordKeyLen},
-		FlowTTL:        f.ttl,
+		IndexKey:             indexKey,
+		FieldKey:             fieldKey,
+		RegisterTokenKey:     registerKey,
+		PasswordParams:       crypto.PasswordParams{Iterations: crypto.MinPBKDF2Iterations, KeyLen: crypto.MinPasswordKeyLen},
+		FlowTTL:              f.ttl,
+		ChallengeTTL:         startupCfg.ChallengeTTL,
+		ChallengeMaxAttempts: startupCfg.ChallengeMaxAttempts,
 	})
 	if err != nil {
 		t.Fatalf("identity.New: %v", err)
@@ -412,3 +427,175 @@ func countChallenges(t *testing.T, db *gorm.DB, clientID string) int64 {
 }
 
 func strPtr(s string) *string { return &s }
+
+// testConfig 按环境变量装出进程配置（**不改宿主配置**：DSN/Redis 都由 integration job 注入）。
+//
+// 缺任何一个必需项就红：这些用例的意义就是"在真依赖上跑"，缺依赖 = 未验证。
+func testConfig(t *testing.T) *config.Config {
+	t.Helper()
+	dsn := os.Getenv("GUANJIN_TEST_DSN")
+	if dsn == "" {
+		t.Fatalf("必须设置 GUANJIN_TEST_DSN（integration job 已注入）")
+	}
+	redisAddr := os.Getenv("GUANJIN_TEST_REDIS_ADDR")
+	if redisAddr == "" {
+		t.Fatalf("必须设置 GUANJIN_TEST_REDIS_ADDR（账号级失败计数要真 Redis）")
+	}
+	env := map[string]string{
+		"GUANJIN_DB_DSN":         dsn,
+		"GUANJIN_REDIS_ADDR":     redisAddr,
+		"GUANJIN_REDIS_PASSWORD": os.Getenv("GUANJIN_TEST_REDIS_PASSWORD"),
+	}
+	// 主密钥：只用于本进程派生（32 字节 0x2a 的 base64），不落任何文件。
+	raw := make([]byte, 32)
+	for i := range raw {
+		raw[i] = 0x2a
+	}
+	env["GUANJIN_MASTER_KEY"] = base64.StdEncoding.EncodeToString(raw)
+	cfg, err := config.Load(func(k string) string { return env[k] })
+	if err != nil {
+		t.Fatalf("config.Load: %v", err)
+	}
+	return cfg
+}
+
+// 注册面：`/auth/register/start` + `/auth/register/complete` 在装配后的真实链路上跑通。
+//
+// 覆盖：用户名免验证路径（AC-REG-05）、邮箱路径的挑战行与 `attempts_left`
+// （AC-REG-01 的 data 侧：值来自 `runtime_config`）、邀请码显式拒绝（AC-REG-08 无效分支）。
+func TestE2E_RegisterHTTPLine(t *testing.T) {
+	db := openTestDB(t)
+	f := newFlowFixture(t, db, "L2", "{}")
+	startupCfg, err := store.ValidateStartup(context.Background(), store.NewRuntimeConfigRepo(db))
+	if err != nil {
+		t.Fatalf("ValidateStartup: %v", err)
+	}
+
+	// ① 用户名 + 口令：跳过挑战，complete 直接建号。
+	username := "s5e2e-" + uuid.NewString()[:10]
+	const password = "GuanJin#E2E-Strong1"
+	var start struct {
+		RegisterToken string  `json:"register_token"`
+		ChallengeID   *string `json:"challenge_id"`
+		NextAction    string  `json:"next_action"`
+		AttemptsLeft  int     `json:"attempts_left"`
+	}
+	resp, env := f.post(t, "/auth/register/start",
+		`{"client_id":"`+f.clientID+`","type":"username","value":"`+username+`"}`, &start)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("start 应为 200，实际 %d / %s", resp.StatusCode, env.Code)
+	}
+	if start.ChallengeID != nil || start.NextAction != "input_password" || start.RegisterToken == "" {
+		t.Fatalf("用户名型应免挑战：%+v", start)
+	}
+	resp2, env2 := f.post(t, "/auth/register/complete",
+		`{"register_token":"`+start.RegisterToken+`","password":"`+password+`"}`, nil)
+	_ = env2
+	if resp2.StatusCode != http.StatusOK {
+		t.Fatalf("complete 应为 200，实际 %d / %s / %s", resp2.StatusCode, env2.Code, env2.Message)
+	}
+	// `uuid.UUID` 直接 Scan 会被驱动当成字符串（database/sql 的通用类型），先扫成 string 再解析。
+	var uidStr string
+	if err := db.Raw(`SELECT id::text FROM users WHERE username = ?`, username).Scan(&uidStr).Error; err != nil || uidStr == "" {
+		t.Fatalf("应建出用户：%v", err)
+	}
+	uid, err := uuid.Parse(uidStr)
+	if err != nil {
+		t.Fatalf("解析用户 id：%v", err)
+	}
+	f.userIDs = append(f.userIDs, uid)
+
+	// 令牌二次使用：挑战已消费（一次性）。
+	resp3, env3 := f.post(t, "/auth/register/complete",
+		`{"register_token":"`+start.RegisterToken+`","password":"`+password+`"}`, nil)
+	if resp3.StatusCode != http.StatusOK {
+		// 用户名型没有挑战，一次性由 `users.username` 唯一约束兜：必须失败且不是 500。
+		if resp3.StatusCode != http.StatusConflict {
+			t.Fatalf("重复建号应被唯一约束拒（409），实际 %d / %s", resp3.StatusCode, env3.Code)
+		}
+	}
+
+	// ② 邮箱路径：下发挑战，`attempts_left` 等于 runtime_config 的 `challenge.max_attempts`。
+	var mail struct {
+		ChallengeID  *string `json:"challenge_id"`
+		AttemptsLeft int     `json:"attempts_left"`
+		NextAction   string  `json:"next_action"`
+	}
+	resp4, env4 := f.post(t, "/auth/register/start",
+		`{"client_id":"`+f.clientID+`","type":"email","value":"e2e-`+uuid.NewString()[:8]+`@example.com"}`, &mail)
+	if resp4.StatusCode != http.StatusOK {
+		t.Fatalf("email start 应为 200，实际 %d / %s", resp4.StatusCode, env4.Code)
+	}
+	if mail.ChallengeID == nil {
+		t.Fatal("email 型必须下发挑战")
+	}
+	if mail.AttemptsLeft != startupCfg.ChallengeMaxAttempts {
+		t.Fatalf("attempts_left 应等于 runtime_config 的 %d，实际 %d",
+			startupCfg.ChallengeMaxAttempts, mail.AttemptsLeft)
+	}
+	if mail.NextAction != "type_code" {
+		t.Fatalf("next_action 应为 type_code，实际 %s", mail.NextAction)
+	}
+
+	// ③ 邀请码：任何非空值都判无效（M1 没有邀请码存储），且零新增行。
+	resp5, env5 := f.post(t, "/auth/register/start",
+		`{"client_id":"`+f.clientID+`","type":"email","value":"e2e-`+uuid.NewString()[:8]+`@example.com","invite_code":"X-1"}`, nil)
+	if resp5.StatusCode != http.StatusBadRequest || env5.Code != httpx.CodeInviteCodeInvalid {
+		t.Fatalf("邀请码应 400 INVITE_CODE_INVALID，实际 %d / %s", resp5.StatusCode, env5.Code)
+	}
+}
+
+// AC-LOGIN-03：连续失败达阈值 → `ACCOUNT_LOCKED`；权威计数在 Redis 的两个冻结键上。
+func TestE2E_AC_LOGIN_03_Lockout(t *testing.T) {
+	db := openTestDB(t)
+	f := newFlowFixture(t, db, "L2", "{}")
+
+	// 把该业务的失败阈值降到 2（夹具自己的取值，不是实现默认值），用例才跑得快。
+	if err := db.Exec(`UPDATE login_policies SET fail_threshold = 2, lock_duration_min = 5 WHERE client_id = ?`,
+		f.clientID).Error; err != nil {
+		t.Fatalf("update policy: %v", err)
+	}
+
+	// 造一个带口令的账号（注册服务 = 上一刀的落点，这里只借它建号）。
+	userID := f.registerUser(t, db, "GuanJin#S5-Strong1")
+	row := f.startFlow(t, &userID, string(factor.ACRAAL1)) // L2 → AAL1，一次口令即可达标
+
+	// 第 1 次错口令：401 INVALID_CREDENTIAL（还没到阈值）。
+	resp, env := f.post(t, "/auth/verify/password",
+		`{"flow_id":"`+row.ID.String()+`","response":"wrong-password-1"}`, nil)
+	if resp.StatusCode != http.StatusUnauthorized || env.Code != httpx.CodeInvalidCredential {
+		t.Fatalf("第 1 次应 401 INVALID_CREDENTIAL，实际 %d / %s", resp.StatusCode, env.Code)
+	}
+	// 第 2 次（= 阈值）：ACCOUNT_LOCKED。
+	resp2, env2 := f.post(t, "/auth/verify/password",
+		`{"flow_id":"`+row.ID.String()+`","response":"wrong-password-2"}`, nil)
+	if resp2.StatusCode != http.StatusUnauthorized || env2.Code != httpx.CodeAccountLocked {
+		t.Fatalf("达阈值应 401 ACCOUNT_LOCKED，实际 %d / %s", resp2.StatusCode, env2.Code)
+	}
+
+	// 直接按 D3-D 的两个冻结键断言（AC-LOGIN-03 要求"直接按上述两键断言"）。
+	guard, err := risk.New(os.Getenv("GUANJIN_TEST_REDIS_ADDR"), os.Getenv("GUANJIN_TEST_REDIS_PASSWORD"))
+	if err != nil {
+		t.Fatalf("risk.New: %v", err)
+	}
+	left, locked, err := guard.Status(context.Background(), userID.String(),
+		risk.Policy{FailThreshold: 2, LockDuration: 5 * time.Minute})
+	if err != nil {
+		t.Fatalf("读 Redis 状态：%v", err)
+	}
+	if !locked || left != 0 {
+		t.Fatalf("Redis 上应已锁定且剩余 0，实际 locked=%v left=%d", locked, left)
+	}
+
+	// 锁定后即使口令正确也不放行（fail-closed），且不会再去算 PBKDF2。
+	resp3, env3 := f.post(t, "/auth/verify/password",
+		`{"flow_id":"`+row.ID.String()+`","response":"GuanJin#S5-Strong1"}`, nil)
+	if resp3.StatusCode != http.StatusUnauthorized || env3.Code != httpx.CodeAccountLocked {
+		t.Fatalf("锁定后正确口令也应 401 ACCOUNT_LOCKED，实际 %d / %s", resp3.StatusCode, env3.Code)
+	}
+
+	// 清理该账号的计数，避免影响其它用例（同一测试库共用）。
+	if err := guard.Reset(context.Background(), userID.String()); err != nil {
+		t.Fatalf("reset: %v", err)
+	}
+}

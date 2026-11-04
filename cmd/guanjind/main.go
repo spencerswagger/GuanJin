@@ -68,22 +68,25 @@ func startup(ctx context.Context, getenv func(string) string, logger *slog.Logge
 		return nil, err
 	}
 
-	// D5：`flow.ttl_seconds` 必须来自 `runtime_config`（缺失/不可解释 → 拒绝启动）。
-	// 代码里**不许**出现 600：TTL 一旦有第二套来源，`expires_at` 就说不清是按谁算的。
-	ttl, err := store.LoadFlowTTL(ctx, store.NewRuntimeConfigRepo(db))
+	// D5 / D14：运行期参数**只能**来自 `runtime_config`（缺失/不可解释 → 拒绝启动）。
+	// 代码里不许出现 600 / 300 / 5：一旦有第二套来源，`expires_at` 与 `attempts_left`
+	// 就说不清是按谁算的（AC-REG-01 要求"改键值必须跟着变"）。
+	startupCfg, err := store.ValidateStartup(ctx, store.NewRuntimeConfigRepo(db))
 	if err != nil {
 		_ = store.Close(db)
-		return nil, fmt.Errorf("startup: flow ttl: %w", err)
+		return nil, fmt.Errorf("startup: runtime_config: %w", err)
 	}
 
 	mux := http.NewServeMux()
-	// 因子与挑战面（S5）：`/auth/challenge/{factor}`、`/auth/verify/{factor}`、`/authorize/flow`。
-	flowHandler, err := newFlowHandler(ctx, db, ttl, logger)
+	w, err := newWiring(ctx, db, cfg, startupCfg, logger)
 	if err != nil {
 		_ = store.Close(db)
 		return nil, err
 	}
-	flowHandler.Routes(mux)
+	// 因子与挑战面（S5）：`/auth/challenge/{factor}`、`/auth/verify/{factor}`、`/authorize/flow`。
+	w.flowHandler.Routes(mux)
+	// 注册面（S4）：`/auth/register/start|complete`。
+	w.registerHandler.Routes(mux)
 
 	mux.HandleFunc("/livez", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -110,7 +113,9 @@ func startup(ctx context.Context, getenv func(string) string, logger *slog.Logge
 	logger.Info("startup checks passed",
 		"addr", cfg.HTTPAddr,
 		"tier_defaults", store.TierDefaultTiers,
-		"flow_ttl_seconds", int64(ttl.Seconds()),
+		"flow_ttl_seconds", int64(startupCfg.FlowTTL.Seconds()),
+		"challenge_ttl_seconds", int64(startupCfg.ChallengeTTL.Seconds()),
+		"challenge_max_attempts", startupCfg.ChallengeMaxAttempts,
 	)
 	return &app{srv: srv, db: db}, nil
 }

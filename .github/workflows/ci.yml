@@ -66,6 +66,8 @@ jobs:
     env:
       CGO_ENABLED: '0'
       GUANJIN_TEST_DSN: postgres://guanjin:guanjin@localhost:5432/guanjin_test?sslmode=disable
+      # 账号级失败计数（D3-D）的权威存储在 Redis，AC-LOGIN-03 的两个冻结键只能在真 Redis 上断言。
+      GUANJIN_TEST_REDIS_ADDR: localhost:6379
     services:
       postgres:
         image: postgres:16
@@ -77,6 +79,15 @@ jobs:
           - 5432:5432
         options: >-
           --health-cmd "pg_isready -U guanjin -d guanjin_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 12
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 12

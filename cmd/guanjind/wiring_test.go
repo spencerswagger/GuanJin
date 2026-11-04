@@ -8,6 +8,7 @@ import (
 
 	"github.com/spencerswagger/guanjin/internal/factor"
 	"github.com/spencerswagger/guanjin/internal/flow"
+	"github.com/spencerswagger/guanjin/internal/risk"
 	"github.com/spencerswagger/guanjin/internal/store"
 )
 
@@ -43,9 +44,34 @@ func TestClientErrorMapsToInvalidClient(t *testing.T) {
 	}
 }
 
+// 风控错误 → 编排哨兵：不翻的话 `ACCOUNT_LOCKED` 与 `REDIS_UNAVAILABLE` 都会变成 500。
+func TestMapRiskError(t *testing.T) {
+	if err := mapRiskError(nil); err != nil {
+		t.Fatalf("nil 应保持 nil，实际 %v", err)
+	}
+	if err := mapRiskError(risk.ErrLocked); !errors.Is(err, flow.ErrAccountLocked) {
+		t.Fatalf("锁定应映射 ErrAccountLocked，实际 %v", err)
+	}
+	if err := mapRiskError(risk.ErrUnavailable); !errors.Is(err, flow.ErrRiskUnavailable) {
+		t.Fatalf("不可用应映射 ErrRiskUnavailable，实际 %v", err)
+	}
+	other := errors.New("policy broken")
+	if err := mapRiskError(other); !errors.Is(err, other) {
+		t.Fatalf("未知错误必须原样上抛，实际 %v", err)
+	}
+}
+
+// 策略换算：分钟 → Duration，字段一一对应（不在两侧各写一套默认值）。
+func TestToRiskPolicy(t *testing.T) {
+	got := toRiskPolicy(flow.LockoutPolicy{FailThreshold: 5, LockDuration: 15 * time.Minute})
+	if got.FailThreshold != 5 || got.LockDuration != 15*time.Minute {
+		t.Fatalf("换算不符：%+v", got)
+	}
+}
+
 // 缺依赖 → 装配期就失败（不等到第一个请求）。
 func TestNewFlowHandlerRequiresDependencies(t *testing.T) {
-	if _, err := newFlowHandler(context.Background(), nil, time.Minute, discardLogger()); err == nil {
+	if _, _, err := newFlowHandler(context.Background(), nil, nil, store.StartupConfig{}, discardLogger()); err == nil {
 		t.Fatal("缺 DB 必须装配失败")
 	}
 }
