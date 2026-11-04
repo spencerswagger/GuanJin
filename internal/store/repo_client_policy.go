@@ -252,3 +252,96 @@ func (r *ClientPolicyRepo) lockoutRow(ctx context.Context, where string, arg any
 	}
 	return &row, nil
 }
+
+// TokenPolicy 是签发令牌需要的会话/令牌参数（`login_policies` 的 A/B 组）。
+type TokenPolicy struct {
+	MinACR              string `gorm:"column:min_acr"`
+	AccessTokenTTLSec   int    `gorm:"column:access_token_ttl_sec"`
+	RefreshTokenTTLSec  int    `gorm:"column:refresh_token_ttl_sec"`
+	SessionIdleTimeoutM int    `gorm:"column:session_idle_timeout_min"`
+	SessionAbsoluteMin  int    `gorm:"column:session_absolute_timeout_min"`
+}
+
+// LoadTokenPolicy 读某业务系统的令牌与会话参数（client_override 优先，其次同档 tier_default）。
+//
+// **不返回默认值**：两者都没有 → `ErrPolicyNotConfigured`（配置缺陷，不是用户错）。
+func (r *ClientPolicyRepo) LoadTokenPolicy(ctx context.Context, clientID string) (*TokenPolicy, error) {
+	if strings.TrimSpace(clientID) == "" {
+		return nil, errors.New("store: empty client id")
+	}
+	var c clientRow
+	if res := r.db.WithContext(ctx).Raw(
+		`SELECT client_id, tier, status FROM clients WHERE client_id = ?`, clientID).Scan(&c); res.Error != nil {
+		return nil, MapError(res.Error)
+	}
+	if c.ClientID == "" {
+		return nil, ErrClientNotFound
+	}
+	query := func(where string, arg any) (*TokenPolicy, error) {
+		var row TokenPolicy
+		res := r.db.WithContext(ctx).Raw(
+			`SELECT min_acr, access_token_ttl_sec, refresh_token_ttl_sec,
+			        session_idle_timeout_min, session_absolute_timeout_min
+			   FROM login_policies WHERE `+where+` LIMIT 1`, arg).Scan(&row)
+		if res.Error != nil {
+			return nil, MapError(res.Error)
+		}
+		if res.RowsAffected == 0 {
+			return nil, nil
+		}
+		return &row, nil
+	}
+	over, err := query(`scope = 'client_override' AND client_id = ?`, clientID)
+	if err != nil {
+		return nil, err
+	}
+	chosen := over
+	if chosen == nil && c.Tier != "" {
+		chosen, err = query(`scope = 'tier_default' AND tier = ?`, c.Tier)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if chosen == nil {
+		return nil, ErrPolicyNotConfigured
+	}
+	return chosen, nil
+}
+
+// RedirectURIs 读某业务系统的登记回调地址（`clients.redirect_uris`）。
+//
+// 授权端点必须**逐字比对**登记值（RFC 6749 §3.1.2.3 不允许前缀/通配匹配）：
+// 宽松匹配等于把授权码送给任意站点。
+func (r *ClientPolicyRepo) RedirectURIs(ctx context.Context, clientID string) ([]string, error) {
+	if strings.TrimSpace(clientID) == "" {
+		return nil, errors.New("store: empty client id")
+	}
+	var raw string
+	res := r.db.WithContext(ctx).Raw(
+		`SELECT array_to_string(redirect_uris, '\n') FROM clients WHERE client_id = ?`, clientID).Scan(&raw)
+	if res.Error != nil {
+		return nil, MapError(res.Error)
+	}
+	if res.RowsAffected == 0 {
+		return nil, ErrClientNotFound
+	}
+	return parseRedirectList(raw), nil
+}
+
+// parseRedirectList 把 `array_to_string(redirect_uris, '\n')` 的结果还原成切片。
+//
+// 单独提成纯函数：`text[]` 不能直接扫进 `*[]string`（驱动会把整个数组当一个字符串），
+// 而"怎么拆"是这里唯一容易写错的一步——它不需要数据库就能被测到。
+func parseRedirectList(raw string) []string {
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+	parts := strings.Split(raw, "\n")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
