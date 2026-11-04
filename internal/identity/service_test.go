@@ -126,7 +126,7 @@ func TestCodeOfMapping(t *testing.T) {
 		{nil, ""},
 		{ErrMissingClientID, httpx.CodeMissingParameter},
 		{ErrRegistrationNotAllowed, httpx.CodeRegistrationNotAllowed},
-		{ErrPasswordRequired, httpx.CodeWeakPassword},
+		{ErrPasswordRequired, httpx.CodeMissingParameter},
 		{ErrIdentifierNotFound, httpx.CodeIdentifierNotFound},
 		{ErrAuthenticatorNotFound, httpx.CodeIdentifierNotFound},
 		{store.ErrClientNotFound, httpx.CodeInvalidClient},

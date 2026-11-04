@@ -33,6 +33,11 @@ var (
 	ErrUnavailable = errors.New("risk: redis unavailable")
 	// ErrWeakPolicy 表示阈值/锁定时长不可解释（配置缺陷，不是用户错）。
 	ErrWeakPolicy = errors.New("risk: fail_threshold and lock_duration must be positive")
+	// ErrConfigMissing 表示**配置**缺了（如空地址）。
+	//
+	// 与 `ErrUnavailable` 分开：后者是"依赖当时不可用"（503 语义，可能自愈），
+	// 前者是"压根没配"（启动期就该报清楚是配置问题，别让人以为 Redis 挂了）。
+	ErrConfigMissing = errors.New("risk: redis address is not configured")
 )
 
 // Policy 是失败处理参数，来源是 `login_policies` 的 C 组两列
@@ -83,7 +88,7 @@ type Guard struct {
 // 探活由 `/readyz` 与每次调用负责。
 func New(addr, password string) (*Guard, error) {
 	if strings.TrimSpace(addr) == "" {
-		return nil, fmt.Errorf("%w: empty redis address", ErrUnavailable)
+		return nil, fmt.Errorf("%w", ErrConfigMissing)
 	}
 	return &Guard{rdb: redis.NewClient(&redis.Options{Addr: strings.TrimSpace(addr), Password: password})}, nil
 }

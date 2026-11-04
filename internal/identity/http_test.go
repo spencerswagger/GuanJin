@@ -217,3 +217,31 @@ func TestNewRegisterHTTPRequiresDeps(t *testing.T) {
 func decodeInto(r io.Reader, dst any) error {
 	return json.NewDecoder(r).Decode(dst)
 }
+
+// AC-REG-10②：`code` 只回首个命中项，**全量**命中进 `details.violations[]`（顺序即判定顺序）。
+func TestHTTPCompleteEmitsViolationsDetails(t *testing.T) {
+	rejected := &PasswordRejected{Result: credential.Result{
+		Code: httpx.CodeWeakPassword,
+		Violations: []credential.Violation{
+			{Kind: credential.ViolationWeak, Code: httpx.CodeWeakPassword, Rule: "weaklist", Message: "常见弱口令"},
+			{Kind: credential.ViolationPolicy, Code: httpx.CodePasswordPolicyViolation, Rule: "min_length", Message: "长度不足"},
+		},
+	}}
+	srv := newRegisterServer(t, &fakeRegistrar{compErr: rejected})
+	resp, env := postRegister(t, srv.URL+"/auth/register/complete", `{"register_token":"v1.a.b","password":"x"}`)
+	if resp.StatusCode != http.StatusUnprocessableEntity || env.Code != httpx.CodeWeakPassword {
+		t.Fatalf("应 422 WEAK_PASSWORD，实际 %d %s", resp.StatusCode, env.Code)
+	}
+	details, ok := env.Details.(map[string]any)
+	if !ok {
+		t.Fatalf("必须带 details，实际 %v", env.Details)
+	}
+	raw, ok := details["violations"].([]any)
+	if !ok || len(raw) != 2 {
+		t.Fatalf("details.violations 应含 2 条命中项，实际 %v", details["violations"])
+	}
+	first, _ := raw[0].(map[string]any)
+	if first["rule"] != "weaklist" || first["code"] != string(httpx.CodeWeakPassword) {
+		t.Fatalf("第一条应是弱口令（顺序固定 weak → reused → policy），实际 %v", first)
+	}
+}

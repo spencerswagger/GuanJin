@@ -505,14 +505,12 @@ func TestE2E_RegisterHTTPLine(t *testing.T) {
 	}
 	f.userIDs = append(f.userIDs, uid)
 
-	// 令牌二次使用：挑战已消费（一次性）。
+	// 令牌二次使用：用户名型**没有挑战**，一次性由 `users.username` 的唯一索引兜 → 必须 409。
+	// （不写成"只要不是 500 就算过"：那样第二次返回 200 也会绿，等于没断言。）
 	resp3, env3 := f.post(t, "/auth/register/complete",
 		`{"register_token":"`+start.RegisterToken+`","password":"`+password+`"}`, nil)
-	if resp3.StatusCode != http.StatusOK {
-		// 用户名型没有挑战，一次性由 `users.username` 唯一约束兜：必须失败且不是 500。
-		if resp3.StatusCode != http.StatusConflict {
-			t.Fatalf("重复建号应被唯一约束拒（409），实际 %d / %s", resp3.StatusCode, env3.Code)
-		}
+	if resp3.StatusCode != http.StatusConflict {
+		t.Fatalf("重复建号应 409（users 唯一索引），实际 %d / %s", resp3.StatusCode, env3.Code)
 	}
 
 	// ② 邮箱路径：下发挑战，`attempts_left` 等于 runtime_config 的 `challenge.max_attempts`。

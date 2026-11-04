@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/spencerswagger/guanjin/internal/credential"
 	"github.com/spencerswagger/guanjin/internal/crypto"
 	"github.com/spencerswagger/guanjin/internal/factor"
 	"github.com/spencerswagger/guanjin/internal/identifier"
@@ -38,6 +39,8 @@ var (
 	ErrInvalidRegisterCode = errors.New("identity: invalid registration code")
 	// ErrRegisterAttemptsExceeded 表示该挑战的尝试次数用尽（对外 `ATTEMPTS_EXCEEDED`，401）。
 	ErrRegisterAttemptsExceeded = errors.New("identity: register challenge attempts exceeded")
+	// ErrFactorDisabled 表示目标业务系统禁用了该注册所需的验证因子（对外 `FACTOR_DISABLED`，422）。
+	ErrFactorDisabled = errors.New("identity: factor is disabled for this client")
 )
 
 // StartRegistrationRequest 是 `POST /auth/register/start` 的入参（接口 §3.3.1）。
@@ -94,6 +97,11 @@ func (s *Service) StartRegistration(ctx context.Context, req StartRegistrationRe
 	encoded, err := identifier.Encode(req.Type, req.Value, s.cfg.IndexKey, s.cfg.FieldKey)
 	if err != nil {
 		return nil, err
+	}
+	// §3.3.1 校验③：该 client 的禁用因子约束 —— 禁了 `email_otp` 就不许走邮箱注册
+	// （否则"禁用"只是展示层的摆设）。
+	if encoded.Type != identifier.TypeUsername && factorDisabled(policy.DisabledFactors, verifyFactorFor(encoded.Type)) {
+		return nil, ErrFactorDisabled
 	}
 
 	now, err := store.DBNow(ctx, s.db)
@@ -177,20 +185,33 @@ type CompleteRegistrationRequest struct {
 // 顺序：令牌（格式/签名 → 过期）→ 挑战（存在 → 用途 → 未消费 → 未过期 → 码）→ 一次性消费 → 建号。
 // **先消费再建号**：建号失败（如口令不合规）时挑战已被用掉，用户需要重新 start ——
 // 这是有意的：让"同一个窗口反复试口令"不可能，改口令只能重新走注册窗口。
-func (s *Service) CompleteRegistration(ctx context.Context, req CompleteRegistrationRequest) (*RegisterResult, error) {
+func (s *Service) CompleteRegistration(ctx context.Context, req CompleteRegistrationRequest) (res *RegisterResult, err error) {
 	if req.RegisterToken == "" {
 		return nil, ErrInvalidRegisterToken
 	}
-	claims, err := parseRegisterToken(s.cfg.RegisterTokenKey, req.RegisterToken)
-	if err != nil {
-		return nil, err
+	claims, perr := parseRegisterToken(s.cfg.RegisterTokenKey, req.RegisterToken)
+	if perr != nil {
+		return nil, perr
 	}
+	// AC-AUD-01：`complete` 之后的失败都要留痕（`result='failure'` + 稳定 `reason`）。
+	// 令牌本身不合规的失败**不记**：那时没有可信的 `client_id`，记了反而能被刷。
+	defer func() {
+		if err != nil {
+			s.recordRegisterFailure(ctx, claims.ClientID, req.TraceID, failureReason(err))
+		}
+	}()
 	now, err := store.DBNow(ctx, s.db)
 	if err != nil {
 		return nil, err
 	}
 	if claims.expired(now) {
 		return nil, ErrRegisterTokenExpired
+	}
+	// 先跑**不依赖历史**的口令策略（长度/字符类/弱口令黑名单）再消费挑战：
+	// 弱口令是最常见的失败，若等建号时才判，一条短信和一个注册窗口就被白烧了。
+	// （`PASSWORD_REUSED` 需要历史，只能在建号事务里判 —— 那种失败仍会消耗窗口，属已知取舍。）
+	if err := s.precheckPasswordPolicy(ctx, claims.ClientID, req.Password); err != nil {
+		return nil, err
 	}
 
 	verified := false
@@ -256,6 +277,62 @@ func (s *Service) CompleteRegistration(ctx context.Context, req CompleteRegistra
 	})
 }
 
+// recordRegisterFailure 写一条注册失败事件（尽力而为：写失败只影响取证，不影响主流程结论）。
+func (s *Service) recordRegisterFailure(ctx context.Context, clientID, traceID, reason string) {
+	if reason == "" {
+		return
+	}
+	now := s.cfg.Now().UTC()
+	ev := &model.AuthEvent{
+		ClientID:   &clientID,
+		EventType:  "register",
+		Result:     "failure",
+		Reason:     &reason,
+		AMR:        model.StringArray{},
+		OccurredAt: now,
+	}
+	if traceID != "" {
+		ev.TraceID = &traceID
+	}
+	_ = s.events.Append(ctx, ev)
+}
+
+// failureReason 把注册失败映射成**稳定**的失败分类（写进 `auth_events.reason`，不含敏感信息）。
+func failureReason(err error) string {
+	switch {
+	case err == nil:
+		return ""
+	case errors.Is(err, ErrInvalidRegisterCode), errors.Is(err, ErrRegisterAttemptsExceeded):
+		return "invalid_code"
+	case errors.Is(err, ErrRegisterTokenExpired):
+		return "window_expired"
+	case errors.Is(err, ErrRegisterChallengeConsumed):
+		return "window_consumed"
+	case errors.Is(err, ErrIdentifierAlreadyBound):
+		return "identifier_bound"
+	case errors.Is(err, ErrRegistrationNotAllowed):
+		return "policy_denied"
+	case errors.Is(err, ErrFactorDisabled):
+		return "factor_disabled"
+	default:
+		var rejected *PasswordRejected
+		if errors.As(err, &rejected) {
+			return "password_policy"
+		}
+		return ""
+	}
+}
+
+// factorDisabled 报告某因子是否在该业务系统的禁用集里（因子名按 D2/附录 A 的开放集合比较）。
+func factorDisabled(disabled []string, want factor.FactorType) bool {
+	for _, name := range disabled {
+		if factor.FactorType(name) == want {
+			return true
+		}
+	}
+	return false
+}
+
 // verifyFactorFor 给出该标识符类型对应的**验证因子**（写入 `challenges.factor_type`）。
 func verifyFactorFor(itype string) factor.FactorType {
 	switch itype {
@@ -299,4 +376,29 @@ func (s *Service) generateCode() (string, error) {
 	}
 	n := (uint32(buf[0])<<24 | uint32(buf[1])<<16 | uint32(buf[2])<<8 | uint32(buf[3])) % 1000000
 	return fmt.Sprintf("%06d", n), nil
+}
+
+// precheckPasswordPolicy 用目标业务系统的档位判"不依赖历史"的口令规则。
+//
+// 只做**纯函数**判定（`credential.Policy.Evaluate` 的 history 分支要求历史，这里置 0）：
+// 目的是"别把明显不合规的口令带到消费挑战之后"，不是替代 `Register` 里的最终判定。
+func (s *Service) precheckPasswordPolicy(ctx context.Context, clientID, password string) error {
+	policy, err := s.policies.LoadRegistrationPolicy(ctx, nil, clientID)
+	if err != nil {
+		return err
+	}
+	eval := credential.Policy{
+		MinLength:    policy.PasswordMinLength,
+		CharClasses:  policy.PasswordCharClasses,
+		HistoryCount: 0,
+		MaxAgeDays:   policy.PasswordMaxAgeDays,
+	}
+	res, err := eval.Evaluate(credential.EvaluateInput{Password: password})
+	if err != nil {
+		return err
+	}
+	if !res.OK() {
+		return &PasswordRejected{Result: res}
+	}
+	return nil
 }

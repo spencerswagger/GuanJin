@@ -211,7 +211,7 @@ func (r *ClientPolicyRepo) LoadLockoutPolicy(ctx context.Context, clientID strin
 	}
 
 	var over *lockoutRow
-	if row, err := r.lockoutRow(ctx, `client_id = ?`, clientID); err != nil {
+	if row, err := r.lockoutRow(ctx, `scope = 'client_override' AND client_id = ?`, clientID); err != nil {
 		return nil, err
 	} else {
 		over = row

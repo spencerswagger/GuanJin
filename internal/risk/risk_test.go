@@ -199,8 +199,9 @@ func TestWeakPolicyRejected(t *testing.T) {
 
 // 装配期守卫：空地址 / nil 客户端 / 未初始化对象都必须 fail-closed。
 func TestConstructorGuards(t *testing.T) {
-	if _, err := New("  ", ""); !errors.Is(err, ErrUnavailable) {
-		t.Fatalf("空地址应报错，实际 %v", err)
+	// 空地址是**配置缺失**，不是"依赖不可用"：两者的处置不同（前者改配置，后者等自愈）。
+	if _, err := New("  ", ""); !errors.Is(err, ErrConfigMissing) {
+		t.Fatalf("空地址应报 ErrConfigMissing，实际 %v", err)
 	}
 	if _, err := NewWithClient(nil); !errors.Is(err, ErrUnavailable) {
 		t.Fatalf("nil 客户端应报错，实际 %v", err)

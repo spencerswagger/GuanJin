@@ -128,6 +128,23 @@ func (h *RegisterHTTP) complete(w http.ResponseWriter, r *http.Request) {
 // fail 把服务层错误写成统一四字段响应（`trace_id` 可复制，文案不承载细节）。
 func (h *RegisterHTTP) fail(w http.ResponseWriter, r *http.Request, err error) {
 	traceID := httpx.TraceIDFromContext(r.Context())
+	// AC-REG-10②：口令三码同时命中时 `code` 只回首个，**全量**放 `details.violations[]`
+	// （顺序即判定顺序 weak → reused → policy，每项可定位到具体规则）。
+	var rejected *PasswordRejected
+	if errors.As(err, &rejected) {
+		violations := make([]map[string]string, 0, len(rejected.Violations()))
+		for _, v := range rejected.Violations() {
+			violations = append(violations, map[string]string{
+				"code":   string(v.Code),
+				"rule":   v.Rule,
+				"detail": v.Message,
+			})
+		}
+		code, _ := CodeOf(err)
+		httpx.WriteError(w, traceID, code, registerMessage(code),
+			map[string]any{"violations": violations})
+		return
+	}
 	code, ok := CodeOf(err)
 	if !ok {
 		// 不认识的错误：详细原因只进日志，按 trace_id 可查；对外统一 500。

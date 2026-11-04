@@ -448,6 +448,8 @@ func CodeOf(err error) (httpx.Code, bool) {
 		return httpx.CodeRegistrationNotAllowed, true
 	case errors.Is(err, ErrInviteCodeInvalid):
 		return httpx.CodeInviteCodeInvalid, true
+	case errors.Is(err, ErrFactorDisabled):
+		return httpx.CodeFactorDisabled, true
 	case errors.Is(err, ErrIdentifierAlreadyBound):
 		return httpx.CodeIdentifierAlreadyBound, true
 	case errors.Is(err, ErrInvalidRegisterToken):
@@ -461,7 +463,9 @@ func CodeOf(err error) (httpx.Code, bool) {
 	case errors.Is(err, ErrRegisterAttemptsExceeded):
 		return httpx.CodeAttemptsExceeded, true
 	case errors.Is(err, ErrPasswordRequired):
-		return httpx.CodeWeakPassword, true
+		// 缺必填字段是 **参数缺失**（D14③ 的第一顺位），不是"给了但不合规"；
+		// `WEAK_PASSWORD` 只用于口令值本身命中了黑名单。
+		return httpx.CodeMissingParameter, true
 	case errors.Is(err, ErrIdentifierNotFound), errors.Is(err, ErrAuthenticatorNotFound):
 		return httpx.CodeIdentifierNotFound, true
 	case errors.Is(err, identifier.ErrInvalidIdentifier), errors.Is(err, identifier.ErrUnsupportedType),

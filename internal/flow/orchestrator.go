@@ -313,6 +313,11 @@ func (o *Orchestrator) VerifyStep(ctx context.Context, in VerifyInput) (*VerifyR
 	if err := ensureFlowUsable(f, o.deps.Now().UTC()); err != nil {
 		return nil, err
 	}
+	// **匿名流的已知边界**：`flows.user_id IS NULL` 时既没有账号可锁，也没有账号可计数，
+	// 因此 D3-D 的失败计数只对"已绑定用户的流"生效。S6 建登录流时必须把 `user_id` 绑上
+	// （登录页已解析出账号时）；否则匿名链路等于没有爆破保护 —— 这一点在 PR 里如实登记，
+	// 要改 `verify` 入参就必须走契约变更（CH），不在这里私自加字段。
+	//
 	// 用户以**流上的 `user_id` 为准**：流已绑定用户时，请求体/调用方给的用户标识一律忽略
 	// （否则等于让调用方指定"验谁的口令"）。只有匿名流（`user_id IS NULL`）才采信调用方
 	// 解析出来的用户 —— 那种情况下不采信就没法验（比如登录页先解析标识符再验口令）。

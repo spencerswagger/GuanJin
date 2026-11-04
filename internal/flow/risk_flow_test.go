@@ -162,7 +162,7 @@ func TestVerifyStepRiskUnavailablePropagates(t *testing.T) {
 func TestBeginChallengeAttemptsLeftFromGuard(t *testing.T) {
 	now := time.Unix(1_760_000_000, 0).UTC()
 
-	t.Run("已绑定用户回真实剩余次数", func(t *testing.T) {
+	t.Run("attempts_left 只表示单挑战次数（不是账号级）", func(t *testing.T) {
 		st := &fakeStore{}
 		guard := &fakeGuard{threshold: 5, fails: map[string]int{}}
 		verifier := &fakeVerifier{ticket: factor.ChallengeTicket{NextAction: factor.NextActionInputPassword}}
@@ -184,8 +184,10 @@ func TestBeginChallengeAttemptsLeftFromGuard(t *testing.T) {
 		if err != nil {
 			t.Fatalf("BeginChallenge: %v", err)
 		}
-		if got.AttemptsLeft != 3 {
-			t.Fatalf("阈值 5、已错 2 次应回 3 次，实际 %d", got.AttemptsLeft)
+		// D3-D：`attempts_left` 是**单挑战**的剩余次数（口令是无状态挑战 → 没有挑战行 → 0/不适用），
+		// 账号级剩余次数**不得**借用这个字段（否则前端会把"还能输错几次"读成"这个码还能试几次"）。
+		if got.AttemptsLeft != 0 {
+			t.Fatalf("口令无状态挑战的 attempts_left 应为 0（不适用），实际 %d", got.AttemptsLeft)
 		}
 	})
 

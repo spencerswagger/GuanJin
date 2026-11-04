@@ -56,12 +56,6 @@ type ChallengeStore interface {
 	RecordAttempt(ctx context.Context, id uuid.UUID, now time.Time) (remaining int32, exhausted bool, err error)
 }
 
-// ticketlessAttempts 是**无账号上下文**时回的 `attempts_left`。
-//
-// 匿名流没有账号级计数（D3-D 的对象是 `user_id`），所以这里不是"默认 0 次机会"，
-// 而是"这个维度不适用"：前端只在拿到 `flow_id` + 已绑定用户时才应展示剩余次数。
-const ticketlessAttempts = 0
-
 // BeginChallengeInput 是"下发一次挑战"的入参（接口 §3.2.1 的请求要点）。
 type BeginChallengeInput struct {
 	// FlowID 阶梯流的 id；`purpose ∈ {login, step_up}` 时**必填**（CH-1）。
@@ -164,24 +158,22 @@ func (o *Orchestrator) BeginChallenge(ctx context.Context, in BeginChallengeInpu
 		return nil, ErrFactorNotSupported
 	}
 
-	// ⑤ 账号级锁定（D3-D）：已锁定不再下发挑战；否则把真实剩余次数回给前端。
-	// 匿名流（`user_id IS NULL`）没有账号可锁，不查也不编造次数。
-	attemptsLeft := ticketlessAttempts
-	var policy LockoutPolicy
+	// ⑤ 账号级锁定（D3-D）：已锁定就不再下发挑战。
+	//
+	// **注意字段语义**：`IssuedChallenge.AttemptsLeft` 是**单挑战**的剩余次数（`challenges.attempts`
+	// 的对立面），**不是**账号级计数——D3-D 明确两者是两个对象。账号级剩余次数只在内部用于
+	// "还能试几次"的判定，不占用这个字段（要对外暴露得新增字段并走契约变更）。
+	// 匿名流（`user_id IS NULL`）没有账号可锁，不查也不计数。
 	if userID != "" {
-		var err error
-		policy, err = o.deps.Lockout(ctx, clientID)
-		if err != nil {
-			return nil, err
+		policy, perr := o.deps.Lockout(ctx, clientID)
+		if perr != nil {
+			return nil, perr
 		}
-		left, locked, err := o.deps.Guard.Status(ctx, userID, policy)
-		if err != nil {
-			return nil, err
-		}
-		if locked {
+		if _, locked, gerr := o.deps.Guard.Status(ctx, userID, policy); gerr != nil {
+			return nil, gerr
+		} else if locked {
 			return nil, ErrAccountLocked
 		}
-		attemptsLeft = left
 	}
 
 	// ⑥ 因子自己决定要不要落一次性码（口令：不落；短信/邮箱：落）。
@@ -208,7 +200,7 @@ func (o *Orchestrator) BeginChallenge(ctx context.Context, in BeginChallengeInpu
 		NextAction:   ticket.NextAction,
 		TargetMasked: ticket.TargetMasked,
 		ExpiresAt:    ticket.ExpiresAt,
-		AttemptsLeft: attemptsLeft,
+		AttemptsLeft: ticket.AttemptsLeft,
 	}
 	if ticket.ChallengeID != "" {
 		id := ticket.ChallengeID
