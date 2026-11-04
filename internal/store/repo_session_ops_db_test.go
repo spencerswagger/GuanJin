@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 
 	"github.com/spencerswagger/guanjin/internal/store/model"
 )
@@ -22,36 +23,47 @@ import (
 //   - 游标翻页不漏行、不重复（行值比较 `(issued_at, id)`）；
 //   - 策略读取的**覆盖优先**顺序（client_override → tier_default）。
 
-func TestDBSessionCreateAndGet(t *testing.T) {
+// insertSessionRow 用**裸 SQL** 建会话行（`SessionRepo.Create` 归 S6 的 `repo_session.go`，
+// 本文件只测 S7 的读取/撤销/续期/过期，不得依赖 S6 的写入口）。
+func insertSessionRow(t *testing.T, db *gorm.DB, s *SessionRecord) {
+	t.Helper()
+	if s.ID == uuid.Nil {
+		s.ID = mustV7(t)
+	}
+	if err := db.Exec(`INSERT INTO sessions
+		(id, user_id, client_id, acr, amr, status, issued_at, expires_at, idle_expires_at, ip, user_agent, device_id)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		s.ID, s.UserID, s.ClientID, s.ACR, s.AMR, s.Status, s.IssuedAt, s.ExpiresAt, s.IdleExpiresAt,
+		s.IP, s.UserAgent, s.DeviceID).Error; err != nil {
+		t.Fatalf("insert session row: %v", err)
+	}
+}
+
+func TestDBSessionReadBack(t *testing.T) {
 	db := openTestDB(t)
 	f := newFixture(t, db)
-	repo := NewSessionRepo(db)
+	repo := NewSessionOpsRepo(db)
 	ctx := context.Background()
 	now := time.Now().UTC().Truncate(time.Microsecond)
 
-	s := &model.Session{
+	s := &SessionRecord{
 		UserID:        f.userID,
 		ClientID:      f.clientID,
 		ACR:           "AAL1",
 		AMR:           model.StringArray{"pwd"},
-		Status:        model.SessionStatusActive,
+		Status:        SessionStatusActive,
 		IssuedAt:      now,
 		ExpiresAt:     now.Add(12 * time.Hour),
 		IdleExpiresAt: now.Add(30 * time.Minute),
 	}
-	if err := repo.Create(ctx, s); err != nil {
-		t.Fatalf("Create: %v", err)
-	}
+	insertSessionRow(t, db, s)
 	t.Cleanup(func() { _ = db.Exec(`DELETE FROM sessions WHERE user_id = ?`, f.userID) })
 
-	if s.ID == uuid.Nil {
-		t.Fatal("Create must assign a uuid v7 primary key")
-	}
 	got, err := repo.GetByID(ctx, s.ID)
 	if err != nil {
 		t.Fatalf("GetByID: %v", err)
 	}
-	if got.UserID != f.userID || got.ClientID != f.clientID || got.Status != model.SessionStatusActive {
+	if got.UserID != f.userID || got.ClientID != f.clientID || got.Status != SessionStatusActive {
 		t.Fatalf("roundtrip mismatch: %+v", got)
 	}
 	if len(got.AMR) != 1 || got.AMR[0] != "pwd" {
@@ -66,17 +78,15 @@ func TestDBSessionCreateAndGet(t *testing.T) {
 func TestDBRevokeIsConditionalAndConsistent(t *testing.T) {
 	db := openTestDB(t)
 	f := newFixture(t, db)
-	repo := NewSessionRepo(db)
+	repo := NewSessionOpsRepo(db)
 	ctx := context.Background()
 	now := time.Now().UTC()
 
-	s := &model.Session{
-		UserID: f.userID, ClientID: f.clientID, ACR: "AAL1", Status: model.SessionStatusActive,
+	s := &SessionRecord{
+		UserID: f.userID, ClientID: f.clientID, ACR: "AAL1", Status: SessionStatusActive,
 		IssuedAt: now, ExpiresAt: now.Add(time.Hour), IdleExpiresAt: now.Add(30 * time.Minute),
 	}
-	if err := repo.Create(ctx, s); err != nil {
-		t.Fatalf("Create: %v", err)
-	}
+	insertSessionRow(t, db, s)
 	t.Cleanup(func() { _ = db.Exec(`DELETE FROM sessions WHERE user_id = ?`, f.userID) })
 
 	n, err := repo.RevokeByID(ctx, s.ID, "admin", now)
@@ -87,7 +97,7 @@ func TestDBRevokeIsConditionalAndConsistent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetByID: %v", err)
 	}
-	if got.Status != model.SessionStatusRevoked || got.RevokedAt == nil || got.RevokeReason == nil ||
+	if got.Status != SessionStatusRevoked || got.RevokedAt == nil || got.RevokeReason == nil ||
 		*got.RevokeReason != "admin" {
 		t.Fatalf("revoked row inconsistent: %+v", got)
 	}
@@ -124,21 +134,19 @@ func TestDBSessionTimeOrderCheck(t *testing.T) {
 func TestDBSessionListCursorPaging(t *testing.T) {
 	db := openTestDB(t)
 	f := newFixture(t, db)
-	repo := NewSessionRepo(db)
+	repo := NewSessionOpsRepo(db)
 	ctx := context.Background()
 	base := time.Now().UTC().Truncate(time.Microsecond)
 
 	ids := make([]uuid.UUID, 0, 3)
 	for i := 0; i < 3; i++ {
-		s := &model.Session{
-			UserID: f.userID, ClientID: f.clientID, ACR: "AAL1", Status: model.SessionStatusActive,
+		s := &SessionRecord{
+			UserID: f.userID, ClientID: f.clientID, ACR: "AAL1", Status: SessionStatusActive,
 			IssuedAt:      base.Add(time.Duration(i) * time.Second),
 			ExpiresAt:     base.Add(time.Hour),
 			IdleExpiresAt: base.Add(30 * time.Minute),
 		}
-		if err := repo.Create(ctx, s); err != nil {
-			t.Fatalf("Create %d: %v", i, err)
-		}
+		insertSessionRow(t, db, s)
 		ids = append(ids, s.ID)
 	}
 	t.Cleanup(func() { _ = db.Exec(`DELETE FROM sessions WHERE user_id = ?`, f.userID) })
@@ -178,25 +186,21 @@ func TestDBSessionListCursorPaging(t *testing.T) {
 func TestDBSessionListActiveFilter(t *testing.T) {
 	db := openTestDB(t)
 	f := newFixture(t, db)
-	repo := NewSessionRepo(db)
+	repo := NewSessionOpsRepo(db)
 	ctx := context.Background()
 	now := time.Now().UTC()
 
-	active := &model.Session{UserID: f.userID, ClientID: f.clientID, ACR: "AAL1",
-		Status: model.SessionStatusActive, IssuedAt: now, ExpiresAt: now.Add(time.Hour),
+	active := &SessionRecord{UserID: f.userID, ClientID: f.clientID, ACR: "AAL1",
+		Status: SessionStatusActive, IssuedAt: now, ExpiresAt: now.Add(time.Hour),
 		IdleExpiresAt: now.Add(time.Minute)}
-	if err := repo.Create(ctx, active); err != nil {
-		t.Fatalf("Create active: %v", err)
-	}
+	insertSessionRow(t, db, active)
 	if _, err := repo.RevokeByID(ctx, active.ID, "admin", now); err != nil {
 		t.Fatalf("revoke: %v", err)
 	}
-	second := &model.Session{UserID: f.userID, ClientID: f.clientID, ACR: "AAL1",
-		Status: model.SessionStatusActive, IssuedAt: now, ExpiresAt: now.Add(time.Hour),
+	second := &SessionRecord{UserID: f.userID, ClientID: f.clientID, ACR: "AAL1",
+		Status: SessionStatusActive, IssuedAt: now, ExpiresAt: now.Add(time.Hour),
 		IdleExpiresAt: now.Add(time.Minute)}
-	if err := repo.Create(ctx, second); err != nil {
-		t.Fatalf("Create second: %v", err)
-	}
+	insertSessionRow(t, db, second)
 	t.Cleanup(func() { _ = db.Exec(`DELETE FROM sessions WHERE user_id = ?`, f.userID) })
 
 	userID := f.userID
@@ -223,20 +227,18 @@ func TestDBSessionListActiveFilter(t *testing.T) {
 func TestDBEvictOldestActive(t *testing.T) {
 	db := openTestDB(t)
 	f := newFixture(t, db)
-	repo := NewSessionRepo(db)
+	repo := NewSessionOpsRepo(db)
 	ctx := context.Background()
 	base := time.Now().UTC().Truncate(time.Microsecond)
 
-	oldest := &model.Session{UserID: f.userID, ClientID: f.clientID, ACR: "AAL1",
-		Status: model.SessionStatusActive, IssuedAt: base.Add(-time.Hour),
+	oldest := &SessionRecord{UserID: f.userID, ClientID: f.clientID, ACR: "AAL1",
+		Status: SessionStatusActive, IssuedAt: base.Add(-time.Hour),
 		ExpiresAt: base.Add(time.Hour), IdleExpiresAt: base.Add(30 * time.Minute)}
-	newer := &model.Session{UserID: f.userID, ClientID: f.clientID, ACR: "AAL1",
-		Status: model.SessionStatusActive, IssuedAt: base,
+	newer := &SessionRecord{UserID: f.userID, ClientID: f.clientID, ACR: "AAL1",
+		Status: SessionStatusActive, IssuedAt: base,
 		ExpiresAt: base.Add(time.Hour), IdleExpiresAt: base.Add(30 * time.Minute)}
-	for _, s := range []*model.Session{oldest, newer} {
-		if err := repo.Create(ctx, s); err != nil {
-			t.Fatalf("Create: %v", err)
-		}
+	for _, s := range []*SessionRecord{oldest, newer} {
+		insertSessionRow(t, db, s)
 	}
 	t.Cleanup(func() { _ = db.Exec(`DELETE FROM sessions WHERE user_id = ?`, f.userID) })
 
@@ -251,14 +253,14 @@ func TestDBEvictOldestActive(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetByID: %v", err)
 	}
-	if got.Status != model.SessionStatusRevoked || got.RevokeReason == nil || *got.RevokeReason != "concurrent_limit" {
+	if got.Status != SessionStatusRevoked || got.RevokeReason == nil || *got.RevokeReason != "concurrent_limit" {
 		t.Fatalf("evicted row = %+v", got)
 	}
 	keep, err := repo.GetByID(ctx, newer.ID)
 	if err != nil {
 		t.Fatalf("GetByID newer: %v", err)
 	}
-	if keep.Status != model.SessionStatusActive {
+	if keep.Status != SessionStatusActive {
 		t.Fatal("newer session must stay active")
 	}
 
@@ -273,18 +275,16 @@ func TestDBEvictOldestActive(t *testing.T) {
 func TestDBSessionBulkAndLifecycle(t *testing.T) {
 	db := openTestDB(t)
 	f := newFixture(t, db)
-	repo := NewSessionRepo(db)
+	repo := NewSessionOpsRepo(db)
 	ctx := context.Background()
 	base := time.Now().UTC().Truncate(time.Microsecond)
 
 	keep, other := uuid.Nil, uuid.Nil
 	for i := 0; i < 2; i++ {
-		s := &model.Session{UserID: f.userID, ClientID: f.clientID, ACR: "AAL1",
-			Status: model.SessionStatusActive, IssuedAt: base.Add(time.Duration(i) * time.Second),
+		s := &SessionRecord{UserID: f.userID, ClientID: f.clientID, ACR: "AAL1",
+			Status: SessionStatusActive, IssuedAt: base.Add(time.Duration(i) * time.Second),
 			ExpiresAt: base.Add(time.Hour), IdleExpiresAt: base.Add(30 * time.Minute)}
-		if err := repo.Create(ctx, s); err != nil {
-			t.Fatalf("Create: %v", err)
-		}
+		insertSessionRow(t, db, s)
 		if i == 0 {
 			keep = s.ID
 		} else {
@@ -323,14 +323,14 @@ func TestDBSessionBulkAndLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetByID keep: %v", err)
 	}
-	if survivor.Status != model.SessionStatusActive {
+	if survivor.Status != SessionStatusActive {
 		t.Fatal("keep session must stay active")
 	}
 	gone, err := repo.GetByID(ctx, other)
 	if err != nil {
 		t.Fatalf("GetByID other: %v", err)
 	}
-	if gone.Status != model.SessionStatusRevoked {
+	if gone.Status != SessionStatusRevoked {
 		t.Fatal("other session must be revoked")
 	}
 
@@ -346,7 +346,7 @@ func TestDBSessionBulkAndLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetByID expired: %v", err)
 	}
-	if expired.Status != model.SessionStatusExpired {
+	if expired.Status != SessionStatusExpired {
 		t.Fatalf("status = %q, want expired", expired.Status)
 	}
 
@@ -363,7 +363,7 @@ func TestDBSessionBulkAndLifecycle(t *testing.T) {
 func TestDBLoadSessionPolicy(t *testing.T) {
 	db := openTestDB(t)
 	f := newFixture(t, db)
-	repo := NewSessionRepo(db)
+	repo := NewSessionOpsRepo(db)
 	ctx := context.Background()
 
 	// fixture 的 client 是 L2，先读一次 tier_default（应由 000017 seed 提供）。
@@ -411,7 +411,7 @@ func TestDBLoadSessionPolicy(t *testing.T) {
 func TestDBClientNamesUserExistsRoles(t *testing.T) {
 	db := openTestDB(t)
 	f := newFixture(t, db)
-	repo := NewSessionRepo(db)
+	repo := NewSessionOpsRepo(db)
 	ctx := context.Background()
 
 	names, err := repo.ClientNames(ctx, []string{f.clientID, "no-such-client"})

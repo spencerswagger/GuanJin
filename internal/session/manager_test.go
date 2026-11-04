@@ -18,7 +18,7 @@ import (
 
 // fakeStore 是 SessionStore 的内存实现。
 type fakeStore struct {
-	sessions map[uuid.UUID]*model.Session
+	sessions map[uuid.UUID]*store.SessionRecord
 	policies map[string]*store.SessionPolicy
 	names    map[string]string
 	users    map[uuid.UUID]bool
@@ -37,14 +37,14 @@ type fakeStore struct {
 
 func newFakeStore() *fakeStore {
 	return &fakeStore{
-		sessions: map[uuid.UUID]*model.Session{},
+		sessions: map[uuid.UUID]*store.SessionRecord{},
 		policies: map[string]*store.SessionPolicy{},
 		names:    map[string]string{},
 		users:    map[uuid.UUID]bool{},
 	}
 }
 
-func (f *fakeStore) Create(_ context.Context, s *model.Session) error {
+func (f *fakeStore) Create(_ context.Context, s *store.SessionRecord) error {
 	if f.createErr != nil {
 		return f.createErr
 	}
@@ -57,7 +57,7 @@ func (f *fakeStore) Create(_ context.Context, s *model.Session) error {
 	return nil
 }
 
-func (f *fakeStore) GetByID(_ context.Context, id uuid.UUID) (*model.Session, error) {
+func (f *fakeStore) GetByID(_ context.Context, id uuid.UUID) (*store.SessionRecord, error) {
 	s, ok := f.sessions[id]
 	if !ok {
 		return nil, store.ErrSessionNotFound
@@ -66,8 +66,8 @@ func (f *fakeStore) GetByID(_ context.Context, id uuid.UUID) (*model.Session, er
 	return &cp, nil
 }
 
-func (f *fakeStore) ListByUser(_ context.Context, userID uuid.UUID, _ int) ([]model.Session, error) {
-	var out []model.Session
+func (f *fakeStore) ListByUser(_ context.Context, userID uuid.UUID, _ int) ([]store.SessionRecord, error) {
+	var out []store.SessionRecord
 	for _, s := range f.sessions {
 		if s.UserID == userID {
 			out = append(out, *s)
@@ -79,7 +79,7 @@ func (f *fakeStore) ListByUser(_ context.Context, userID uuid.UUID, _ int) ([]mo
 func (f *fakeStore) ActiveIDsByUser(_ context.Context, userID uuid.UUID) ([]uuid.UUID, error) {
 	var out []uuid.UUID
 	for id, s := range f.sessions {
-		if s.UserID == userID && s.Status == model.SessionStatusActive {
+		if s.UserID == userID && s.Status == store.SessionStatusActive {
 			out = append(out, id)
 		}
 	}
@@ -87,12 +87,12 @@ func (f *fakeStore) ActiveIDsByUser(_ context.Context, userID uuid.UUID) ([]uuid
 }
 
 func (f *fakeStore) List(_ context.Context, q store.SessionQuery) (*store.SessionPage, error) {
-	var out []model.Session
+	var out []store.SessionRecord
 	for _, s := range f.sessions {
 		if q.UserID != nil && s.UserID != *q.UserID {
 			continue
 		}
-		if q.Active != nil && *q.Active && s.Status != model.SessionStatusActive {
+		if q.Active != nil && *q.Active && s.Status != store.SessionStatusActive {
 			continue
 		}
 		out = append(out, *s)
@@ -105,10 +105,10 @@ func (f *fakeStore) RevokeByID(_ context.Context, id uuid.UUID, reason string, a
 		return 0, f.revokeErr
 	}
 	s, ok := f.sessions[id]
-	if !ok || s.Status != model.SessionStatusActive {
+	if !ok || s.Status != store.SessionStatusActive {
 		return 0, nil
 	}
-	s.Status = model.SessionStatusRevoked
+	s.Status = store.SessionStatusRevoked
 	ts := at
 	s.RevokedAt = &ts
 	s.RevokeReason = &reason
@@ -122,11 +122,11 @@ func (f *fakeStore) RevokeAllByUser(_ context.Context, userID uuid.UUID, reason 
 	}
 	var n int64
 	for id, s := range f.sessions {
-		if s.UserID != userID || s.Status != model.SessionStatusActive {
+		if s.UserID != userID || s.Status != store.SessionStatusActive {
 			continue
 		}
 		ts := at
-		s.Status = model.SessionStatusRevoked
+		s.Status = store.SessionStatusRevoked
 		s.RevokedAt = &ts
 		s.RevokeReason = &reason
 		f.revokedAll = append(f.revokedAll, id)
@@ -141,11 +141,11 @@ func (f *fakeStore) RevokeOthers(_ context.Context, userID, keepID uuid.UUID, re
 	}
 	var n int64
 	for id, s := range f.sessions {
-		if s.UserID != userID || id == keepID || s.Status != model.SessionStatusActive {
+		if s.UserID != userID || id == keepID || s.Status != store.SessionStatusActive {
 			continue
 		}
 		ts := at
-		s.Status = model.SessionStatusRevoked
+		s.Status = store.SessionStatusRevoked
 		s.RevokedAt = &ts
 		s.RevokeReason = &reason
 		f.revokedOther = append(f.revokedOther, id)
@@ -157,7 +157,7 @@ func (f *fakeStore) RevokeOthers(_ context.Context, userID, keepID uuid.UUID, re
 func (f *fakeStore) CountActiveByUserClient(_ context.Context, userID uuid.UUID, clientID string) (int64, error) {
 	var n int64
 	for _, s := range f.sessions {
-		if s.UserID == userID && s.ClientID == clientID && s.Status == model.SessionStatusActive {
+		if s.UserID == userID && s.ClientID == clientID && s.Status == store.SessionStatusActive {
 			n++
 		}
 	}
@@ -165,10 +165,10 @@ func (f *fakeStore) CountActiveByUserClient(_ context.Context, userID uuid.UUID,
 }
 
 func (f *fakeStore) EvictOldestActive(_ context.Context, userID uuid.UUID, clientID, reason string, at time.Time) (uuid.UUID, error) {
-	var oldest *model.Session
+	var oldest *store.SessionRecord
 	var oldestID uuid.UUID
 	for id, s := range f.sessions {
-		if s.UserID != userID || s.ClientID != clientID || s.Status != model.SessionStatusActive {
+		if s.UserID != userID || s.ClientID != clientID || s.Status != store.SessionStatusActive {
 			continue
 		}
 		if oldest == nil || s.IssuedAt.Before(oldest.IssuedAt) {
@@ -180,7 +180,7 @@ func (f *fakeStore) EvictOldestActive(_ context.Context, userID uuid.UUID, clien
 		return uuid.Nil, nil
 	}
 	ts := at
-	oldest.Status = model.SessionStatusRevoked
+	oldest.Status = store.SessionStatusRevoked
 	oldest.RevokedAt = &ts
 	oldest.RevokeReason = &reason
 	f.evicted = append(f.evicted, oldestID)
@@ -189,7 +189,7 @@ func (f *fakeStore) EvictOldestActive(_ context.Context, userID uuid.UUID, clien
 
 func (f *fakeStore) TouchLastSeen(_ context.Context, id uuid.UUID, at, idle time.Time) (int64, error) {
 	s, ok := f.sessions[id]
-	if !ok || s.Status != model.SessionStatusActive {
+	if !ok || s.Status != store.SessionStatusActive {
 		return 0, nil
 	}
 	ts := at
@@ -305,15 +305,15 @@ func TestValidateStates(t *testing.T) {
 	absOver := mustID(t)
 
 	st := newFakeStore()
-	st.sessions[active] = &model.Session{UserID: user, Status: model.SessionStatusActive,
+	st.sessions[active] = &store.SessionRecord{UserID: user, Status: store.SessionStatusActive,
 		ExpiresAt: now.Add(time.Hour), IdleExpiresAt: now.Add(time.Minute)}
-	st.sessions[revoked] = &model.Session{UserID: user, Status: model.SessionStatusRevoked,
+	st.sessions[revoked] = &store.SessionRecord{UserID: user, Status: store.SessionStatusRevoked,
 		ExpiresAt: now.Add(time.Hour), IdleExpiresAt: now.Add(time.Minute)}
-	st.sessions[expiredStatus] = &model.Session{UserID: user, Status: model.SessionStatusExpired,
+	st.sessions[expiredStatus] = &store.SessionRecord{UserID: user, Status: store.SessionStatusExpired,
 		ExpiresAt: now.Add(time.Hour), IdleExpiresAt: now.Add(time.Minute)}
-	st.sessions[idleOver] = &model.Session{UserID: user, Status: model.SessionStatusActive,
+	st.sessions[idleOver] = &store.SessionRecord{UserID: user, Status: store.SessionStatusActive,
 		ExpiresAt: now.Add(time.Hour), IdleExpiresAt: now.Add(-time.Second)}
-	st.sessions[absOver] = &model.Session{UserID: user, Status: model.SessionStatusActive,
+	st.sessions[absOver] = &store.SessionRecord{UserID: user, Status: store.SessionStatusActive,
 		ExpiresAt: now.Add(-time.Second), IdleExpiresAt: now.Add(time.Minute)}
 
 	m := newManager(t, st, &fakeFlows{}, &fakeEvents{}, now)
@@ -347,8 +347,8 @@ func TestRevokeCascadesAndWritesEvent(t *testing.T) {
 	user := mustID(t)
 	id := mustID(t)
 	st := newFakeStore()
-	st.sessions[id] = &model.Session{UserID: user, ClientID: "web", ACR: "AAL2",
-		Status: model.SessionStatusActive, ExpiresAt: now.Add(time.Hour), IdleExpiresAt: now.Add(time.Minute)}
+	st.sessions[id] = &store.SessionRecord{UserID: user, ClientID: "web", ACR: "AAL2",
+		Status: store.SessionStatusActive, ExpiresAt: now.Add(time.Hour), IdleExpiresAt: now.Add(time.Minute)}
 	flows := &fakeFlows{}
 	events := &fakeEvents{}
 	m := newManager(t, st, flows, events, now)
@@ -359,7 +359,7 @@ func TestRevokeCascadesAndWritesEvent(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("Revoke: %v", err)
 	}
-	if st.sessions[id].Status != model.SessionStatusRevoked {
+	if st.sessions[id].Status != store.SessionStatusRevoked {
 		t.Fatalf("status = %q", st.sessions[id].Status)
 	}
 	if len(flows.abandoned) != 1 || flows.abandoned[0] != id {
@@ -383,7 +383,7 @@ func TestRevokeIsIdempotentWhenNotActive(t *testing.T) {
 	st := newFakeStore()
 	ts := now
 	reason := "admin"
-	st.sessions[id] = &model.Session{UserID: user, Status: model.SessionStatusRevoked,
+	st.sessions[id] = &store.SessionRecord{UserID: user, Status: store.SessionStatusRevoked,
 		RevokedAt: &ts, RevokeReason: &reason}
 	flows := &fakeFlows{}
 	events := &fakeEvents{}
@@ -429,7 +429,7 @@ func TestRevokeAllByUserCascadesEverySession(t *testing.T) {
 	a, b := mustID(t), mustID(t)
 	st := newFakeStore()
 	for _, id := range []uuid.UUID{a, b} {
-		st.sessions[id] = &model.Session{UserID: user, ClientID: "web", Status: model.SessionStatusActive,
+		st.sessions[id] = &store.SessionRecord{UserID: user, ClientID: "web", Status: store.SessionStatusActive,
 			ExpiresAt: now.Add(time.Hour), IdleExpiresAt: now.Add(time.Minute)}
 	}
 	flows := &fakeFlows{}
@@ -457,7 +457,7 @@ func TestRevokeOthersKeepsCurrent(t *testing.T) {
 	keep, other := mustID(t), mustID(t)
 	st := newFakeStore()
 	for _, id := range []uuid.UUID{keep, other} {
-		st.sessions[id] = &model.Session{UserID: user, ClientID: "web", Status: model.SessionStatusActive,
+		st.sessions[id] = &store.SessionRecord{UserID: user, ClientID: "web", Status: store.SessionStatusActive,
 			ExpiresAt: now.Add(time.Hour), IdleExpiresAt: now.Add(time.Minute)}
 	}
 	flows := &fakeFlows{}
@@ -470,10 +470,10 @@ func TestRevokeOthersKeepsCurrent(t *testing.T) {
 	if n != 1 {
 		t.Fatalf("revoked = %d, want 1", n)
 	}
-	if st.sessions[keep].Status != model.SessionStatusActive {
+	if st.sessions[keep].Status != store.SessionStatusActive {
 		t.Fatal("keep session must stay active")
 	}
-	if st.sessions[other].Status != model.SessionStatusRevoked {
+	if st.sessions[other].Status != store.SessionStatusRevoked {
 		t.Fatal("other session must be revoked")
 	}
 	if len(flows.abandoned) != 1 || flows.abandoned[0] != other {
@@ -488,7 +488,7 @@ func TestLogoutScopeCurrentClient(t *testing.T) {
 	st := newFakeStore()
 	st.policies["web"] = &store.SessionPolicy{SSOLogoutScope: "current_client"}
 	for _, id := range []uuid.UUID{current, otra} {
-		st.sessions[id] = &model.Session{UserID: user, ClientID: "web", Status: model.SessionStatusActive,
+		st.sessions[id] = &store.SessionRecord{UserID: user, ClientID: "web", Status: store.SessionStatusActive,
 			ExpiresAt: now.Add(time.Hour), IdleExpiresAt: now.Add(time.Minute)}
 	}
 	m := newManager(t, st, &fakeFlows{}, &fakeEvents{}, now)
@@ -496,10 +496,10 @@ func TestLogoutScopeCurrentClient(t *testing.T) {
 	if err := m.Logout(context.Background(), current, nil); err != nil {
 		t.Fatalf("Logout: %v", err)
 	}
-	if st.sessions[current].Status != model.SessionStatusRevoked {
+	if st.sessions[current].Status != store.SessionStatusRevoked {
 		t.Fatal("current session must be revoked")
 	}
-	if st.sessions[otra].Status != model.SessionStatusActive {
+	if st.sessions[otra].Status != store.SessionStatusActive {
 		t.Fatal("other session must stay active under current_client scope")
 	}
 }
@@ -511,7 +511,7 @@ func TestLogoutScopeAllClients(t *testing.T) {
 	st := newFakeStore()
 	st.policies["web"] = &store.SessionPolicy{SSOLogoutScope: "all_clients"}
 	for _, id := range []uuid.UUID{current, other} {
-		st.sessions[id] = &model.Session{UserID: user, ClientID: "web", Status: model.SessionStatusActive,
+		st.sessions[id] = &store.SessionRecord{UserID: user, ClientID: "web", Status: store.SessionStatusActive,
 			ExpiresAt: now.Add(time.Hour), IdleExpiresAt: now.Add(time.Minute)}
 	}
 	events := &fakeEvents{}
@@ -520,7 +520,7 @@ func TestLogoutScopeAllClients(t *testing.T) {
 	if err := m.Logout(context.Background(), current, nil); err != nil {
 		t.Fatalf("Logout: %v", err)
 	}
-	if st.sessions[current].Status != model.SessionStatusRevoked || st.sessions[other].Status != model.SessionStatusRevoked {
+	if st.sessions[current].Status != store.SessionStatusRevoked || st.sessions[other].Status != store.SessionStatusRevoked {
 		t.Fatal("all_clients must revoke every active session")
 	}
 	for _, e := range events.events {
@@ -543,7 +543,7 @@ func TestTouchClampsIdleToAbsolute(t *testing.T) {
 	id := mustID(t)
 	st := newFakeStore()
 	st.policies["web"] = &store.SessionPolicy{IdleTimeout: 12 * time.Hour, AbsoluteTimeout: 12 * time.Hour}
-	st.sessions[id] = &model.Session{UserID: user, ClientID: "web", Status: model.SessionStatusActive,
+	st.sessions[id] = &store.SessionRecord{UserID: user, ClientID: "web", Status: store.SessionStatusActive,
 		ExpiresAt: now.Add(30 * time.Minute), IdleExpiresAt: now.Add(10 * time.Minute)}
 	m := newManager(t, st, &fakeFlows{}, &fakeEvents{}, now)
 
@@ -561,14 +561,14 @@ func TestGetReturnsRevokedSession(t *testing.T) {
 	reason := "admin"
 	id := mustID(t)
 	st := newFakeStore()
-	st.sessions[id] = &model.Session{Status: model.SessionStatusRevoked, RevokedAt: &ts, RevokeReason: &reason}
+	st.sessions[id] = &store.SessionRecord{Status: store.SessionStatusRevoked, RevokedAt: &ts, RevokeReason: &reason}
 	m := newManager(t, st, &fakeFlows{}, &fakeEvents{}, now)
 
 	s, err := m.Get(context.Background(), id)
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}
-	if s.Status != model.SessionStatusRevoked {
+	if s.Status != store.SessionStatusRevoked {
 		t.Fatal("Get must return revoked sessions (ownership checks need them)")
 	}
 	if _, err := m.Get(context.Background(), uuid.Nil); !errors.Is(err, ErrSessionNotFound) {

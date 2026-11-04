@@ -144,7 +144,7 @@ func TestAdminSessionsRoleMatrix(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			svc := &fakeAdminSessions{
-				page:  &store.SessionPage{Items: []model.Session{}},
+				page:  &store.SessionPage{Items: []store.SessionRecord{}},
 				names: map[string]string{},
 				users: map[uuid.UUID]bool{},
 			}
@@ -181,11 +181,11 @@ func TestAdminListFiltersAndShape(t *testing.T) {
 
 	svc := &fakeAdminSessions{
 		page: &store.SessionPage{
-			Items: []model.Session{{
+			Items: []store.SessionRecord{{
 				BaseModel:    model.BaseModel{ID: uuid.New(), CreatedAt: created},
 				UserID:       user,
 				ClientID:     clientID,
-				Status:       model.SessionStatusRevoked,
+				Status:       store.SessionStatusRevoked,
 				ACR:          "AAL2",
 				AMR:          model.StringArray{"pwd", "totp"},
 				IssuedAt:     created,
@@ -228,7 +228,7 @@ func TestAdminListFiltersAndShape(t *testing.T) {
 		t.Fatalf("items = %d", len(body.Items))
 	}
 	item := body.Items[0]
-	if item.UserID != user.String() || item.Client.Name != "门户" || item.Status != model.SessionStatusRevoked {
+	if item.UserID != user.String() || item.Client.Name != "门户" || item.Status != store.SessionStatusRevoked {
 		t.Fatalf("item = %+v", item)
 	}
 	if item.RevokeReason == nil || *item.RevokeReason != "admin" {

@@ -71,7 +71,7 @@ func newWiring(ctx context.Context, db *gorm.DB, cfg *config.Config, startup sto
 // 在它接线前，本仓**不允许**存在任何"从头部自认身份"的暗门（技术栈 §8.3）。
 // 因此这两组端点现在一律回 401 `TOKEN_INVALID`；业务逻辑（撤销/级联/审计）已完整并有测试覆盖。
 func newSessionWiring(db *gorm.DB, logger *slog.Logger) (*session.HTTPHandler, *admin.SessionsHTTP, error) {
-	sessionRepo := store.NewSessionRepo(db)
+	sessionRepo := store.NewSessionOpsRepo(db)
 	// 撤销级联走 D5 的窄接口 `AbandonBySession`（不直接 import flowstore，避免成环）。
 	flowRepo := store.NewFlowRepo(db)
 	events := store.NewAuthEventRepo(db)

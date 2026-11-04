@@ -34,8 +34,8 @@ import (
 // 用窄接口而不是直接吃 `*store.SessionRepo`：撤销级联、并发上限这些判定要在**不建库**
 // 的前提下被测到（单测用内存假实现），真库只用来验 SQL 形状与约束。
 type SessionStore interface {
-	GetByID(ctx context.Context, id uuid.UUID) (*model.Session, error)
-	ListByUser(ctx context.Context, userID uuid.UUID, limit int) ([]model.Session, error)
+	GetByID(ctx context.Context, id uuid.UUID) (*store.SessionRecord, error)
+	ListByUser(ctx context.Context, userID uuid.UUID, limit int) ([]store.SessionRecord, error)
 	ActiveIDsByUser(ctx context.Context, userID uuid.UUID) ([]uuid.UUID, error)
 	List(ctx context.Context, q store.SessionQuery) (*store.SessionPage, error)
 	RevokeByID(ctx context.Context, id uuid.UUID, reason string, at time.Time) (int64, error)
@@ -132,7 +132,7 @@ func NewManager(st SessionStore, flows FlowAbandoner, events EventWriter, opt Op
 // 返回的哨兵直接对应 D3-E 的双码分工：已撤销 → `SESSION_REVOKED`(403)；
 // 过期（空闲/绝对）→ `TOKEN_EXPIRED`(401)。**只读、不写**：把"顺手置过期"塞进读路径，
 // 会让一次查询变成写事务，也会在只读副本上失败——过期落库由 `ExpireStale` 负责。
-func (m *Manager) Validate(ctx context.Context, id uuid.UUID) (*model.Session, error) {
+func (m *Manager) Validate(ctx context.Context, id uuid.UUID) (*store.SessionRecord, error) {
 	if id == uuid.Nil {
 		return nil, ErrSessionNotFound
 	}
@@ -144,9 +144,9 @@ func (m *Manager) Validate(ctx context.Context, id uuid.UUID) (*model.Session, e
 		return nil, err
 	}
 	switch s.Status {
-	case model.SessionStatusRevoked:
+	case store.SessionStatusRevoked:
 		return nil, ErrSessionRevoked
-	case model.SessionStatusExpired:
+	case store.SessionStatusExpired:
 		return nil, ErrSessionExpired
 	}
 	now := m.now().UTC()
@@ -323,7 +323,7 @@ func (m *Manager) UserExists(ctx context.Context, id uuid.UUID) (bool, error) {
 //
 // 与 `Validate` 分开：`Validate` 会按状态回撤销/过期的哨兵，而"这条会话是谁的"
 // 在会话已撤销后仍然必须回答得出来（否则用户踢一个已过期的会话会拿到 404 而不是 204）。
-func (m *Manager) Get(ctx context.Context, id uuid.UUID) (*model.Session, error) {
+func (m *Manager) Get(ctx context.Context, id uuid.UUID) (*store.SessionRecord, error) {
 	if id == uuid.Nil {
 		return nil, ErrSessionNotFound
 	}
@@ -343,7 +343,7 @@ func (m *Manager) ClientNames(ctx context.Context, clientIDs []string) (map[stri
 }
 
 // ListByUser 取某用户的会话列表（自助面 `GET /api/v1/me/sessions`）。
-func (m *Manager) ListByUser(ctx context.Context, userID uuid.UUID, limit int) ([]model.Session, error) {
+func (m *Manager) ListByUser(ctx context.Context, userID uuid.UUID, limit int) ([]store.SessionRecord, error) {
 	if userID == uuid.Nil {
 		return nil, fmt.Errorf("%w: user_id is required", ErrInvalidInput)
 	}

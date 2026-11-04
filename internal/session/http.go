@@ -14,7 +14,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/spencerswagger/guanjin/internal/httpx"
-	"github.com/spencerswagger/guanjin/internal/store/model"
+	"github.com/spencerswagger/guanjin/internal/store"
 )
 
 // 本文件是**会话自助面**的 HTTP 入口（端点名照抄接口清单 §2.6 / §3.6 的冻结名）：
@@ -234,7 +234,7 @@ func messageOf(c httpx.Code) string {
 	}
 }
 
-func viewOf(s *model.Session, names map[string]string, current uuid.UUID) sessionView {
+func viewOf(s *store.SessionRecord, names map[string]string, current uuid.UUID) sessionView {
 	amr := []string(s.AMR)
 	if amr == nil {
 		amr = []string{}
@@ -276,7 +276,7 @@ func maskIP(raw *string) *string {
 	return &masked
 }
 
-func clientIDsOf(rows []model.Session) []string {
+func clientIDsOf(rows []store.SessionRecord) []string {
 	seen := make(map[string]struct{}, len(rows))
 	out := make([]string, 0, len(rows))
 	for i := range rows {

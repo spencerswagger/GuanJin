@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/spencerswagger/guanjin/internal/httpx"
+	"github.com/spencerswagger/guanjin/internal/store"
 	"github.com/spencerswagger/guanjin/internal/store/model"
 )
 
@@ -95,15 +96,15 @@ func TestListSessionsShapeAndMasking(t *testing.T) {
 	st := newFakeStore()
 	st.names["web"] = "门户"
 	created := now.Add(-time.Hour)
-	st.sessions[current] = &model.Session{
+	st.sessions[current] = &store.SessionRecord{
 		BaseModel: model.BaseModel{ID: current, CreatedAt: created},
-		UserID:    user, ClientID: "web", Status: model.SessionStatusActive, ACR: "AAL2",
+		UserID:    user, ClientID: "web", Status: store.SessionStatusActive, ACR: "AAL2",
 		AMR: model.StringArray{"pwd", "totp"}, IP: &ip, DeviceID: &device, LastSeenAt: &lastSeen,
 		ExpiresAt: now.Add(time.Hour), IdleExpiresAt: now.Add(time.Minute),
 	}
-	st.sessions[other] = &model.Session{
+	st.sessions[other] = &store.SessionRecord{
 		BaseModel: model.BaseModel{ID: other, CreatedAt: created},
-		UserID:    user, ClientID: "web", Status: model.SessionStatusActive, ACR: "AAL1",
+		UserID:    user, ClientID: "web", Status: store.SessionStatusActive, ACR: "AAL1",
 		ExpiresAt: now.Add(time.Hour), IdleExpiresAt: now.Add(time.Minute),
 	}
 	h := newSessionHTTP(t, st, &fakeFlows{}, &fakeEvents{}, &httpx.Caller{UserID: user, SessionID: current}, now)
@@ -184,8 +185,8 @@ func TestRevokeOwnSession(t *testing.T) {
 	user := mustID(t)
 	id := mustID(t)
 	st := newFakeStore()
-	st.sessions[id] = &model.Session{UserID: user, ClientID: "web", ACR: "AAL1",
-		Status: model.SessionStatusActive, ExpiresAt: now.Add(time.Hour), IdleExpiresAt: now.Add(time.Minute)}
+	st.sessions[id] = &store.SessionRecord{UserID: user, ClientID: "web", ACR: "AAL1",
+		Status: store.SessionStatusActive, ExpiresAt: now.Add(time.Hour), IdleExpiresAt: now.Add(time.Minute)}
 	flows := &fakeFlows{}
 	events := &fakeEvents{}
 	h := newSessionHTTP(t, st, flows, events, &httpx.Caller{UserID: user, SessionID: mustID(t)}, now)
@@ -199,7 +200,7 @@ func TestRevokeOwnSession(t *testing.T) {
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
 	}
-	if st.sessions[id].Status != model.SessionStatusRevoked {
+	if st.sessions[id].Status != store.SessionStatusRevoked {
 		t.Fatal("session must be revoked")
 	}
 	if len(flows.abandoned) != 1 || len(events.events) != 1 {
@@ -213,7 +214,7 @@ func TestRevokeSessionNotOwned(t *testing.T) {
 	caller := mustID(t)
 	id := mustID(t)
 	st := newFakeStore()
-	st.sessions[id] = &model.Session{UserID: owner, Status: model.SessionStatusActive,
+	st.sessions[id] = &store.SessionRecord{UserID: owner, Status: store.SessionStatusActive,
 		ExpiresAt: now.Add(time.Hour), IdleExpiresAt: now.Add(time.Minute)}
 	h := newSessionHTTP(t, st, &fakeFlows{}, &fakeEvents{}, &httpx.Caller{UserID: caller}, now)
 
@@ -229,7 +230,7 @@ func TestRevokeSessionNotOwned(t *testing.T) {
 	if got := decodeError(t, rec).Code; got != httpx.CodeSessionNotOwned {
 		t.Fatalf("code = %q", got)
 	}
-	if st.sessions[id].Status != model.SessionStatusActive {
+	if st.sessions[id].Status != store.SessionStatusActive {
 		t.Fatal("other user's session must stay active")
 	}
 }
@@ -241,7 +242,7 @@ func TestRevokeAlreadyRevokedOwnIsIdempotent(t *testing.T) {
 	ts := now
 	reason := "logout"
 	st := newFakeStore()
-	st.sessions[id] = &model.Session{UserID: user, Status: model.SessionStatusRevoked,
+	st.sessions[id] = &store.SessionRecord{UserID: user, Status: store.SessionStatusRevoked,
 		RevokedAt: &ts, RevokeReason: &reason}
 	h := newSessionHTTP(t, st, &fakeFlows{}, &fakeEvents{}, &httpx.Caller{UserID: user}, now)
 
@@ -264,7 +265,7 @@ func TestRevokeAlreadyRevokedOtherUserIsNotFound(t *testing.T) {
 	ts := now
 	reason := "logout"
 	st := newFakeStore()
-	st.sessions[id] = &model.Session{UserID: owner, Status: model.SessionStatusRevoked,
+	st.sessions[id] = &store.SessionRecord{UserID: owner, Status: store.SessionStatusRevoked,
 		RevokedAt: &ts, RevokeReason: &reason}
 	h := newSessionHTTP(t, st, &fakeFlows{}, &fakeEvents{}, &httpx.Caller{UserID: caller}, now)
 
@@ -305,7 +306,7 @@ func TestRevokeAllSessions(t *testing.T) {
 	a, b := mustID(t), mustID(t)
 	st := newFakeStore()
 	for _, id := range []uuid.UUID{a, b} {
-		st.sessions[id] = &model.Session{UserID: user, ClientID: "web", Status: model.SessionStatusActive,
+		st.sessions[id] = &store.SessionRecord{UserID: user, ClientID: "web", Status: store.SessionStatusActive,
 			ExpiresAt: now.Add(time.Hour), IdleExpiresAt: now.Add(time.Minute)}
 	}
 	events := &fakeEvents{}
@@ -316,7 +317,7 @@ func TestRevokeAllSessions(t *testing.T) {
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
 	}
-	if st.sessions[a].Status != model.SessionStatusRevoked || st.sessions[b].Status != model.SessionStatusRevoked {
+	if st.sessions[a].Status != store.SessionStatusRevoked || st.sessions[b].Status != store.SessionStatusRevoked {
 		t.Fatal("all sessions must be revoked")
 	}
 	if len(events.events) != 2 {

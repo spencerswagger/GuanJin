@@ -9,8 +9,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-
-	"github.com/spencerswagger/guanjin/internal/store/model"
 )
 
 // 本文件只测**不需要数据库**的部分：游标编解码、入参校验、空集合行为。
@@ -69,49 +67,8 @@ func TestDecodeSessionCursorRejectsGarbage(t *testing.T) {
 // encodeRaw 造一个"能解开 base64 但内容非法"的游标，用来验形状校验。
 func encodeRaw(s string) string { return base64.RawURLEncoding.EncodeToString([]byte(s)) }
 
-func TestSessionCreateValidations(t *testing.T) {
-	repo := &SessionRepo{} // 校验都在落库之前，不需要 db
-	now := time.Now().UTC()
-	base := func() *model.Session {
-		return &model.Session{
-			UserID:        uuid.New(),
-			ClientID:      "web",
-			ACR:           "AAL1",
-			Status:        model.SessionStatusActive,
-			IssuedAt:      now,
-			ExpiresAt:     now.Add(time.Hour),
-			IdleExpiresAt: now.Add(time.Minute),
-		}
-	}
-
-	cases := []struct {
-		name string
-		mod  func(*model.Session) *model.Session
-	}{
-		{"nil", func(*model.Session) *model.Session { return nil }},
-		{"no user", func(s *model.Session) *model.Session { s.UserID = uuid.Nil; return s }},
-		{"no client", func(s *model.Session) *model.Session { s.ClientID = "  "; return s }},
-		{"no acr", func(s *model.Session) *model.Session { s.ACR = ""; return s }},
-		{"no status", func(s *model.Session) *model.Session { s.Status = ""; return s }},
-		{"no issued", func(s *model.Session) *model.Session { s.IssuedAt = time.Time{}; return s }},
-		{"no expires", func(s *model.Session) *model.Session { s.ExpiresAt = time.Time{}; return s }},
-		{"no idle", func(s *model.Session) *model.Session { s.IdleExpiresAt = time.Time{}; return s }},
-		{"idle after absolute", func(s *model.Session) *model.Session {
-			s.IdleExpiresAt = s.ExpiresAt.Add(time.Second)
-			return s
-		}},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			if err := repo.Create(context.Background(), tc.mod(base())); err == nil {
-				t.Fatal("want validation error")
-			}
-		})
-	}
-}
-
 func TestSessionListLimitBounds(t *testing.T) {
-	repo := &SessionRepo{}
+	repo := &SessionOpsRepo{}
 	if _, err := repo.ListByUser(context.Background(), uuid.New(), 0); err == nil {
 		t.Fatal("limit 0 must be rejected")
 	}
@@ -130,7 +87,7 @@ func TestSessionListLimitBounds(t *testing.T) {
 }
 
 func TestRevokeRequiresReason(t *testing.T) {
-	repo := &SessionRepo{}
+	repo := &SessionOpsRepo{}
 	now := time.Now()
 	if _, err := repo.RevokeByID(context.Background(), uuid.New(), "", now); err == nil {
 		t.Fatal("empty reason must be rejected")
@@ -150,7 +107,7 @@ func TestRevokeRequiresReason(t *testing.T) {
 }
 
 func TestClientNamesEmptyInput(t *testing.T) {
-	repo := &SessionRepo{}
+	repo := &SessionOpsRepo{}
 	names, err := repo.ClientNames(context.Background(), nil)
 	if err != nil {
 		t.Fatalf("ClientNames: %v", err)
@@ -161,7 +118,7 @@ func TestClientNamesEmptyInput(t *testing.T) {
 }
 
 func TestUserExistsNilID(t *testing.T) {
-	repo := &SessionRepo{}
+	repo := &SessionOpsRepo{}
 	ok, err := repo.UserExists(context.Background(), uuid.Nil)
 	if err != nil || ok {
 		t.Fatalf("nil id: ok=%v err=%v", ok, err)

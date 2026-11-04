@@ -7,22 +7,20 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-
-	"github.com/spencerswagger/guanjin/internal/store/model"
 )
 
 // 本文件用 **DryRun 句柄**（永不出网）覆盖 `repo_sessions.go` 的每一条语句路径：
 // 单测不建库，但要保证"代码被执行到了"（否则覆盖率门禁会红，且真库用例只在 CI 跑）。
 // SQL 形态的断言放在这里；行级行为在 `repo_sessions_db_test.go`（integration）。
 
-func sessionFixtureRow(t *testing.T) *model.Session {
+func sessionFixtureRow(t *testing.T) *SessionRecord {
 	t.Helper()
 	now := time.Now().UTC()
-	return &model.Session{
+	return &SessionRecord{
 		UserID:        uuid.New(),
 		ClientID:      "web",
 		ACR:           "AAL1",
-		Status:        model.SessionStatusActive,
+		Status:        SessionStatusActive,
 		IssuedAt:      now,
 		ExpiresAt:     now.Add(time.Hour),
 		IdleExpiresAt: now.Add(30 * time.Minute),
@@ -31,18 +29,9 @@ func sessionFixtureRow(t *testing.T) *model.Session {
 
 func TestSessionRepoDryRunPaths(t *testing.T) {
 	db, capture := dryRunDB(t)
-	repo := NewSessionRepo(db)
+	repo := NewSessionOpsRepo(db)
 	ctx := context.Background()
 	now := time.Now().UTC()
-
-	// Create：显式状态/时间，不依赖 DB 默认值。
-	s := sessionFixtureRow(t)
-	if err := repo.Create(ctx, s); err != nil {
-		t.Fatalf("Create: %v", err)
-	}
-	if sql := capture.last(t); !strings.Contains(sql, "INSERT INTO \"sessions\"") {
-		t.Fatalf("unexpected insert SQL: %s", sql)
-	}
 
 	// GetByID
 	if _, err := repo.GetByID(ctx, uuid.New()); err != nil {
@@ -133,7 +122,7 @@ func allowDryRunUnsupported(t *testing.T, err error) {
 
 func TestSessionRepoEmptyClientNamesDoesNotQuery(t *testing.T) {
 	db, capture := dryRunDB(t)
-	repo := NewSessionRepo(db)
+	repo := NewSessionOpsRepo(db)
 	before := len(capture.queries)
 	if _, err := repo.ClientNames(context.Background(), []string{}); err != nil {
 		t.Fatalf("ClientNames: %v", err)
@@ -145,7 +134,7 @@ func TestSessionRepoEmptyClientNamesDoesNotQuery(t *testing.T) {
 
 func TestSessionListWithoutCursorHasNoKeysetPredicate(t *testing.T) {
 	db, capture := dryRunDB(t)
-	repo := NewSessionRepo(db)
+	repo := NewSessionOpsRepo(db)
 	if _, err := repo.List(context.Background(), SessionQuery{Limit: 5}); err != nil {
 		t.Fatalf("List: %v", err)
 	}
@@ -156,7 +145,7 @@ func TestSessionListWithoutCursorHasNoKeysetPredicate(t *testing.T) {
 
 func TestSessionListActiveFalseDoesNotFilterStatus(t *testing.T) {
 	db, capture := dryRunDB(t)
-	repo := NewSessionRepo(db)
+	repo := NewSessionOpsRepo(db)
 	no := false
 	if _, err := repo.List(context.Background(), SessionQuery{Limit: 5, Active: &no}); err != nil {
 		t.Fatalf("List: %v", err)

@@ -15,7 +15,6 @@ import (
 	"github.com/spencerswagger/guanjin/internal/httpx"
 	"github.com/spencerswagger/guanjin/internal/session"
 	"github.com/spencerswagger/guanjin/internal/store"
-	"github.com/spencerswagger/guanjin/internal/store/model"
 )
 
 // 本文件是**管理面 sessions 段**的 HTTP 入口（端点名照抄接口 §3.8 sessions 段）：
@@ -259,7 +258,7 @@ func adminMessageOf(c httpx.Code) string {
 	}
 }
 
-func adminViewOf(s *model.Session, names map[string]string) adminSessionView {
+func adminViewOf(s *store.SessionRecord, names map[string]string) adminSessionView {
 	amr := []string(s.AMR)
 	if amr == nil {
 		amr = []string{}
@@ -284,7 +283,7 @@ func adminViewOf(s *model.Session, names map[string]string) adminSessionView {
 	return v
 }
 
-func clientIDs(rows []model.Session) []string {
+func clientIDs(rows []store.SessionRecord) []string {
 	seen := make(map[string]struct{}, len(rows))
 	out := make([]string, 0, len(rows))
 	for i := range rows {
