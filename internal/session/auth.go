@@ -51,14 +51,12 @@ func (c *Caller) HasRole(role string) bool {
 
 // resolveCaller 解析请求的调用方；失败时**已写出错误响应**，返回 false。
 //
-// 错误分工（spencer 2026-11-04 裁定，本切片统一口径）：
+// 错误分工（**以契约 `decisions.md` D3-E 为准**；与 S6 的 `Server.ResolveCaller` 同口径）：
 //   - 令牌取不到 / 不可信（验签失败、过期、`sub` 不合法）→ 401 `TOKEN_INVALID`；
-//   - 令牌有效但对应会话已撤销/过期 → **同样 401 `TOKEN_INVALID`**。
+//   - 令牌有效但对应会话已撤销/过期 → **403 `SESSION_REVOKED`**。
 //
-// 为什么不在这里回 403 `SESSION_REVOKED`：403 那条属**数据面**的准入语义
-// （`AC-SESS-01`① "经数据面 → 403 SESSION_REVOKED"，归 S8 用同一个 resolver 出的
-// `ErrCallerSessionRevoked` 去映射）。会话自助/管理面这两组端点对客户端而言只有一种处置
-// ——重新认证，因此统一 401，避免同一枚令牌在两个面上给出两个"看起来不同"的结论。
+// 两者分别是"凭证状态"与"准入状态"（`AC-SESS-01`①），不能混成一个码：
+// 统一 401 会让客户端把"会话被踢下线"当成"令牌坏了"，从而去反复刷新令牌。
 func ResolveCaller(w http.ResponseWriter, r *http.Request, resolver TokenResolver) (*Caller, bool) {
 	if resolver == nil {
 		httpx.WriteError(w, traceID(r), httpx.CodeTokenInvalid, "缺少有效的访问令牌", nil)
@@ -71,10 +69,11 @@ func ResolveCaller(w http.ResponseWriter, r *http.Request, resolver TokenResolve
 	}
 	caller, err := resolver.Resolve(r.Context(), token)
 	if err != nil {
-		// 会话撤销与令牌不可信在这里**同码**（401）：响应不区分原因，否则会变成
-		// "用 401/403 差异探测某个 sid 是否存在且已被撤销"。
-		// `ErrCallerSessionRevoked` 与 `ErrCallerUnauthenticated` 都走这一条。
-		_ = errors.Is(err, httpx.ErrCallerSessionRevoked)
+		if errors.Is(err, httpx.ErrCallerSessionRevoked) {
+			httpx.WriteError(w, traceID(r), httpx.CodeSessionRevoked, "会话已失效，请重新登录", nil)
+			return nil, false
+		}
+		// 其余（缺/坏/过期令牌）统一 `TOKEN_INVALID`，细节不上屏（避免成为探测面）。
 		httpx.WriteError(w, traceID(r), httpx.CodeTokenInvalid, "缺少有效的访问令牌", nil)
 		return nil, false
 	}
