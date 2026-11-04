@@ -178,11 +178,15 @@ func TestDBEveryUniqueViolationMapsOnce(t *testing.T) {
 			wantCode:   httpx.CodeInvalidParam,
 			wantStatus: 400,
 			run: func(tx *gorm.DB, t *testing.T) error {
-				// 夹具本身已给这个 client 建了一条 client_override（注册用例要用），
-				// 所以这里**第一次插入就该冲突**——正好证明"每个 client 只有一份覆盖"。
-				return MapError(tx.Exec(
-					`INSERT INTO login_policies (id, scope, client_id, min_acr) VALUES (?, 'client_override', ?, 'AAL2')`,
-					newID(t), f.clientID).Error)
+				insert := func(acr string) error {
+					return MapError(tx.Exec(
+						`INSERT INTO login_policies (id, scope, client_id, min_acr) VALUES (?, 'client_override', ?, ?)`,
+						newID(t), f.clientID, acr).Error)
+				}
+				if err := insert("AAL1"); err != nil {
+					t.Fatalf("首次插入客户端覆盖策略必须成功: %v", err)
+				}
+				return insert("AAL2")
 			},
 		},
 	}

@@ -228,13 +228,21 @@ func TestResolveRegistrationPolicy(t *testing.T) {
 	})
 
 	t.Run("disabled_factors 透传", func(t *testing.T) {
-		withFactors := &policyRow{SelfRegistrationAllowed: true, DisabledFactors: []string{"sms_otp"}}
+		withFactors := &policyRow{SelfRegistrationAllowed: true, DisabledFactors: "sms_otp, email_otp"}
 		got, err := resolveRegistrationPolicy(client, withFactors, nil)
 		if err != nil {
 			t.Fatalf("应成功：%v", err)
 		}
-		if len(got.DisabledFactors) != 1 || got.DisabledFactors[0] != "sms_otp" {
-			t.Fatalf("禁因子应透传，实际 %+v", got.DisabledFactors)
+		if len(got.DisabledFactors) != 2 || got.DisabledFactors[0] != "sms_otp" || got.DisabledFactors[1] != "email_otp" {
+			t.Fatalf("禁因子应透传并去空白，实际 %+v", got.DisabledFactors)
+		}
+		// 空串 = 没有禁因子（不是"一个空字符串的因子"）。
+		empty, err := resolveRegistrationPolicy(client, &policyRow{SelfRegistrationAllowed: true}, nil)
+		if err != nil {
+			t.Fatalf("应成功：%v", err)
+		}
+		if len(empty.DisabledFactors) != 0 {
+			t.Fatalf("空数组应解析成 nil，实际 %+v", empty.DisabledFactors)
 		}
 	})
 }

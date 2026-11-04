@@ -58,12 +58,15 @@ type clientRow struct {
 }
 
 type policyRow struct {
-	SelfRegistrationAllowed bool     `gorm:"column:self_registration_allowed"`
-	PasswordMinLength       int      `gorm:"column:password_min_length"`
-	PasswordCharClasses     int      `gorm:"column:password_char_classes"`
-	PasswordHistoryCount    int      `gorm:"column:password_history_count"`
-	PasswordMaxAgeDays      int      `gorm:"column:password_max_age_days"`
-	DisabledFactors         []string `gorm:"column:disabled_factors;type:text[]"`
+	SelfRegistrationAllowed bool `gorm:"column:self_registration_allowed"`
+	PasswordMinLength       int  `gorm:"column:password_min_length"`
+	PasswordCharClasses     int  `gorm:"column:password_char_classes"`
+	PasswordHistoryCount    int  `gorm:"column:password_history_count"`
+	PasswordMaxAgeDays      int  `gorm:"column:password_max_age_days"`
+	// DisabledFactors 读成**逗号串**（`array_to_string`）：`database/sql` 的 Scan 不认 PG 的
+	// `text[]` → `*[]string`（会报 "unsupported Scan, storing driver.Value type string"），
+	// 而这里只需要"有哪些禁因子"，不需要保留数组类型。
+	DisabledFactors string `gorm:"column:disabled_factors"`
 }
 
 // LoadRegistrationPolicy 按 `client_id` 读出注册所需的门槛。
@@ -96,7 +99,8 @@ func (r *ClientPolicyRepo) LoadRegistrationPolicy(ctx context.Context, tx *gorm.
 	var row policyRow
 	res := db.WithContext(ctx).Raw(
 		`SELECT self_registration_allowed, password_min_length, password_char_classes,
-		        password_history_count, password_max_age_days, disabled_factors
+		        password_history_count, password_max_age_days,
+		        array_to_string(disabled_factors, ',') AS disabled_factors
 		   FROM login_policies
 		  WHERE scope = 'client_override' AND client_id = ?`, clientID).Scan(&row)
 	if res.Error != nil {
@@ -111,7 +115,8 @@ func (r *ClientPolicyRepo) LoadRegistrationPolicy(ctx context.Context, tx *gorm.
 		var defRow policyRow
 		res = db.WithContext(ctx).Raw(
 			`SELECT self_registration_allowed, password_min_length, password_char_classes,
-			        password_history_count, password_max_age_days, disabled_factors
+			        password_history_count, password_max_age_days,
+			        array_to_string(disabled_factors, ',') AS disabled_factors
 			   FROM login_policies
 			  WHERE scope = 'tier_default' AND tier = ?`, c.Tier).Scan(&defRow)
 		if res.Error != nil {
@@ -153,6 +158,25 @@ func resolveRegistrationPolicy(c clientRow, override, tierDefault *policyRow) (*
 		PasswordCharClasses:     chosen.PasswordCharClasses,
 		PasswordHistoryCount:    chosen.PasswordHistoryCount,
 		PasswordMaxAgeDays:      chosen.PasswordMaxAgeDays,
-		DisabledFactors:         chosen.DisabledFactors,
+		DisabledFactors:         splitFactors(chosen.DisabledFactors),
 	}, nil
+}
+
+// splitFactors 把 `array_to_string(..., ',')` 的结果还原成切片。
+//
+// 空串 = 没有禁因子（PG 里空数组 `{}` 的 array_to_string 就是空串）；
+// 逐项去空白，但**不丢弃空项以外的任何东西**——这里不做"猜测性清理"。
+func splitFactors(raw string) []string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }
