@@ -14,7 +14,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/spencerswagger/guanjin/internal/httpx"
-	"github.com/spencerswagger/guanjin/internal/store"
+	"github.com/spencerswagger/guanjin/internal/store/model"
 )
 
 // 本文件是**会话自助面**的 HTTP 入口（端点名照抄接口清单 §2.6 / §3.6 的冻结名）：
@@ -30,24 +30,23 @@ import (
 
 // HTTPHandler 是自助面三个端点的处理器。
 type HTTPHandler struct {
-	mgr    *Manager
-	caller httpx.CallerResolver
-	logger *slog.Logger
+	mgr      *Manager
+	resolver TokenResolver
+	logger   *slog.Logger
 }
 
 // NewHTTPHandler 构造处理器（缺依赖即装配期失败）。
-func NewHTTPHandler(mgr *Manager, caller httpx.CallerResolver, logger *slog.Logger) (*HTTPHandler, error) {
+func NewHTTPHandler(mgr *Manager, resolver TokenResolver, logger *slog.Logger) (*HTTPHandler, error) {
 	switch {
 	case mgr == nil:
 		return nil, ErrNilDependency
-	case caller == nil:
-		// 显式要求一个 resolver（哪怕是否决式实现 `httpx.DenyAllResolver{}`）：
-		// nil 会在运行期变成 panic，而装配期报错能让人看见"忘了接线"。
+	case resolver == nil:
+		// 显式要求一个 resolver：nil 会在运行期变成 panic，装配期报错才看得见"忘了接线"。
 		return nil, ErrNilDependency
 	case logger == nil:
 		return nil, ErrNilDependency
 	}
-	return &HTTPHandler{mgr: mgr, caller: caller, logger: logger}, nil
+	return &HTTPHandler{mgr: mgr, resolver: resolver, logger: logger}, nil
 }
 
 // Routes 挂上三个冻结路径（`DELETE /api/v1/me/sessions` 是 `{id}` 之外的变体）。
@@ -87,7 +86,7 @@ type listResponse struct {
 }
 
 func (h *HTTPHandler) list(w http.ResponseWriter, r *http.Request) {
-	caller, ok := httpx.ResolveCaller(w, r, h.caller)
+	caller, ok := ResolveCaller(w, r, h.resolver)
 	if !ok {
 		return
 	}
@@ -117,7 +116,7 @@ func (h *HTTPHandler) list(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *HTTPHandler) revokeOne(w http.ResponseWriter, r *http.Request) {
-	caller, ok := httpx.ResolveCaller(w, r, h.caller)
+	caller, ok := ResolveCaller(w, r, h.resolver)
 	if !ok {
 		return
 	}
@@ -167,7 +166,7 @@ func (h *HTTPHandler) revokeOne(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *HTTPHandler) revokeAll(w http.ResponseWriter, r *http.Request) {
-	caller, ok := httpx.ResolveCaller(w, r, h.caller)
+	caller, ok := ResolveCaller(w, r, h.resolver)
 	if !ok {
 		return
 	}
@@ -234,7 +233,7 @@ func messageOf(c httpx.Code) string {
 	}
 }
 
-func viewOf(s *store.SessionRecord, names map[string]string, current uuid.UUID) sessionView {
+func viewOf(s *model.Session, names map[string]string, current uuid.UUID) sessionView {
 	amr := []string(s.AMR)
 	if amr == nil {
 		amr = []string{}
@@ -276,7 +275,7 @@ func maskIP(raw *string) *string {
 	return &masked
 }
 
-func clientIDsOf(rows []store.SessionRecord) []string {
+func clientIDsOf(rows []model.Session) []string {
 	seen := make(map[string]struct{}, len(rows))
 	out := make([]string, 0, len(rows))
 	for i := range rows {

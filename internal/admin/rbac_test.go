@@ -5,13 +5,14 @@ import (
 	"testing"
 
 	"github.com/spencerswagger/guanjin/internal/httpx"
+	"github.com/spencerswagger/guanjin/internal/session"
 )
 
 // 三员矩阵的单测：AC-AUD-07 的两条硬语义在这里逐条钉住——
 // 「审计员写操作零成功」（→ THREE_POWER_VIOLATION）与「单纯缺角色」（→ INSUFFICIENT_ROLE）。
 
-func caller(roles ...string) *httpx.Caller {
-	return &httpx.Caller{Roles: roles}
+func caller(roles ...string) *session.Caller {
+	return &session.Caller{Roles: roles}
 }
 
 func TestAuthorizeSessionsMatrix(t *testing.T) {

@@ -13,30 +13,38 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/spencerswagger/guanjin/internal/httpx"
-	"github.com/spencerswagger/guanjin/internal/store"
 	"github.com/spencerswagger/guanjin/internal/store/model"
 )
 
 // 本文件是自助面 handler 的**纯单测**：解码、鉴权（经 CallerResolver）、响应形状、
 // 归属校验都在不建库的前提下钉住。业务副作用（撤销/级联/事件）已在 manager_test 里覆盖。
 
+// fakeResolver 模拟 S6 的验签实现：只认 `Bearer good-token`。
 type fakeResolver struct {
-	caller *httpx.Caller
-	err    error
+	sub   uuid.UUID
+	sid   uuid.UUID
+	roles []string
+	err   error
 }
 
-func (f fakeResolver) Resolve(context.Context, *http.Request) (*httpx.Caller, error) {
+func (f fakeResolver) Resolve(_ context.Context, token string) (httpx.Caller, error) {
 	if f.err != nil {
-		return nil, f.err
+		return httpx.Caller{}, f.err
 	}
-	return f.caller, nil
+	if token != "good-token" {
+		return httpx.Caller{}, httpx.ErrCallerUnauthenticated
+	}
+	return httpx.Caller{Sub: f.sub.String(), SID: f.sid.String(), Roles: f.roles}, nil
 }
 
 func newSessionHTTP(t *testing.T, st *fakeStore, flows *fakeFlows, events *fakeEvents,
-	caller *httpx.Caller, now time.Time) *HTTPHandler {
+	caller *Caller, now time.Time) *HTTPHandler {
 	t.Helper()
 	m := newManager(t, st, flows, events, now)
-	resolver := fakeResolver{caller: caller}
+	var resolver TokenResolver = fakeResolver{}
+	if caller != nil {
+		resolver = fakeResolver{sub: caller.UserID, sid: caller.SessionID}
+	}
 	h, err := NewHTTPHandler(m, resolver, discardLogger())
 	if err != nil {
 		t.Fatalf("NewHTTPHandler: %v", err)
@@ -52,7 +60,7 @@ func TestNewHTTPHandlerRequiresDependencies(t *testing.T) {
 		mgr    *Manager
 		caller httpx.CallerResolver
 	}{
-		{"no manager", nil, httpx.DenyAllResolver{}},
+		{"no manager", nil, TokenResolver(nil)},
 		{"no resolver", m, nil},
 	}
 	for _, tc := range cases {
@@ -62,7 +70,7 @@ func TestNewHTTPHandlerRequiresDependencies(t *testing.T) {
 			}
 		})
 	}
-	if _, err := NewHTTPHandler(m, httpx.DenyAllResolver{}, nil); err == nil {
+	if _, err := NewHTTPHandler(m, TokenResolver(nil), nil); err == nil {
 		t.Fatal("want ErrNilDependency for nil logger")
 	}
 }
@@ -96,18 +104,18 @@ func TestListSessionsShapeAndMasking(t *testing.T) {
 	st := newFakeStore()
 	st.names["web"] = "门户"
 	created := now.Add(-time.Hour)
-	st.sessions[current] = &store.SessionRecord{
+	st.sessions[current] = &model.Session{
 		BaseModel: model.BaseModel{ID: current, CreatedAt: created},
-		UserID:    user, ClientID: "web", Status: store.SessionStatusActive, ACR: "AAL2",
+		UserID:    user, ClientID: "web", Status: model.SessionStatusActive, ACR: "AAL2",
 		AMR: model.StringArray{"pwd", "totp"}, IP: &ip, DeviceID: &device, LastSeenAt: &lastSeen,
 		ExpiresAt: now.Add(time.Hour), IdleExpiresAt: now.Add(time.Minute),
 	}
-	st.sessions[other] = &store.SessionRecord{
+	st.sessions[other] = &model.Session{
 		BaseModel: model.BaseModel{ID: other, CreatedAt: created},
-		UserID:    user, ClientID: "web", Status: store.SessionStatusActive, ACR: "AAL1",
+		UserID:    user, ClientID: "web", Status: model.SessionStatusActive, ACR: "AAL1",
 		ExpiresAt: now.Add(time.Hour), IdleExpiresAt: now.Add(time.Minute),
 	}
-	h := newSessionHTTP(t, st, &fakeFlows{}, &fakeEvents{}, &httpx.Caller{UserID: user, SessionID: current}, now)
+	h := newSessionHTTP(t, st, &fakeFlows{}, &fakeEvents{}, &Caller{UserID: user, SessionID: current}, now)
 
 	rec := httptest.NewRecorder()
 	h.list(rec, withTrace(httptest.NewRequest(http.MethodGet, "/api/v1/me/sessions", nil)))
@@ -168,7 +176,7 @@ func TestListSessionsPageLimits(t *testing.T) {
 	}
 	for _, tc := range cases {
 		st := newFakeStore()
-		h := newSessionHTTP(t, st, &fakeFlows{}, &fakeEvents{}, &httpx.Caller{UserID: user}, time.Now())
+		h := newSessionHTTP(t, st, &fakeFlows{}, &fakeEvents{}, &Caller{UserID: user}, time.Now())
 		rec := httptest.NewRecorder()
 		h.list(rec, withTrace(httptest.NewRequest(http.MethodGet, "/api/v1/me/sessions"+tc.query, nil)))
 		if rec.Code != tc.code {
@@ -185,11 +193,11 @@ func TestRevokeOwnSession(t *testing.T) {
 	user := mustID(t)
 	id := mustID(t)
 	st := newFakeStore()
-	st.sessions[id] = &store.SessionRecord{UserID: user, ClientID: "web", ACR: "AAL1",
-		Status: store.SessionStatusActive, ExpiresAt: now.Add(time.Hour), IdleExpiresAt: now.Add(time.Minute)}
+	st.sessions[id] = &model.Session{UserID: user, ClientID: "web", ACR: "AAL1",
+		Status: model.SessionStatusActive, ExpiresAt: now.Add(time.Hour), IdleExpiresAt: now.Add(time.Minute)}
 	flows := &fakeFlows{}
 	events := &fakeEvents{}
-	h := newSessionHTTP(t, st, flows, events, &httpx.Caller{UserID: user, SessionID: mustID(t)}, now)
+	h := newSessionHTTP(t, st, flows, events, &Caller{UserID: user, SessionID: mustID(t)}, now)
 
 	req := httptest.NewRequest(http.MethodDelete, "/api/v1/me/sessions/"+id.String(), nil)
 	req = withTrace(req)
@@ -200,7 +208,7 @@ func TestRevokeOwnSession(t *testing.T) {
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
 	}
-	if st.sessions[id].Status != store.SessionStatusRevoked {
+	if st.sessions[id].Status != model.SessionStatusRevoked {
 		t.Fatal("session must be revoked")
 	}
 	if len(flows.abandoned) != 1 || len(events.events) != 1 {
@@ -214,9 +222,9 @@ func TestRevokeSessionNotOwned(t *testing.T) {
 	caller := mustID(t)
 	id := mustID(t)
 	st := newFakeStore()
-	st.sessions[id] = &store.SessionRecord{UserID: owner, Status: store.SessionStatusActive,
+	st.sessions[id] = &model.Session{UserID: owner, Status: model.SessionStatusActive,
 		ExpiresAt: now.Add(time.Hour), IdleExpiresAt: now.Add(time.Minute)}
-	h := newSessionHTTP(t, st, &fakeFlows{}, &fakeEvents{}, &httpx.Caller{UserID: caller}, now)
+	h := newSessionHTTP(t, st, &fakeFlows{}, &fakeEvents{}, &Caller{UserID: caller}, now)
 
 	req := httptest.NewRequest(http.MethodDelete, "/api/v1/me/sessions/"+id.String(), nil)
 	req = withTrace(req)
@@ -230,7 +238,7 @@ func TestRevokeSessionNotOwned(t *testing.T) {
 	if got := decodeError(t, rec).Code; got != httpx.CodeSessionNotOwned {
 		t.Fatalf("code = %q", got)
 	}
-	if st.sessions[id].Status != store.SessionStatusActive {
+	if st.sessions[id].Status != model.SessionStatusActive {
 		t.Fatal("other user's session must stay active")
 	}
 }
@@ -242,9 +250,9 @@ func TestRevokeAlreadyRevokedOwnIsIdempotent(t *testing.T) {
 	ts := now
 	reason := "logout"
 	st := newFakeStore()
-	st.sessions[id] = &store.SessionRecord{UserID: user, Status: store.SessionStatusRevoked,
+	st.sessions[id] = &model.Session{UserID: user, Status: model.SessionStatusRevoked,
 		RevokedAt: &ts, RevokeReason: &reason}
-	h := newSessionHTTP(t, st, &fakeFlows{}, &fakeEvents{}, &httpx.Caller{UserID: user}, now)
+	h := newSessionHTTP(t, st, &fakeFlows{}, &fakeEvents{}, &Caller{UserID: user}, now)
 
 	req := httptest.NewRequest(http.MethodDelete, "/api/v1/me/sessions/"+id.String(), nil)
 	req = withTrace(req)
@@ -265,9 +273,9 @@ func TestRevokeAlreadyRevokedOtherUserIsNotFound(t *testing.T) {
 	ts := now
 	reason := "logout"
 	st := newFakeStore()
-	st.sessions[id] = &store.SessionRecord{UserID: owner, Status: store.SessionStatusRevoked,
+	st.sessions[id] = &model.Session{UserID: owner, Status: model.SessionStatusRevoked,
 		RevokedAt: &ts, RevokeReason: &reason}
-	h := newSessionHTTP(t, st, &fakeFlows{}, &fakeEvents{}, &httpx.Caller{UserID: caller}, now)
+	h := newSessionHTTP(t, st, &fakeFlows{}, &fakeEvents{}, &Caller{UserID: caller}, now)
 
 	req := httptest.NewRequest(http.MethodDelete, "/api/v1/me/sessions/"+id.String(), nil)
 	req = withTrace(req)
@@ -283,7 +291,7 @@ func TestRevokeAlreadyRevokedOtherUserIsNotFound(t *testing.T) {
 func TestRevokeUnknownAndMalformedID(t *testing.T) {
 	now := time.Now().UTC()
 	user := mustID(t)
-	h := newSessionHTTP(t, newFakeStore(), &fakeFlows{}, &fakeEvents{}, &httpx.Caller{UserID: user}, now)
+	h := newSessionHTTP(t, newFakeStore(), &fakeFlows{}, &fakeEvents{}, &Caller{UserID: user}, now)
 
 	for _, raw := range []string{mustID(t).String(), "not-a-uuid"} {
 		req := httptest.NewRequest(http.MethodDelete, "/api/v1/me/sessions/"+raw, nil)
@@ -306,18 +314,18 @@ func TestRevokeAllSessions(t *testing.T) {
 	a, b := mustID(t), mustID(t)
 	st := newFakeStore()
 	for _, id := range []uuid.UUID{a, b} {
-		st.sessions[id] = &store.SessionRecord{UserID: user, ClientID: "web", Status: store.SessionStatusActive,
+		st.sessions[id] = &model.Session{UserID: user, ClientID: "web", Status: model.SessionStatusActive,
 			ExpiresAt: now.Add(time.Hour), IdleExpiresAt: now.Add(time.Minute)}
 	}
 	events := &fakeEvents{}
-	h := newSessionHTTP(t, st, &fakeFlows{}, events, &httpx.Caller{UserID: user}, now)
+	h := newSessionHTTP(t, st, &fakeFlows{}, events, &Caller{UserID: user}, now)
 
 	rec := httptest.NewRecorder()
 	h.revokeAll(rec, withTrace(httptest.NewRequest(http.MethodDelete, "/api/v1/me/sessions?scope=all", nil)))
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
 	}
-	if st.sessions[a].Status != store.SessionStatusRevoked || st.sessions[b].Status != store.SessionStatusRevoked {
+	if st.sessions[a].Status != model.SessionStatusRevoked || st.sessions[b].Status != model.SessionStatusRevoked {
 		t.Fatal("all sessions must be revoked")
 	}
 	if len(events.events) != 2 {
@@ -327,7 +335,7 @@ func TestRevokeAllSessions(t *testing.T) {
 
 func TestRevokeAllRejectsUnknownScope(t *testing.T) {
 	user := mustID(t)
-	h := newSessionHTTP(t, newFakeStore(), &fakeFlows{}, &fakeEvents{}, &httpx.Caller{UserID: user}, time.Now())
+	h := newSessionHTTP(t, newFakeStore(), &fakeFlows{}, &fakeEvents{}, &Caller{UserID: user}, time.Now())
 	rec := httptest.NewRecorder()
 	h.revokeAll(rec, withTrace(httptest.NewRequest(http.MethodDelete, "/api/v1/me/sessions?scope=some", nil)))
 
@@ -382,6 +390,7 @@ func TestMessageOfCoversDocumentedCodes(t *testing.T) {
 
 // withTrace 给请求注入 trace_id（生产路径由 httpx.TraceMiddleware 注入）。
 func withTrace(r *http.Request) *http.Request {
+	r.Header.Set("Authorization", "Bearer good-token")
 	return r.WithContext(httpx.WithTraceID(r.Context(), "trace-test"))
 }
 

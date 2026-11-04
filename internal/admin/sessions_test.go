@@ -72,19 +72,27 @@ func (f *fakeAdminSessions) UserExists(_ context.Context, id uuid.UUID) (bool, e
 	return f.users[id], nil
 }
 
+// staticResolver 模拟 S6 的验签实现：返回固定 sub/sid/roles。
 type staticResolver struct {
-	caller *httpx.Caller
+	caller *session.Caller
 	err    error
 }
 
-func (s staticResolver) Resolve(context.Context, *http.Request) (*httpx.Caller, error) {
+func (s staticResolver) Resolve(_ context.Context, token string) (httpx.Caller, error) {
 	if s.err != nil {
-		return nil, s.err
+		return httpx.Caller{}, s.err
 	}
-	return s.caller, nil
+	if s.caller == nil || token == "" {
+		return httpx.Caller{}, httpx.ErrCallerUnauthenticated
+	}
+	return httpx.Caller{
+		Sub:   s.caller.UserID.String(),
+		SID:   s.caller.SessionID.String(),
+		Roles: s.caller.Roles,
+	}, nil
 }
 
-func newAdminHTTP(t *testing.T, svc SessionAdmin, caller *httpx.Caller) *SessionsHTTP {
+func newAdminHTTP(t *testing.T, svc SessionAdmin, caller *session.Caller) *SessionsHTTP {
 	t.Helper()
 	logger := slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelError + 1}))
 	h, err := NewSessionsHTTP(svc, staticResolver{caller: caller}, logger)
@@ -96,6 +104,7 @@ func newAdminHTTP(t *testing.T, svc SessionAdmin, caller *httpx.Caller) *Session
 
 func adminReq(method, target string) *http.Request {
 	r := httptest.NewRequest(method, target, nil)
+	r.Header.Set("Authorization", "Bearer good-token")
 	return r.WithContext(httpx.WithTraceID(r.Context(), "trace-admin"))
 }
 
@@ -144,11 +153,11 @@ func TestAdminSessionsRoleMatrix(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			svc := &fakeAdminSessions{
-				page:  &store.SessionPage{Items: []store.SessionRecord{}},
+				page:  &store.SessionPage{Items: []model.Session{}},
 				names: map[string]string{},
 				users: map[uuid.UUID]bool{},
 			}
-			h := newAdminHTTP(t, svc, &httpx.Caller{UserID: uuid.New(), Roles: tc.roles})
+			h := newAdminHTTP(t, svc, &session.Caller{UserID: uuid.New(), Roles: tc.roles})
 			var rec *httptest.ResponseRecorder
 			if tc.write {
 				id := uuid.New()
@@ -181,11 +190,11 @@ func TestAdminListFiltersAndShape(t *testing.T) {
 
 	svc := &fakeAdminSessions{
 		page: &store.SessionPage{
-			Items: []store.SessionRecord{{
+			Items: []model.Session{{
 				BaseModel:    model.BaseModel{ID: uuid.New(), CreatedAt: created},
 				UserID:       user,
 				ClientID:     clientID,
-				Status:       store.SessionStatusRevoked,
+				Status:       model.SessionStatusRevoked,
 				ACR:          "AAL2",
 				AMR:          model.StringArray{"pwd", "totp"},
 				IssuedAt:     created,
@@ -198,7 +207,7 @@ func TestAdminListFiltersAndShape(t *testing.T) {
 		},
 		names: map[string]string{"web": "门户"},
 	}
-	h := newAdminHTTP(t, svc, &httpx.Caller{UserID: uuid.New(), Roles: []string{"auditor"}})
+	h := newAdminHTTP(t, svc, &session.Caller{UserID: uuid.New(), Roles: []string{"auditor"}})
 
 	rec := httptest.NewRecorder()
 	h.list(rec, adminReq(http.MethodGet,
@@ -228,7 +237,7 @@ func TestAdminListFiltersAndShape(t *testing.T) {
 		t.Fatalf("items = %d", len(body.Items))
 	}
 	item := body.Items[0]
-	if item.UserID != user.String() || item.Client.Name != "门户" || item.Status != store.SessionStatusRevoked {
+	if item.UserID != user.String() || item.Client.Name != "门户" || item.Status != model.SessionStatusRevoked {
 		t.Fatalf("item = %+v", item)
 	}
 	if item.RevokeReason == nil || *item.RevokeReason != "admin" {
@@ -252,7 +261,7 @@ func TestAdminListRejectsBadParams(t *testing.T) {
 	}
 	for _, tc := range cases {
 		svc := &fakeAdminSessions{page: &store.SessionPage{}, names: map[string]string{}}
-		h := newAdminHTTP(t, svc, &httpx.Caller{UserID: uuid.New(), Roles: []string{"auditor"}})
+		h := newAdminHTTP(t, svc, &session.Caller{UserID: uuid.New(), Roles: []string{"auditor"}})
 		rec := httptest.NewRecorder()
 		h.list(rec, adminReq(http.MethodGet, "/api/v1/sessions"+tc.query))
 		if rec.Code != tc.status {
@@ -267,7 +276,7 @@ func TestAdminListRejectsBadParams(t *testing.T) {
 func TestAdminRevokeOne(t *testing.T) {
 	id := uuid.New()
 	svc := &fakeAdminSessions{users: map[uuid.UUID]bool{id: true}}
-	h := newAdminHTTP(t, svc, &httpx.Caller{UserID: uuid.New(), Roles: []string{"security_admin"}})
+	h := newAdminHTTP(t, svc, &session.Caller{UserID: uuid.New(), Roles: []string{"security_admin"}})
 
 	req := adminReq(http.MethodDelete, "/api/v1/sessions/"+id.String())
 	req.SetPathValue("id", id.String())
@@ -287,7 +296,7 @@ func TestAdminRevokeOne(t *testing.T) {
 
 func TestAdminRevokeOneNotFound(t *testing.T) {
 	svc := &fakeAdminSessions{revokeErr: session.ErrSessionNotFound}
-	h := newAdminHTTP(t, svc, &httpx.Caller{UserID: uuid.New(), Roles: []string{"system_admin"}})
+	h := newAdminHTTP(t, svc, &session.Caller{UserID: uuid.New(), Roles: []string{"system_admin"}})
 
 	req := adminReq(http.MethodDelete, "/api/v1/sessions/x")
 	req.SetPathValue("id", uuid.New().String())
@@ -304,7 +313,7 @@ func TestAdminRevokeOneNotFound(t *testing.T) {
 
 func TestAdminRevokeOneMalformedID(t *testing.T) {
 	svc := &fakeAdminSessions{}
-	h := newAdminHTTP(t, svc, &httpx.Caller{UserID: uuid.New(), Roles: []string{"system_admin"}})
+	h := newAdminHTTP(t, svc, &session.Caller{UserID: uuid.New(), Roles: []string{"system_admin"}})
 
 	req := adminReq(http.MethodDelete, "/api/v1/sessions/not-a-uuid")
 	req.SetPathValue("id", "not-a-uuid")
@@ -322,7 +331,7 @@ func TestAdminRevokeOneMalformedID(t *testing.T) {
 func TestAdminRevokeByUser(t *testing.T) {
 	user := uuid.New()
 	svc := &fakeAdminSessions{users: map[uuid.UUID]bool{user: true}}
-	h := newAdminHTTP(t, svc, &httpx.Caller{UserID: uuid.New(), Roles: []string{"system_admin"}})
+	h := newAdminHTTP(t, svc, &session.Caller{UserID: uuid.New(), Roles: []string{"system_admin"}})
 
 	rec := httptest.NewRecorder()
 	h.revokeByUser(rec, adminReq(http.MethodDelete, "/api/v1/sessions?user_id="+user.String()))
@@ -350,7 +359,7 @@ func TestAdminRevokeByUserErrors(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			svc := &fakeAdminSessions{users: tc.users}
-			h := newAdminHTTP(t, svc, &httpx.Caller{UserID: uuid.New(), Roles: []string{"system_admin"}})
+			h := newAdminHTTP(t, svc, &session.Caller{UserID: uuid.New(), Roles: []string{"system_admin"}})
 			rec := httptest.NewRecorder()
 			h.revokeByUser(rec, adminReq(http.MethodDelete, "/api/v1/sessions"+tc.query))
 			if rec.Code != tc.status {
@@ -365,7 +374,7 @@ func TestAdminRevokeByUserErrors(t *testing.T) {
 
 func TestAdminUnmappedErrorIsInternal(t *testing.T) {
 	svc := &fakeAdminSessions{listErr: errors.New("boom")}
-	h := newAdminHTTP(t, svc, &httpx.Caller{UserID: uuid.New(), Roles: []string{"auditor"}})
+	h := newAdminHTTP(t, svc, &session.Caller{UserID: uuid.New(), Roles: []string{"auditor"}})
 	rec := httptest.NewRecorder()
 	h.list(rec, adminReq(http.MethodGet, "/api/v1/sessions"))
 

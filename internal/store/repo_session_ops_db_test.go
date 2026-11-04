@@ -25,7 +25,7 @@ import (
 
 // insertSessionRow 用**裸 SQL** 建会话行（`SessionRepo.Create` 归 S6 的 `repo_session.go`，
 // 本文件只测 S7 的读取/撤销/续期/过期，不得依赖 S6 的写入口）。
-func insertSessionRow(t *testing.T, db *gorm.DB, s *SessionRecord) {
+func insertSessionRow(t *testing.T, db *gorm.DB, s *model.Session) {
 	t.Helper()
 	if s.ID == uuid.Nil {
 		s.ID = mustV7(t)
@@ -46,12 +46,12 @@ func TestDBSessionReadBack(t *testing.T) {
 	ctx := context.Background()
 	now := time.Now().UTC().Truncate(time.Microsecond)
 
-	s := &SessionRecord{
+	s := &model.Session{
 		UserID:        f.userID,
 		ClientID:      f.clientID,
 		ACR:           "AAL1",
 		AMR:           model.StringArray{"pwd"},
-		Status:        SessionStatusActive,
+		Status:        model.SessionStatusActive,
 		IssuedAt:      now,
 		ExpiresAt:     now.Add(12 * time.Hour),
 		IdleExpiresAt: now.Add(30 * time.Minute),
@@ -63,7 +63,7 @@ func TestDBSessionReadBack(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetByID: %v", err)
 	}
-	if got.UserID != f.userID || got.ClientID != f.clientID || got.Status != SessionStatusActive {
+	if got.UserID != f.userID || got.ClientID != f.clientID || got.Status != model.SessionStatusActive {
 		t.Fatalf("roundtrip mismatch: %+v", got)
 	}
 	if len(got.AMR) != 1 || got.AMR[0] != "pwd" {
@@ -82,8 +82,8 @@ func TestDBRevokeIsConditionalAndConsistent(t *testing.T) {
 	ctx := context.Background()
 	now := time.Now().UTC()
 
-	s := &SessionRecord{
-		UserID: f.userID, ClientID: f.clientID, ACR: "AAL1", Status: SessionStatusActive,
+	s := &model.Session{
+		UserID: f.userID, ClientID: f.clientID, ACR: "AAL1", Status: model.SessionStatusActive,
 		IssuedAt: now, ExpiresAt: now.Add(time.Hour), IdleExpiresAt: now.Add(30 * time.Minute),
 	}
 	insertSessionRow(t, db, s)
@@ -97,7 +97,7 @@ func TestDBRevokeIsConditionalAndConsistent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetByID: %v", err)
 	}
-	if got.Status != SessionStatusRevoked || got.RevokedAt == nil || got.RevokeReason == nil ||
+	if got.Status != model.SessionStatusRevoked || got.RevokedAt == nil || got.RevokeReason == nil ||
 		*got.RevokeReason != "admin" {
 		t.Fatalf("revoked row inconsistent: %+v", got)
 	}
@@ -140,8 +140,8 @@ func TestDBSessionListCursorPaging(t *testing.T) {
 
 	ids := make([]uuid.UUID, 0, 3)
 	for i := 0; i < 3; i++ {
-		s := &SessionRecord{
-			UserID: f.userID, ClientID: f.clientID, ACR: "AAL1", Status: SessionStatusActive,
+		s := &model.Session{
+			UserID: f.userID, ClientID: f.clientID, ACR: "AAL1", Status: model.SessionStatusActive,
 			IssuedAt:      base.Add(time.Duration(i) * time.Second),
 			ExpiresAt:     base.Add(time.Hour),
 			IdleExpiresAt: base.Add(30 * time.Minute),
@@ -190,15 +190,15 @@ func TestDBSessionListActiveFilter(t *testing.T) {
 	ctx := context.Background()
 	now := time.Now().UTC()
 
-	active := &SessionRecord{UserID: f.userID, ClientID: f.clientID, ACR: "AAL1",
-		Status: SessionStatusActive, IssuedAt: now, ExpiresAt: now.Add(time.Hour),
+	active := &model.Session{UserID: f.userID, ClientID: f.clientID, ACR: "AAL1",
+		Status: model.SessionStatusActive, IssuedAt: now, ExpiresAt: now.Add(time.Hour),
 		IdleExpiresAt: now.Add(time.Minute)}
 	insertSessionRow(t, db, active)
 	if _, err := repo.RevokeByID(ctx, active.ID, "admin", now); err != nil {
 		t.Fatalf("revoke: %v", err)
 	}
-	second := &SessionRecord{UserID: f.userID, ClientID: f.clientID, ACR: "AAL1",
-		Status: SessionStatusActive, IssuedAt: now, ExpiresAt: now.Add(time.Hour),
+	second := &model.Session{UserID: f.userID, ClientID: f.clientID, ACR: "AAL1",
+		Status: model.SessionStatusActive, IssuedAt: now, ExpiresAt: now.Add(time.Hour),
 		IdleExpiresAt: now.Add(time.Minute)}
 	insertSessionRow(t, db, second)
 	t.Cleanup(func() { _ = db.Exec(`DELETE FROM sessions WHERE user_id = ?`, f.userID) })
@@ -231,13 +231,13 @@ func TestDBEvictOldestActive(t *testing.T) {
 	ctx := context.Background()
 	base := time.Now().UTC().Truncate(time.Microsecond)
 
-	oldest := &SessionRecord{UserID: f.userID, ClientID: f.clientID, ACR: "AAL1",
-		Status: SessionStatusActive, IssuedAt: base.Add(-time.Hour),
+	oldest := &model.Session{UserID: f.userID, ClientID: f.clientID, ACR: "AAL1",
+		Status: model.SessionStatusActive, IssuedAt: base.Add(-time.Hour),
 		ExpiresAt: base.Add(time.Hour), IdleExpiresAt: base.Add(30 * time.Minute)}
-	newer := &SessionRecord{UserID: f.userID, ClientID: f.clientID, ACR: "AAL1",
-		Status: SessionStatusActive, IssuedAt: base,
+	newer := &model.Session{UserID: f.userID, ClientID: f.clientID, ACR: "AAL1",
+		Status: model.SessionStatusActive, IssuedAt: base,
 		ExpiresAt: base.Add(time.Hour), IdleExpiresAt: base.Add(30 * time.Minute)}
-	for _, s := range []*SessionRecord{oldest, newer} {
+	for _, s := range []*model.Session{oldest, newer} {
 		insertSessionRow(t, db, s)
 	}
 	t.Cleanup(func() { _ = db.Exec(`DELETE FROM sessions WHERE user_id = ?`, f.userID) })
@@ -253,14 +253,14 @@ func TestDBEvictOldestActive(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetByID: %v", err)
 	}
-	if got.Status != SessionStatusRevoked || got.RevokeReason == nil || *got.RevokeReason != "concurrent_limit" {
+	if got.Status != model.SessionStatusRevoked || got.RevokeReason == nil || *got.RevokeReason != "concurrent_limit" {
 		t.Fatalf("evicted row = %+v", got)
 	}
 	keep, err := repo.GetByID(ctx, newer.ID)
 	if err != nil {
 		t.Fatalf("GetByID newer: %v", err)
 	}
-	if keep.Status != SessionStatusActive {
+	if keep.Status != model.SessionStatusActive {
 		t.Fatal("newer session must stay active")
 	}
 
@@ -281,8 +281,8 @@ func TestDBSessionBulkAndLifecycle(t *testing.T) {
 
 	keep, other := uuid.Nil, uuid.Nil
 	for i := 0; i < 2; i++ {
-		s := &SessionRecord{UserID: f.userID, ClientID: f.clientID, ACR: "AAL1",
-			Status: SessionStatusActive, IssuedAt: base.Add(time.Duration(i) * time.Second),
+		s := &model.Session{UserID: f.userID, ClientID: f.clientID, ACR: "AAL1",
+			Status: model.SessionStatusActive, IssuedAt: base.Add(time.Duration(i) * time.Second),
 			ExpiresAt: base.Add(time.Hour), IdleExpiresAt: base.Add(30 * time.Minute)}
 		insertSessionRow(t, db, s)
 		if i == 0 {
@@ -323,14 +323,14 @@ func TestDBSessionBulkAndLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetByID keep: %v", err)
 	}
-	if survivor.Status != SessionStatusActive {
+	if survivor.Status != model.SessionStatusActive {
 		t.Fatal("keep session must stay active")
 	}
 	gone, err := repo.GetByID(ctx, other)
 	if err != nil {
 		t.Fatalf("GetByID other: %v", err)
 	}
-	if gone.Status != SessionStatusRevoked {
+	if gone.Status != model.SessionStatusRevoked {
 		t.Fatal("other session must be revoked")
 	}
 
@@ -346,7 +346,7 @@ func TestDBSessionBulkAndLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetByID expired: %v", err)
 	}
-	if expired.Status != SessionStatusExpired {
+	if expired.Status != model.SessionStatusExpired {
 		t.Fatalf("status = %q, want expired", expired.Status)
 	}
 

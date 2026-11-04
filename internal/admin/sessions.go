@@ -15,6 +15,7 @@ import (
 	"github.com/spencerswagger/guanjin/internal/httpx"
 	"github.com/spencerswagger/guanjin/internal/session"
 	"github.com/spencerswagger/guanjin/internal/store"
+	"github.com/spencerswagger/guanjin/internal/store/model"
 )
 
 // 本文件是**管理面 sessions 段**的 HTTP 入口（端点名照抄接口 §3.8 sessions 段）：
@@ -44,18 +45,18 @@ type SessionAdmin interface {
 
 // SessionsHTTP 是 sessions 段三个端点的处理器。
 type SessionsHTTP struct {
-	svc    SessionAdmin
-	caller httpx.CallerResolver
-	logger *slog.Logger
+	svc      SessionAdmin
+	resolver session.TokenResolver
+	logger   *slog.Logger
 }
 
 // NewSessionsHTTP 构造处理器（缺依赖即装配期失败）。
-func NewSessionsHTTP(svc SessionAdmin, caller httpx.CallerResolver, logger *slog.Logger) (*SessionsHTTP, error) {
+func NewSessionsHTTP(svc SessionAdmin, resolver session.TokenResolver, logger *slog.Logger) (*SessionsHTTP, error) {
 	switch {
-	case svc == nil, caller == nil, logger == nil:
+	case svc == nil, resolver == nil, logger == nil:
 		return nil, ErrNilDependency
 	}
-	return &SessionsHTTP{svc: svc, caller: caller, logger: logger}, nil
+	return &SessionsHTTP{svc: svc, resolver: resolver, logger: logger}, nil
 }
 
 // Routes 挂上三个冻结路径。
@@ -93,7 +94,7 @@ type adminListResponse struct {
 }
 
 func (h *SessionsHTTP) list(w http.ResponseWriter, r *http.Request) {
-	caller, ok := httpx.ResolveCaller(w, r, h.caller)
+	caller, ok := session.ResolveCaller(w, r, h.resolver)
 	if !ok {
 		return
 	}
@@ -155,7 +156,7 @@ func (h *SessionsHTTP) list(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *SessionsHTTP) revokeOne(w http.ResponseWriter, r *http.Request) {
-	caller, ok := httpx.ResolveCaller(w, r, h.caller)
+	caller, ok := session.ResolveCaller(w, r, h.resolver)
 	if !ok {
 		return
 	}
@@ -182,7 +183,7 @@ func (h *SessionsHTTP) revokeOne(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *SessionsHTTP) revokeByUser(w http.ResponseWriter, r *http.Request) {
-	caller, ok := httpx.ResolveCaller(w, r, h.caller)
+	caller, ok := session.ResolveCaller(w, r, h.resolver)
 	if !ok {
 		return
 	}
@@ -258,7 +259,7 @@ func adminMessageOf(c httpx.Code) string {
 	}
 }
 
-func adminViewOf(s *store.SessionRecord, names map[string]string) adminSessionView {
+func adminViewOf(s *model.Session, names map[string]string) adminSessionView {
 	amr := []string(s.AMR)
 	if amr == nil {
 		amr = []string{}
@@ -283,7 +284,7 @@ func adminViewOf(s *store.SessionRecord, names map[string]string) adminSessionVi
 	return v
 }
 
-func clientIDs(rows []store.SessionRecord) []string {
+func clientIDs(rows []model.Session) []string {
 	seen := make(map[string]struct{}, len(rows))
 	out := make([]string, 0, len(rows))
 	for i := range rows {

@@ -134,3 +134,76 @@ func TestRolesLookupRequiresIDs(t *testing.T) {
 		t.Fatal("empty client must be rejected")
 	}
 }
+
+// 下面几条是**守卫与分支**覆盖：不建库，只确保每个错误分支真的被走到
+// （覆盖率门禁 store ≥75 是 CI 的硬闸；真库行为另见 `repo_session_ops_db_test.go`）。
+func TestSessionOpsGuards(t *testing.T) {
+	repo := &SessionOpsRepo{}
+	ctx := context.Background()
+	now := time.Now()
+
+	if _, err := repo.GetByID(ctx, uuid.Nil); !errors.Is(err, ErrSessionNotFound) {
+		t.Fatalf("GetByID(nil) = %v", err)
+	}
+	if _, err := repo.CountActiveByUserClient(ctx, uuid.Nil, "web"); err == nil {
+		t.Fatal("count with nil user must fail")
+	}
+	if _, err := repo.CountActiveByUserClient(ctx, uuid.New(), " "); err == nil {
+		t.Fatal("count with empty client must fail")
+	}
+	if _, err := repo.EvictOldestActive(ctx, uuid.New(), "web", "", now); err == nil {
+		t.Fatal("evict without reason must fail")
+	}
+	if _, err := repo.EvictOldestActive(ctx, uuid.Nil, "web", "concurrent_limit", now); err == nil {
+		t.Fatal("evict with nil user must fail")
+	}
+	if _, err := repo.TouchLastSeen(ctx, uuid.Nil, now, now); err == nil {
+		t.Fatal("touch with nil id must fail")
+	}
+	if _, err := repo.ActiveIDsByUser(ctx, uuid.Nil); err == nil {
+		t.Fatal("active ids with nil user must fail")
+	}
+	// 撤销的真实查询分支由 DryRun 句柄覆盖（nil db 只能走守卫分支：空 id / 空原因）。
+	if _, err := repo.RevokeByID(ctx, uuid.New(), " ", now); err == nil {
+		t.Fatal("revoke with blank reason must fail")
+	}
+	if _, err := repo.RevokeAllByUser(ctx, uuid.New(), " ", now); err == nil {
+		t.Fatal("bulk revoke with blank reason must fail")
+	}
+	if _, err := repo.RevokeOthers(ctx, uuid.New(), uuid.New(), " ", now); err == nil {
+		t.Fatal("revoke others with blank reason must fail")
+	}
+}
+
+func TestSessionOpsWithTxBindsHandle(t *testing.T) {
+	db, _ := dryRunDB(t)
+	repo := NewSessionOpsRepo(db)
+	if repo.WithTx(db) == nil {
+		t.Fatal("WithTx must return a repo bound to the given handle")
+	}
+}
+
+func TestSessionOpsDryRunFilterBranches(t *testing.T) {
+	db, _ := dryRunDB(t)
+	repo := NewSessionOpsRepo(db)
+	ctx := context.Background()
+	userID := uuid.New()
+	clientID := "web"
+	yes, no := true, false
+
+	cases := []SessionQuery{
+		{Limit: 5, UserID: &userID},
+		{Limit: 5, ClientID: &clientID},
+		{Limit: 5, Active: &yes},
+		{Limit: 5, Active: &no},
+		{Limit: 5, Cursor: encodeSessionCursor(time.Now().UTC(), uuid.New())},
+	}
+	for i, q := range cases {
+		if _, err := repo.List(ctx, q); err != nil {
+			t.Fatalf("case %d: %v", i, err)
+		}
+	}
+	if _, err := repo.ExpireStale(ctx, time.Now()); err != nil {
+		allowDryRunUnsupported(t, err)
+	}
+}

@@ -14,42 +14,6 @@ import (
 	"github.com/spencerswagger/guanjin/internal/store/model"
 )
 
-// SessionRecord 是 S7 侧对 `sessions` 行的**只读投影**（含设备上下文三列）。
-//
-// 为什么不直接用 `model.Session`：按 S6/S7 文件边界，`model.Session` 由 S6 拥有
-// （`internal/store/model/session.go`），它只声明签发所需的最小列集（无 `ip`/`user_agent`/
-// `device_id`）。会话列表要展示"哪台设备、哪个网段"（接口 §3.6.1），所以 S7 在自己的文件里
-// 声明投影——**不改 S6 的文件**，也不要求给 `model.Session` 加字段。
-//
-// 投影与 `SessionColumns()` 的差异只在这三列；`TableName()` 指向同一张冻结表。
-type SessionRecord struct {
-	model.BaseModel
-	UserID        uuid.UUID         `gorm:"column:user_id;type:uuid;not null"`
-	ClientID      string            `gorm:"column:client_id;not null"`
-	ACR           string            `gorm:"column:acr;not null"`
-	AMR           model.StringArray `gorm:"column:amr;type:text[];not null"`
-	Status        string            `gorm:"column:status;not null"`
-	IssuedAt      time.Time         `gorm:"column:issued_at;not null"`
-	LastSeenAt    *time.Time        `gorm:"column:last_seen_at"`
-	ExpiresAt     time.Time         `gorm:"column:expires_at;not null"`
-	IdleExpiresAt time.Time         `gorm:"column:idle_expires_at;not null"`
-	RevokedAt     *time.Time        `gorm:"column:revoked_at"`
-	RevokeReason  *string           `gorm:"column:revoke_reason"`
-	IP            *string           `gorm:"column:ip"`
-	UserAgent     *string           `gorm:"column:user_agent"`
-	DeviceID      *string           `gorm:"column:device_id"`
-}
-
-// TableName 冻结表名（与 `model.Session` 指向同一张表）。
-func (SessionRecord) TableName() string { return "sessions" }
-
-// 会话状态（封闭三值，与 DB CHECK `status IN ('active','revoked','expired')` 一致）。
-const (
-	SessionStatusActive  = "active"
-	SessionStatusRevoked = "revoked"
-	SessionStatusExpired = "expired"
-)
-
 // SessionOpsRepo 是 `sessions` 的**S7 侧仓储**（读取/撤销/续期/过期）。状态机判定在 `internal/session`，这里只做存。
 //
 // 三条刻意的设计：
@@ -68,9 +32,6 @@ func NewSessionOpsRepo(db *gorm.DB) *SessionOpsRepo { return &SessionOpsRepo{db:
 
 // WithTx 返回绑定事务的副本。
 func (r *SessionOpsRepo) WithTx(tx *gorm.DB) *SessionOpsRepo { return &SessionOpsRepo{db: tx} }
-
-// ErrSessionNotFound 表示按 id 没查到会话（对外 `SESSION_NOT_FOUND`，E3/404）。
-var ErrSessionNotFound = errors.New("store: session not found")
 
 // SessionQuery 是管理面列表的查询条件（接口 §3.8 sessions 段：`?user_id=&client_id=&active=true`）。
 //
@@ -91,16 +52,16 @@ const MaxSessionPageLimit = 200
 
 // SessionPage 是列表的一页（D3-A′：`{items, next_cursor}`，**不返回 total**）。
 type SessionPage struct {
-	Items      []SessionRecord
+	Items      []model.Session
 	NextCursor string
 }
 
 // GetByID 读一条会话（不加锁；会话不加锁读，锁序见包注释）。
-func (r *SessionOpsRepo) GetByID(ctx context.Context, id uuid.UUID) (*SessionRecord, error) {
+func (r *SessionOpsRepo) GetByID(ctx context.Context, id uuid.UUID) (*model.Session, error) {
 	if id == uuid.Nil {
 		return nil, ErrSessionNotFound
 	}
-	var s SessionRecord
+	var s model.Session
 	err := r.db.WithContext(ctx).Where("id = ?", id).Take(&s).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, ErrSessionNotFound
@@ -115,14 +76,14 @@ func (r *SessionOpsRepo) GetByID(ctx context.Context, id uuid.UUID) (*SessionRec
 //
 // 自助面**不隐藏已撤销/已过期**的会话：页面要展示的是"登录记录"，撤销过的记录同样要看得到
 // （否则用户看不到"谁在什么时候被踢下线"）。是否只显示 active 由页面决定，不由仓储替它裁。
-func (r *SessionOpsRepo) ListByUser(ctx context.Context, userID uuid.UUID, limit int) ([]SessionRecord, error) {
+func (r *SessionOpsRepo) ListByUser(ctx context.Context, userID uuid.UUID, limit int) ([]model.Session, error) {
 	if userID == uuid.Nil {
 		return nil, errors.New("store: empty user id")
 	}
 	if limit <= 0 || limit > MaxSessionPageLimit {
 		return nil, fmt.Errorf("store: session list limit out of range: %d", limit)
 	}
-	var out []SessionRecord
+	var out []model.Session
 	err := r.db.WithContext(ctx).
 		Where("user_id = ?", userID).
 		Order("issued_at DESC, id DESC").
@@ -143,8 +104,8 @@ func (r *SessionOpsRepo) ActiveIDsByUser(ctx context.Context, userID uuid.UUID) 
 		return nil, errors.New("store: empty user id")
 	}
 	var ids []uuid.UUID
-	err := r.db.WithContext(ctx).Model(&SessionRecord{}).
-		Where("user_id = ? AND status = ?", userID, SessionStatusActive).
+	err := r.db.WithContext(ctx).Model(&model.Session{}).
+		Where("user_id = ? AND status = ?", userID, model.SessionStatusActive).
 		Pluck("id", &ids).Error
 	if err != nil {
 		return nil, MapError(err)
@@ -203,7 +164,7 @@ func (r *SessionOpsRepo) List(ctx context.Context, q SessionQuery) (*SessionPage
 		return nil, err
 	}
 
-	tx := r.db.WithContext(ctx).Model(&SessionRecord{})
+	tx := r.db.WithContext(ctx).Model(&model.Session{})
 	if q.UserID != nil {
 		tx = tx.Where("user_id = ?", *q.UserID)
 	}
@@ -214,7 +175,7 @@ func (r *SessionOpsRepo) List(ctx context.Context, q SessionQuery) (*SessionPage
 		// 只有 `active=true` 才加过滤。`active=false` 的语义是"不要只看 active"
 		// （含 revoked/expired，审计要全量视图），**不是**"只看非 active"——加反向过滤
 		// 会把"在线会话"从审计员眼里抹掉。
-		tx = tx.Where("status = ?", SessionStatusActive)
+		tx = tx.Where("status = ?", model.SessionStatusActive)
 	}
 	if cur != nil {
 		// 行值比较走 `(issued_at, id)` 与排序键一致：翻页不会漏行也不会重复行
@@ -222,7 +183,7 @@ func (r *SessionOpsRepo) List(ctx context.Context, q SessionQuery) (*SessionPage
 		tx = tx.Where("(issued_at, id) < (?, ?)", cur.IssuedAt, cur.ID)
 	}
 
-	var rows []SessionRecord
+	var rows []model.Session
 	// 多取一行用来判"还有更多"（不返回 total，D3-A′②）。
 	if err := tx.Order("issued_at DESC, id DESC").Limit(q.Limit + 1).Find(&rows).Error; err != nil {
 		return nil, MapError(err)
@@ -235,7 +196,7 @@ func (r *SessionOpsRepo) List(ctx context.Context, q SessionQuery) (*SessionPage
 		page.NextCursor = encodeSessionCursor(last.IssuedAt, last.ID)
 	}
 	if page.Items == nil {
-		page.Items = []SessionRecord{}
+		page.Items = []model.Session{}
 	}
 	return page, nil
 }
@@ -295,10 +256,10 @@ func (r *SessionOpsRepo) RevokeByID(ctx context.Context, id uuid.UUID, reason st
 		// 撤销原因是审计事实的一部分：空原因等于"不知道为什么踢的"。
 		return 0, errors.New("store: revoke requires reason")
 	}
-	res := r.db.WithContext(ctx).Model(&SessionRecord{}).
-		Where("id = ? AND status = ?", id, SessionStatusActive).
+	res := r.db.WithContext(ctx).Model(&model.Session{}).
+		Where("id = ? AND status = ?", id, model.SessionStatusActive).
 		Updates(map[string]any{
-			"status":        SessionStatusRevoked,
+			"status":        model.SessionStatusRevoked,
 			"revoked_at":    at.UTC(),
 			"revoke_reason": reason,
 		})
@@ -316,10 +277,10 @@ func (r *SessionOpsRepo) RevokeAllByUser(ctx context.Context, userID uuid.UUID, 
 	if strings.TrimSpace(reason) == "" {
 		return 0, errors.New("store: revoke requires reason")
 	}
-	res := r.db.WithContext(ctx).Model(&SessionRecord{}).
-		Where("user_id = ? AND status = ?", userID, SessionStatusActive).
+	res := r.db.WithContext(ctx).Model(&model.Session{}).
+		Where("user_id = ? AND status = ?", userID, model.SessionStatusActive).
 		Updates(map[string]any{
-			"status":        SessionStatusRevoked,
+			"status":        model.SessionStatusRevoked,
 			"revoked_at":    at.UTC(),
 			"revoke_reason": reason,
 		})
@@ -337,10 +298,10 @@ func (r *SessionOpsRepo) RevokeOthers(ctx context.Context, userID, keepID uuid.U
 	if strings.TrimSpace(reason) == "" {
 		return 0, errors.New("store: revoke requires reason")
 	}
-	res := r.db.WithContext(ctx).Model(&SessionRecord{}).
-		Where("user_id = ? AND status = ? AND id <> ?", userID, SessionStatusActive, keepID).
+	res := r.db.WithContext(ctx).Model(&model.Session{}).
+		Where("user_id = ? AND status = ? AND id <> ?", userID, model.SessionStatusActive, keepID).
 		Updates(map[string]any{
-			"status":        SessionStatusRevoked,
+			"status":        model.SessionStatusRevoked,
 			"revoked_at":    at.UTC(),
 			"revoke_reason": reason,
 		})
@@ -358,8 +319,8 @@ func (r *SessionOpsRepo) CountActiveByUserClient(ctx context.Context, userID uui
 		return 0, errors.New("store: count requires user_id and client_id")
 	}
 	var n int64
-	err := r.db.WithContext(ctx).Model(&SessionRecord{}).
-		Where("user_id = ? AND client_id = ? AND status = ?", userID, clientID, SessionStatusActive).
+	err := r.db.WithContext(ctx).Model(&model.Session{}).
+		Where("user_id = ? AND client_id = ? AND status = ?", userID, clientID, model.SessionStatusActive).
 		Count(&n).Error
 	if err != nil {
 		return 0, MapError(err)
@@ -393,8 +354,8 @@ func (r *SessionOpsRepo) EvictOldestActive(ctx context.Context, userID uuid.UUID
 		  FROM victim v
 		 WHERE s.id = v.id
 		RETURNING s.id`,
-		userID, clientID, SessionStatusActive,
-		SessionStatusRevoked, at.UTC(), reason).Scan(&ids).Error
+		userID, clientID, model.SessionStatusActive,
+		model.SessionStatusRevoked, at.UTC(), reason).Scan(&ids).Error
 	if err != nil {
 		return uuid.Nil, MapError(err)
 	}
@@ -412,8 +373,8 @@ func (r *SessionOpsRepo) TouchLastSeen(ctx context.Context, id uuid.UUID, at, id
 	if id == uuid.Nil {
 		return 0, errors.New("store: empty session id")
 	}
-	res := r.db.WithContext(ctx).Model(&SessionRecord{}).
-		Where("id = ? AND status = ?", id, SessionStatusActive).
+	res := r.db.WithContext(ctx).Model(&model.Session{}).
+		Where("id = ? AND status = ?", id, model.SessionStatusActive).
 		Updates(map[string]any{
 			"last_seen_at":    at.UTC(),
 			"idle_expires_at": idleExpiresAt.UTC(),
@@ -428,10 +389,10 @@ func (r *SessionOpsRepo) TouchLastSeen(ctx context.Context, id uuid.UUID, at, id
 //
 // 只置状态、不删行：会话记录是审计证据，撤销与过期都保留。
 func (r *SessionOpsRepo) ExpireStale(ctx context.Context, now time.Time) (int64, error) {
-	res := r.db.WithContext(ctx).Model(&SessionRecord{}).
+	res := r.db.WithContext(ctx).Model(&model.Session{}).
 		Where("status = ? AND (idle_expires_at <= ? OR expires_at <= ?)",
-			SessionStatusActive, now.UTC(), now.UTC()).
-		Update("status", SessionStatusExpired)
+			model.SessionStatusActive, now.UTC(), now.UTC()).
+		Update("status", model.SessionStatusExpired)
 	if res.Error != nil {
 		return 0, MapError(res.Error)
 	}

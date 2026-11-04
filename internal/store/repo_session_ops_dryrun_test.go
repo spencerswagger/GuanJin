@@ -7,20 +7,22 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/spencerswagger/guanjin/internal/store/model"
 )
 
 // 本文件用 **DryRun 句柄**（永不出网）覆盖 `repo_sessions.go` 的每一条语句路径：
 // 单测不建库，但要保证"代码被执行到了"（否则覆盖率门禁会红，且真库用例只在 CI 跑）。
 // SQL 形态的断言放在这里；行级行为在 `repo_sessions_db_test.go`（integration）。
 
-func sessionFixtureRow(t *testing.T) *SessionRecord {
+func sessionFixtureRow(t *testing.T) *model.Session {
 	t.Helper()
 	now := time.Now().UTC()
-	return &SessionRecord{
+	return &model.Session{
 		UserID:        uuid.New(),
 		ClientID:      "web",
 		ACR:           "AAL1",
-		Status:        SessionStatusActive,
+		Status:        model.SessionStatusActive,
 		IssuedAt:      now,
 		ExpiresAt:     now.Add(time.Hour),
 		IdleExpiresAt: now.Add(30 * time.Minute),

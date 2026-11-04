@@ -58,6 +58,12 @@ const (
 	// 与 `ATTEMPTS_EXCEEDED` 是两个对象：后者是**单次挑战**的尝试次数用尽（`challenges.attempts`），
 	// 前者是**账号级**失败计数的结果（Redis `login:lock:{user_id}`，D3-D）。
 	CodeAccountLocked Code = "ACCOUNT_LOCKED" // E2 / 401
+	// 协议面（S6）四个在用码：**接口 §5.4 E2 行本来就有，本包此前漏登记**（与 `ACCOUNT_LOCKED` 同类，
+	// 属"补登记"不是新增契约）。
+	CodeInvalidGrant        Code = "INVALID_GRANT"            // E2 / 401（授权码二次使用、码无效/过期）
+	CodeRefreshTokenReused  Code = "REFRESH_TOKEN_REUSED"     // E2 / 401（刷新令牌二次使用 → 撤销会话）
+	CodePKCEFailed          Code = "PKCE_VERIFICATION_FAILED" // E2 / 401（verifier 与 challenge 不匹配）
+	CodeInvalidCodeVerifier Code = "INVALID_CODE_VERIFIER"    // E2 / 400（缺/畸形 verifier，D3-E）
 
 	// 授权与档位（E3）
 	CodeInsufficientRole    Code = "INSUFFICIENT_ROLE"     // E3 / 403
@@ -132,6 +138,7 @@ var knownCodes = []Code{
 	CodeFlowNotFound, CodeFlowExpired, CodePageSizeExceeded,
 	CodeTokenInvalid, CodeTokenExpired, CodeTokenRevoked, CodeSessionRevoked,
 	CodeInvalidCredential, CodeTemporalCodeReused, CodeAccountLocked,
+	CodeInvalidGrant, CodeRefreshTokenReused, CodePKCEFailed, CodeInvalidCodeVerifier,
 	CodeInsufficientRole, CodeThreePowerViolation, CodeACRInsufficient, CodeSessionNotFound,
 	CodeSessionNotOwned,
 	CodeIdentifierAlreadyBound, CodeIdentifierNotFound, CodeUserNotFound, CodeClientNotFound,
@@ -173,7 +180,8 @@ type ErrorResponse struct {
 func HTTPStatus(c Code) int {
 	switch c {
 	case CodeInvalidRequest, CodeInvalidParam, CodeMissingParameter, CodeInvalidClient,
-		CodeFlowExpired, CodePageSizeExceeded, CodeIdentifierInvalidFormat, CodeInviteCodeInvalid:
+		CodeFlowExpired, CodePageSizeExceeded, CodeIdentifierInvalidFormat, CodeInviteCodeInvalid,
+		CodeInvalidCodeVerifier:
 		return http.StatusBadRequest
 	case CodeFlowNotFound, CodeSessionNotFound, CodeSessionNotOwned, CodeIdentifierNotFound,
 		CodeUserNotFound, CodeClientNotFound, CodeKeyNotFound, CodeSnapshotNotFound,
@@ -181,6 +189,7 @@ func HTTPStatus(c Code) int {
 		return http.StatusNotFound
 	case CodeTokenInvalid, CodeTokenExpired, CodeTokenRevoked,
 		CodeInvalidCredential, CodeTemporalCodeReused, CodeAccountLocked,
+		CodeInvalidGrant, CodeRefreshTokenReused, CodePKCEFailed,
 		CodeChallengeExpired, CodeChallengeConsumed, CodeChallengeInvalid, CodeAttemptsExceeded:
 		return http.StatusUnauthorized
 	case CodeSessionRevoked, CodeInsufficientRole, CodeThreePowerViolation, CodeACRInsufficient:

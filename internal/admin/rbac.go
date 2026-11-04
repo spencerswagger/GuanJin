@@ -4,6 +4,7 @@ import (
 	"errors"
 
 	"github.com/spencerswagger/guanjin/internal/httpx"
+	"github.com/spencerswagger/guanjin/internal/session"
 )
 
 // 本文件是 S7 的**三员最小鉴权骨架**（m1-slices §4-S7；接口 §3.8 的「三员分离」）。
@@ -60,7 +61,7 @@ func CodeOf(err error) httpx.Code {
 const allowAuditorWrite = false
 
 // authorize 是矩阵判定的唯一实现：先判"有没有管理角色"，再判"这个动作在不在职责域内"。
-func authorize(c *httpx.Caller, readRoles, writeRoles []Role, write bool) error {
+func authorize(c *session.Caller, readRoles, writeRoles []Role, write bool) error {
 	if c == nil {
 		return ErrInsufficientRole
 	}
@@ -97,7 +98,7 @@ func authorize(c *httpx.Caller, readRoles, writeRoles []Role, write bool) error 
 
 // AuthorizeSessions 判定 sessions 面（接口 §3.8 sessions 段）：
 // 读 = 三员皆可；写 = 系统管理员 / 安全管理员。
-func AuthorizeSessions(c *httpx.Caller, write bool) error {
+func AuthorizeSessions(c *session.Caller, write bool) error {
 	return authorize(c,
 		[]Role{RoleSystemAdmin, RoleSecurityAdmin, RoleAuditor},
 		[]Role{RoleSystemAdmin, RoleSecurityAdmin},
