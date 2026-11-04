@@ -32,13 +32,15 @@ func TestIntegrationMigrationsApplied(t *testing.T) {
 		t.Fatalf("连接数据库失败：%v", err)
 	}
 
-	// ① 迁移版本：16 对迁移全部应用
-	var applied int
-	if err := db.QueryRow(`SELECT count(*) FROM schema_migrations`).Scan(&applied); err != nil {
+	// ① 迁移版本：golang-migrate 的 schema_migrations 是**单行**表（version + dirty），
+	//    因此断言 version = 15（000000–000015 共 16 个版本、最大版本号 15）且非 dirty。
+	var version int64
+	var dirty bool
+	if err := db.QueryRow(`SELECT version, dirty FROM schema_migrations`).Scan(&version, &dirty); err != nil {
 		t.Fatalf("读 schema_migrations 失败：%v", err)
 	}
-	if applied != 16 {
-		t.Fatalf("迁移条数期望 16，实际 %d", applied)
+	if version != 15 || dirty {
+		t.Fatalf("迁移状态期望 version=15 dirty=false，实际 version=%d dirty=%v", version, dirty)
 	}
 
 	// ② 15 张逻辑表（audit_logs 的月分区是 BASE TABLE，需排除）
