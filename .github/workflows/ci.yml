@@ -108,8 +108,19 @@ jobs:
         run: |
           set -euo pipefail
           q() { psql -h localhost -U guanjin -d guanjin_test -tAc "$1"; }
-          tbl=$(q "SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE' AND table_name <> 'schema_migrations';")
-          echo "tables=$tbl"; [ "$tbl" = "15" ] || { echo "[FAIL] 期望 15 张业务表，实际 $tbl"; exit 1; }
+          # 15 张逻辑表 + audit_logs 的月分区（audit_logs_pYYYYMM，属 BASE TABLE 但不算逻辑表）
+          EXP="audit_logs auth_events authenticators challenges clients flows identifiers login_policies policy_snapshots role_bindings runtime_config sessions signing_keys user_visited_clients users"
+          all=$(q "SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE' AND table_name <> 'schema_migrations' ORDER BY 1;")
+          logical=$(echo "$all" | grep -vE '^audit_logs_p[0-9]{6}$' | sed '/^$/d')
+          parts=$(echo "$all" | grep -cE '^audit_logs_p[0-9]{6}$' || true)
+          n=$(echo "$logical" | sed '/^$/d' | wc -l | tr -d ' ')
+          echo "logical_tables=$n audit_logs_partitions=$parts"
+          echo "$logical" | tr '\n' ' '; echo
+          [ "$n" = "15" ] || { echo "[FAIL] 期望 15 张逻辑表，实际 $n"; exit 1; }
+          for t in $EXP; do echo "$logical" | grep -qx "$t" || { echo "[FAIL] 缺表：$t"; exit 1; }; done
+          extra=$(echo "$logical" | grep -vxE "$(echo $EXP | tr ' ' '|')" || true)
+          [ -z "$extra" ] || { echo "[FAIL] 出现未登记的额外表：$extra"; exit 1; }
+          [ "$parts" -ge 1 ] || { echo "[FAIL] audit_logs 无月分区（D4-C 要求按月分区）"; exit 1; }
           col=$(q "SELECT count(*) FROM information_schema.columns WHERE table_schema='public' AND table_name='flows';")
           echo "flows_columns=$col"; [ "$col" = "13" ] || { echo "[FAIL] flows 期望 13 列，实际 $col"; exit 1; }
           idx=$(q "SELECT count(*) FROM pg_indexes WHERE schemaname='public' AND tablename='flows' AND indexname IN ('flows_one_active_per_user_client_uniq','flows_session_idx','flows_expires_idx','flows_client_created_idx');")
