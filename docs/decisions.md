@@ -189,7 +189,7 @@
 ## D8 验收 / 合规口径
 
 - **冲突 A 验收**：基线无验收/测试文档，索引 §4.3-2 把「测试策略与验收清单」降为**建议级·可后补**，唯一可判定的口径只剩技术栈 §9.3 覆盖率表。**裁定**：验收权威 = **移交 Prompt §十一《验收（V1 完成定义）》的三条线（业务/合规/安全）+ 技术栈 §9.3 覆盖率门禁**，二者组合为唯一口径；"建议级"只表示「基线未给本文档」，不表示「可不验收」。Gate 据此出《验收清单》（条款→断言 ID），不另立第二套口径。
-- **覆盖率模块下限补登：`internal/flowstore` = 85%（2026-11-04，团队收口）**：它是 **S3 阶梯中间态落库基座**（D5 的 I-F2/I-F5/I-F6/I-F8 唯一落点：锁、校验、amr 累加、两段式清理），**错一处则上层全返工**，故与 `internal/flow` 同级取 **85%**（高于 `internal/store` 的 75%）。**执行侧归脚本 owner**：`scripts/coverage-gate.sh` 的 `module_floor()` 需补一行 `internal/flowstore) echo 85 ;;`——本台账只定口径，**不改脚本**（改脚本等于改门禁语义，由 Gate 域落地并同步本行）。
+- **覆盖率模块下限补登：`internal/flowstore` = 85%（2026-11-04，团队收口）**：它是 **S3 阶梯中间态落库基座**（D5 的 I-F2/I-F5/I-F6/I-F8 唯一落点：锁、校验、amr 累加、两段式清理），**错一处则上层全返工**，故与 `internal/flow` 同级取 **85%**（高于 `internal/store` 的 75%）。；**`internal/identity` = 85%（2026-11-04，团队收口）**：它是"注册即登录"与 I1/I2/I3/I4/I6 不变式的**编排收口**（一次事务内 users→identifiers→authenticators→completed+consumed 的 `flows`→`auth_events`，失败零残留），错一处即**用户被锁门外或产生孤儿账号**，故与 `internal/factor`/`internal/credential`/`internal/identifier` 同级取 85%；**执行侧同样归脚本 owner**（`module_floor()` 需把 `internal/identity` 并入 85 那一条 case）——本台账只定口径，**不改脚本**（改脚本等于改门禁语义，由 Gate 域落地并同步本行）。
 - **【正式裁定 D8-B】(2026-11-02，收 Gate §15-G12；本节即外部引用的「D8-B」)**：`AC-AUD-10` 的呈现唯一口径 —— 状态名 = **「后置（DEFERRED）：本期不做判定」**，**计入「后置」栏，`BLOCKED` 栏计数 = 0**；**现行账目（Gate v11，2026-11-02）= 90 = 83 `PASS-able` / 0 `PENDING·CH-n` / 0 `BLOCKED` / 6 `NOT-APPLICABLE` / 0 `NOT-IMPLEMENTED` / 1「后置（DEFERRED）：本期不做判定」**（v10 起 85 → 90，+5 条全由本条之后新增的两个口径带出：**D12** 的 `AC-FLOW-12/13`（`PASS-able`）、**CH-4④⑤** 的 `AC-REG-08/09/10`（原 `PENDING·CH-4`，P8 追认后随 13 条一并转 `PASS-able`，即 v11 的 70 → 83）；分组随之变为 REG 10 / LOGIN 8 / FLOW 13 / SESS 5 / DP 13 / SDK 10 / FC 8 / AUD 12 / ENG 8 / AGENT 3；**账目与分组以 Gate 的 `acceptance-criteria.md` 为唯一数源，本文只同步引用、不自行计数**）。**正式摘除 `BLOCKED` 的依据**（满足 Gate「摘 `BLOCKED` 需 decisions 正式裁定」的要求）：Gate 状态表里 `BLOCKED` 的**定义前提是「期望值依赖残余待裁项」**，而 `AC-AUD-10` 依赖的三项已不在「待裁」状态——**R2/R4 已按 spencer 口径后置（挂起）、R3 已关闭（TLS 出本平台边界）**，前提消失则标签失效；继续挂 `BLOCKED` 会让账目永远有一个永不收敛的红项，掩盖真实进度。**同时保留 Gate 的关切为硬约束（后置 ≠ 免验）**：`acceptance-criteria.md` §11.1 的 **7 项输入（I-1~I-7）仍须在 M2 之前备齐**，`AC-AUD-12` 继续覆盖应用侧可判定部分；「后置」项**不得写成通过、不得写"预检通过"、不得从账目里摘掉**（仍占 1 条、仍出现在映射表的「后置」栏）。
 - **依据**：①索引 §2「密评」条 + spencer 口径（2026-11-02）「由 `BLOCKED` 改成「后置（DEFERRED）：本期不做判定」」；②Gate v6 的状态定义（`BLOCKED` = 依赖残余待裁）；③D8-A「不造假通过」——摘 `BLOCKED` 不等于记 PASS，而是换成更准确的状态名。
 - **密评后置的三条内容（原「冲突 B」裁定，保留）**：①**密评整体后置**——**本期不做密评判定、不出证、不送检**（依 spencer 口径 2026-11-02），相关条目一律记「后置（DEFERRED）：本期不做判定」，**R2/R4 挂起、R3 关闭（TLS 已出本平台边界，不是"挂起"）**。②**等保相关的代码要求照基线实现、不受后置影响**：双因素/多因素组合鉴别、审计只增不可篡改（哈希链）、三员分权、留痕与脱敏等**实现要求保留**，只是**本期不做出证与送检判定**（"实现要求保留、判定与出证后置"）。③**传输层与关津无关**：TLS 终结/国密 TLS(TLCP)/证书校验**不属本平台范围**，由部署方前置（见 P2②），平台只见明文，因此「传输国密」不构成本平台的实现项，也不进验收判据。
@@ -257,6 +257,17 @@
 - **裁定**：(1) **对外可见取值只有 `AAL1 | AAL2`**——discovery、`id_token` 的 `acr` claim、`/auth/verify` 响应、Descriptor 的 `target_acr`/`current_acr` 一律照此。(2) **`AAL0` 只是前端展示态**（"未认证"），**不落库、不进任何 wire 字段**；页面规格的 `Acr` 类型保留它仅用于渲染，**不得出现在 API 响应里**（D5 已同此口径）。(3) **`AAL3` = 预留值**：DDL 的 `CHECK` **保留**取值空间（不改基线、避免将来做迁移），但 **V1 任何代码路径不得产出 `AAL3`**；实现侧**必须断言**——档位映射器（`internal/flow/descriptor.go`）与令牌签发处对 `acr` 做**白名单校验**（只允许 `AAL1|AAL2`），越界按**内部缺陷**处理（500/503，`INTERNAL_ERROR`），**绝不静默截断成 AAL2**（静默即隐性逻辑）。(4) **必须有用例**：①「`L3` 档位 → `AAL2`，绝无 `AAL3`」；②变异注入构造 `acr='AAL3'` 的会话/令牌 → 断言被拒。**理由**：discovery 已对外声明只支持 AAL1/AAL2，若某条路径真能产出 AAL3，**对外契约不实**（客户端按 `acr_values_supported` 做能力协商会拿到未声明值）。
 - **依据**：索引 §4.2-15（档位→ACR 只有 AAL1/AAL2，属「有默认值，按默认走」）+ 接口 §3.1.1 discovery 的对外声明 + 档位清单「AAL3 本期不做」；`AAL0` 不落库见 D5。
 - **受影响 / 落地**：**Core**（映射器 + 签发处白名单断言 + 两条用例）；**Edge**（`sessions.acr` 读写不放大取值域；`pgxerr` 对 `sessions_acr_check` 的 23514 映射为 400 而非 500）；**Vue**（`Acr` 类型只用于展示，API 层类型不得含 `AAL0`）；**Gate**（已落 `AC-FLOW-12`（`L3`→`AAL2`、`AAL3`/`AAL0` 零落库）与 `AC-FLOW-13`（合法签发 `acr=AAL3` → 401、入参 → 400，禁静默降级），均 `PASS-able·D12`）；`系统架构说明` 第八章「三级 = 强方式」判为**笔误**，**对外接入文档不得照抄**（由 Spec 统一改）。
+
+---
+
+## D13 `login_policies` 的三档 `tier_default` 必须有 seed（S6 e2e 唯一前置）
+
+- **冲突/缺口**：`login_policies` 只有表、没有 `tier_default` 行 → 综合环境里注册/登录取不到策略，只能返回 **500 配置错误**；Core 在 S4b 实测撞到，且这是 **S6 e2e 的唯一前置**。
+- **裁定（选 ①：迁移里 seed 三行）**：新增 **`migrations/000017_seed_login_policies_tier_default.{up,down}.sql`**，插入 **L1/L2/L3 三个 `tier_default`**，`min_acr` 按索引 §4.2-15 **L1/L2 → `AAL1`、L3 → `AAL2`**；`id` 用**固定 UUID 字面量**（`id` 无 DB 默认值，D4-A），仅满足主键、**不承载业务含义**；幂等用 `ON CONFLICT (tier) WHERE scope = 'tier_default' DO NOTHING`（对准部分唯一索引 `login_policies_tier_default_uidx`，运维改过的值**不被覆盖**）；`down` 按那三个固定 UUID 精确删，不动 `client_override` 行。
+  - **为什么选 ① 而不是"初始化流程"**：三档与它们的 `min_acr` 是**基线冻结的结构性默认**（索引 §2「档位只有一层」、§4.2-15/16），不含环境/租户信息 → 属**参考数据**，与 `000015` 的 `flow.ttl_seconds` seed 同类；而初始化流程会引入"首个管理员还不存在就要配策略"的先有鸡先有蛋问题。
+  - **为什么新增 `000017` 而不是改 `000012`**：`golang-migrate` 只记版本号、**不校验 checksum**，改已 `up` 过的迁移会让**已迁移库静默缺 seed**；技术栈 §6.2 要求序号单调递增。
+- **必须配 fail-fast（否则缺策略仍可能 500）**：`cmd/guanjind` 装配期**校验三档 `tier_default` 各恰一行**（`L1/L2/L3`，`scope='tier_default'` 且 `tier` 非空），**缺失或多行 → 非 0 退出**（与 `flow.ttl_seconds` 键缺失即启动失败的风格一致）。**归属：Core**（S6 前置在 `internal/identity`/`protocol` 的策略读取路径上，且它先撞到该缺口）。
+- **归属与复核**：迁移 **Ark 出**（本 PR 已落 `000017`）、**Edge 复核**（与 D5 的 DDL 复核同批）；启动期校验 **Core 落**；`m1-slices.md` **S6 前置点**已补引本条。
 
 ---
 
