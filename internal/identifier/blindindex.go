@@ -50,7 +50,7 @@ type Encoded struct {
 	Normalized string
 	// BlindIndex 盲索引（HMAC-SM3，确定性）：承担 `(type,value)` 全局唯一与等值查询。
 	BlindIndex []byte
-	// Cipher  SM4 密文（随机 IV，含 IV 前缀）：承担还原。
+	// Cipher  SM4 信封（`版本 || IV || 密文 || MAC`）：承担还原，先验 MAC 再解密（ADR-005）。
 	Cipher []byte
 	// Masked 脱敏展示值。
 	Masked string
@@ -114,6 +114,12 @@ func Encode(itype, raw string, indexKey crypto.HMACKey, fieldKey crypto.SM4Key) 
 
 // Decode 解回明文（投递验证码 / 换绑通知旧值时才用）。
 func Decode(cipherText []byte, fieldKey crypto.SM4Key) (string, error) {
+	// 分类口径（D15④）：零值键 = **装配缺陷**（`fieldKey` 由启动期校验过的配置派生），
+	// 上抛即 500；`503 KEY_UNAVAILABLE` 只适用于**请求期才发现键不可用**的路径
+	// （如 S6 的私钥解封）。启动期校验失败是**非 0 退出**，不是 HTTP 码。
+	//
+	// 解密失败同理上抛（→ 500）：解密失败 = 版本不符/密文被改，属数据缺陷。
+	// 本函数目前**没有生产调用点**（换绑通知/投递才会用到），因此不提前造更细的哨兵。
 	if fieldKey.IsZero() {
 		return "", errors.New("identifier: sm4 field key is missing (derive via crypto.MasterKey)")
 	}

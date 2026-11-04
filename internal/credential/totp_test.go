@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/spencerswagger/guanjin/internal/crypto"
+	"github.com/spencerswagger/guanjin/internal/httpx"
 )
 
 // testSM4Key 按 D4-B 派生一把 SM4 键（测试也不许自造用途域）。
@@ -96,8 +97,27 @@ func TestTOTPOpenWithWrongKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DeriveSM4: %v", err)
 	}
-	if _, err := env.Open(other); !errors.Is(err, ErrMissingKey) {
-		t.Fatalf("错误密钥解封应报 ErrMissingKey（密钥不可用），实际 %v", err)
+	// D15④：键是给了的、解开失败 → **完整性失败**（数据/密钥不匹配的缺陷，500），
+	// 不是"密钥没装配"（503）。两者混在一个码里会让运维一直等一个不会好的故障。
+	if _, err := env.Open(other); !errors.Is(err, ErrIntegrityMismatch) {
+		t.Fatalf("错误密钥解封应报 ErrIntegrityMismatch，实际 %v", err)
+	}
+	if code, ok := CodeOf(ErrIntegrityMismatch); !ok || code != httpx.CodeInternalError {
+		t.Fatalf("完整性失败应映射 INTERNAL_ERROR，实际 %q", code)
+	}
+	// 键缺失仍是 503 语义。
+	if _, err := env.Open(crypto.SM4Key{}); !errors.Is(err, ErrMissingKey) {
+		t.Fatalf("零值键应报 ErrMissingKey，实际 %v", err)
+	}
+	if code, ok := CodeOf(ErrMissingKey); !ok || code != httpx.CodeKeyUnavailable {
+		t.Fatalf("键缺失应映射 KEY_UNAVAILABLE，实际 %q", code)
+	}
+	// 篡改任一字节也必须被拒（ADR-005 的反向断言，与 D15④ 同一条链路）。
+	sealed, _ := base64.StdEncoding.DecodeString(env.SecretEnc)
+	sealed[len(sealed)-1] ^= 0x01
+	env.SecretEnc = base64.StdEncoding.EncodeToString(sealed)
+	if _, err := env.Open(testSM4Key(t)); !errors.Is(err, ErrIntegrityMismatch) {
+		t.Fatalf("篡改密文应报 ErrIntegrityMismatch，实际 %v", err)
 	}
 }
 
@@ -362,5 +382,30 @@ func TestTOTPOpenShortSecret(t *testing.T) {
 	env.SecretEnc = base64.StdEncoding.EncodeToString(sealed)
 	if _, err := env.Open(key); !errors.Is(err, ErrInvalidSecret) {
 		t.Fatalf("解出短密钥应报 ErrInvalidSecret，实际 %v", err)
+	}
+}
+
+// D15④ 第三行：**存量 v1 信封**与"密文被改"必须能在日志层面区分。
+//
+// 两者对外都是 500，但运维动作完全不同：v1 → 重灌/一次性重加密；被改 → 安全事件。
+// 所以底层 `crypto` 的哨兵必须留在错误链里（靠双 `%w`），不能只进文本。
+func TestTOTPEnvelopeKeepsCryptoVersionSentinel(t *testing.T) {
+	env, _, err := NewTOTPEnvelope(testSM4Key(t), nil, time.Now())
+	if err != nil {
+		t.Fatalf("NewTOTPEnvelope: %v", err)
+	}
+	// 造一段"v1 形态"（`iv||ct`，首字节不是 0x02）：等同"存量密文未重加密"。
+	sealedV1 := make([]byte, crypto.SM4BlockSize*2)
+	for i := range sealedV1 {
+		sealedV1[i] = byte(i + 1)
+	}
+	env.SecretEnc = base64.StdEncoding.EncodeToString(sealedV1)
+
+	_, err = env.Open(testSM4Key(t))
+	if !errors.Is(err, ErrIntegrityMismatch) {
+		t.Fatalf("v1 信封应报 ErrIntegrityMismatch，实际 %v", err)
+	}
+	if !errors.Is(err, crypto.ErrCiphertextVersion) {
+		t.Fatalf("错误链里必须保留底层哨兵（区分'存量未重加密'与'密文被改'），实际 %v", err)
 	}
 }

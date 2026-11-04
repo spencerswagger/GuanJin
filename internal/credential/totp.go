@@ -123,9 +123,15 @@ func (e TOTPEnvelope) Open(key crypto.SM4Key) ([]byte, error) {
 	}
 	secret, err := crypto.DecryptSM4(key, sealed)
 	if err != nil {
-		// 解不开=密钥不对或密文被改：按"密钥不可用"报（KEY_UNAVAILABLE / 503），
-		// **绝不**退化成"跳过校验"。
-		return nil, wrapf(ErrMissingKey, "decrypt secret: %v", err)
+		// **D15④**：键是给了的，解不开只可能是"版本不符 / MAC 不过 / 结构损坏" ——
+		// 属数据缺陷（500 `INTERNAL_ERROR`），不是"密钥没装配"（503 `KEY_UNAVAILABLE`）。
+		// 两种都**绝不**退化成"跳过校验"。
+		//
+		// **双 `%w`**：底层 `crypto` 的哨兵必须留在错误链里 ——
+		// `ErrCiphertextVersion`（存量 v1 未重加密 → 运维动作：重灌/一次性重加密）与
+		// `ErrIntegrityMismatch`（密文被改 → 安全事件）在日志里必须是可区分的两种线索，
+		// 只把文本拼进去（`%v`）会让两者都只剩一个 500。
+		return nil, fmt.Errorf("%w: open secret: %w", ErrIntegrityMismatch, err)
 	}
 	if len(secret) < MinTOTPSecretBytes {
 		return nil, wrapf(ErrInvalidSecret, "decrypted %d bytes < %d", len(secret), MinTOTPSecretBytes)

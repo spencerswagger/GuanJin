@@ -40,12 +40,16 @@ var (
 	ErrInvalidOptions = errors.New("credential: invalid totp options")
 	// ErrInvalidSecret 表示 TOTP 共享密钥长度不足。
 	ErrInvalidSecret = errors.New("credential: totp secret shorter than 20 bytes")
-	// ErrMissingKey 表示没有拿到可用的 SM4 键（零值 / 解封失败）。
+	// ErrMissingKey 表示**没有拿到可用的 SM4 键**（零值 / 未派生）。
 	//
-	// 两种情况都按"密钥不可用"处理（`KEY_UNAVAILABLE` / 503，D8-C）：
-	// 零值键几乎一定是"忘了派生"，解封失败则可能是密钥轮换未铺开或密文被改——
-	// 无论哪种，都**不许**退化成"跳过校验放行"。
+	// 只表示"键没装配"这一种情况 → `KEY_UNAVAILABLE` / 503（D8-C / D15④）：
+	// 这时重试是有意义的（密钥铺开后就能用）。
 	ErrMissingKey = errors.New("credential: sm4 key missing or unusable")
+	// ErrIntegrityMismatch 表示**键在、但信封过不了完整性校验**（版本不符 / MAC 不过 / 结构损坏）。
+	//
+	// 与外面对码的口径（**D15④**）：这属"库里的数据坏了"，是**缺陷** → 500 `INTERNAL_ERROR`，
+	// 不是"稍后重试即可"的 503。把数据损坏伪装成依赖不可用，会让运维一直等一个不会好的故障。
+	ErrIntegrityMismatch = errors.New("credential: envelope integrity check failed")
 )
 
 // CodeOf 把本包的错误映射成**对外错误码**（接口 §5.4 / D3-B）。
@@ -66,8 +70,11 @@ func CodeOf(err error) (httpx.Code, bool) {
 		// 而且"你输的码格式都不对"本身也属于"凭据无效"，没有必要给攻击者更多信息。
 		return httpx.CodeInvalidCredential, true
 	case errors.Is(err, ErrMissingKey):
-		// 密钥不可用属 fail-closed 的具体依赖失败（D8-C：按具体依赖发具体码 + 503）。
+		// 键没装配 → fail-closed 的具体依赖失败（D8-C：按具体依赖发具体码 + 503）。
 		return httpx.CodeKeyUnavailable, true
+	case errors.Is(err, ErrIntegrityMismatch):
+		// 键在但信封过不了完整性校验（版本/MAC/结构）→ 数据缺陷，500（D15④）。
+		return httpx.CodeInternalError, true
 	case errors.Is(err, ErrWeakParams), errors.Is(err, ErrMalformedEnvelope),
 		errors.Is(err, ErrUnknownAlgo), errors.Is(err, ErrInvalidPolicy),
 		errors.Is(err, ErrInvalidOptions), errors.Is(err, ErrInvalidSecret):
