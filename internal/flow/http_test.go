@@ -1,7 +1,9 @@
 package flow
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"io"
@@ -12,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/spencerswagger/guanjin/internal/credential"
+	"github.com/spencerswagger/guanjin/internal/crypto"
 	"github.com/spencerswagger/guanjin/internal/factor"
 	"github.com/spencerswagger/guanjin/internal/httpx"
 )
@@ -278,5 +282,93 @@ func TestNewHTTPHandlerRequiresDeps(t *testing.T) {
 	orc := newOrc(t, &fakeStore{}, &fakeVerifier{})
 	if _, err := NewHTTPHandler(orc, nil); err == nil {
 		t.Fatal("缺 logger 必须报错")
+	}
+}
+
+// D15④ / ADR-005：完整性失败必须是**不可重试**的 500，且落一条带 `crypto_sentinel` 的结构化日志。
+//
+// 为什么这条必须有：`ErrIntegrityMismatch` 被 `CodeOf` 归到 `INTERNAL_ERROR`，走的是"已识别码"
+// 分支 —— 不单独拦一道就**一条日志都不落**，那对 crypto 哨兵到不了任何日志/指标，
+// 而客户端按 5xx 重试会对"存量 v1 未重加密"打出重试风暴。
+func TestHTTPIntegrityMismatchIsNonRetryable(t *testing.T) {
+	var logBuf bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+
+	// **真实篡改路径**：造一个真 TOTP 信封（SM4 v2 含版本/IV/MAC），改掉最后一个字节后解封，
+	// 拿到的是 credential/crypto 那一层真实抛出的错误链 —— 不是手工拼的哨兵。
+	raw := make([]byte, 32)
+	for i := range raw {
+		raw[i] = byte(i + 11)
+	}
+	mk, err := crypto.NewMasterKey(raw)
+	if err != nil {
+		t.Fatalf("NewMasterKey: %v", err)
+	}
+	sm4Key, err := mk.DeriveSM4(crypto.PurposeSM4Field)
+	if err != nil {
+		t.Fatalf("DeriveSM4: %v", err)
+	}
+	env, _, err := credential.NewTOTPEnvelope(sm4Key, nil, time.Now().UTC())
+	if err != nil {
+		t.Fatalf("NewTOTPEnvelope: %v", err)
+	}
+	sealed, err := base64.StdEncoding.DecodeString(env.SecretEnc)
+	if err != nil {
+		t.Fatalf("decode secret_enc: %v", err)
+	}
+	sealed[len(sealed)-1] ^= 0x01 // 篡改 MAC 末字节
+	env.SecretEnc = base64.StdEncoding.EncodeToString(sealed)
+	_, tamperErr := env.Open(sm4Key)
+	if !errors.Is(tamperErr, credential.ErrIntegrityMismatch) {
+		t.Fatalf("篡改密文应得到 credential.ErrIntegrityMismatch，实际 %v", tamperErr)
+	}
+
+	st := &fakeStore{}
+	verifier := &fakeVerifier{err: tamperErr}
+	orc := newOrc(t, st, verifier)
+	h, err := NewHTTPHandler(orc, logger)
+	if err != nil {
+		t.Fatalf("NewHTTPHandler: %v", err)
+	}
+	mux := http.NewServeMux()
+	h.Routes(mux)
+	srv := httptest.NewServer(httpx.TraceMiddleware(mux, "X-Trace-Id", logger))
+	t.Cleanup(srv.Close)
+
+	res, berr := orc.Begin(context.Background(), BeginInput{ClientID: "c-1"})
+	if berr != nil {
+		t.Fatalf("Begin: %v", berr)
+	}
+	resp, body := postJSON(t, srv.URL+"/auth/verify/password",
+		`{"flow_id":"`+res.FlowID.String()+`","response":"pw"}`)
+	if resp.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("应为 500，实际 %d", resp.StatusCode)
+	}
+	// **用字面量断言，不用 `httpx.IntegrityMessage` 自比**：拿常量比常量的话，
+	// 把文案改回"请稍后重试"两条用例照样绿 —— 等于没锁住线上那句话（评审 P3）。
+	const wantMessage = "数据完整性校验失败，不可重试，请携带 trace_id 联系支持"
+	if body.Code != httpx.CodeInternalError || body.Message != wantMessage {
+		t.Fatalf("文案必须是不可重试那句（%q），实际 %q / %q", wantMessage, body.Code, body.Message)
+	}
+	details, _ := body.Details.(map[string]any)
+	// 篡改 MAC → `crypto.ErrIntegrityMismatch` → 哨兵标签 `mac_mismatch`
+	// （`ciphertext_version` 是另一条线索：存量 v1 未重加密，见 httpx 的单测）。
+	if details["crypto_sentinel"] != "mac_mismatch" || details["retryable"] != false {
+		t.Fatalf("details 应标明哨兵与不可重试，实际 %v", body.Details)
+	}
+
+	logs := logBuf.String()
+	if !strings.Contains(logs, `"crypto_sentinel":"mac_mismatch"`) {
+		t.Fatalf("必须落一条带 crypto_sentinel 的日志，实际 %q", logs)
+	}
+	if !strings.Contains(logs, `"retryable":false`) || !strings.Contains(logs, "integrity_mismatch_total") {
+		t.Fatalf("日志应带 retryable=false 与指标名，实际 %q", logs)
+	}
+	if !strings.Contains(logs, `"trace_id":"`) {
+		t.Fatalf("日志必须带可复制的 trace_id，实际 %q", logs)
+	}
+	if testing.Verbose() {
+		// 留证据：`go test -v` 时把真实日志行打出来（评审要求"贴真实日志行"，不是描述）。
+		t.Logf("integrity log line: %s", strings.TrimSpace(logs))
 	}
 }
