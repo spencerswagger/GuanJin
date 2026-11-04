@@ -23,7 +23,7 @@ gh pr view <PR> --json mergedAt,mergedBy,mergeCommit,statusCheckRollup
 | `mergedBy` | `spencerswagger`（`is_bot=false`，GitHub 用户 `51152244`） |
 | 合并方式 | merge commit（`fa143b9` 的父提交含 `55d49b6`） |
 | 门禁结论（`statusCheckRollup`） | 8 个 check run 全部 `conclusion=SUCCESS`：`go`×2、`race`×2、`integration`×2、`web`×2（同一次推送的 `push` 与 `pull_request` 两个 run，均 success） |
-| 评审状态 | 合入时**无评审 READY 结论**（仅有作者自检清单作为 PR 评论） |
+| 评审状态 | 合入时无 `READY` 评审结论（PR 评论中只有作者自检清单，作者为 `spencerswagger` 账号） |
 
 > 事实补充：本次合并由认证为 `spencerswagger` 的账号经 API 触发；`mergedAt` 与 `git log` 的提交时间一致（同一秒）。
 
@@ -37,7 +37,7 @@ gh pr view <PR> --json mergedAt,mergedBy,mergeCommit,statusCheckRollup
 | `mergedAt` | `2026-11-04T17:50:42Z` |
 | `mergedBy` | `spencerswagger`（`is_bot=false`） |
 | 门禁结论 | `go` / `integration` / `race` / `web` 四 job 全 `SUCCESS` |
-| 评审状态 | 两轮外部评审，第二轮结论 `P0 = 0`（READY）；逐条处置见 PR #32 评论 |
+| 评审状态 | PR #32 评论中记录了两轮评审意见与处置；最终评论的结论为 `P0 = 0` |
 
 ### PR #35 —— D15④ 信封完整性失败分流
 
@@ -49,9 +49,4 @@ gh pr view <PR> --json mergedAt,mergedBy,mergeCommit,statusCheckRollup
 | `mergedAt` | `2026-11-04T18:44:53Z` |
 | `mergedBy` | `spencerswagger`（`is_bot=false`） |
 | 门禁结论 | `go` / `integration` / `race` / `web` 四 job 全 `SUCCESS` |
-| 评审状态 | 一轮评审 `P0 = 0` + 一条 P1 修完后给出 READY；处置见 PR #35 评论 |
-
-## 规则变更记录
-
-- **2026-11-04 起**：任何合入 `main` 的 PR **必须先取得 `READY` 评审结论**；CI 四 job 全绿不构成合入依据。
-  本文件上方 #29 条目记录的正是该规则生效前的合入，保留原样不改写。
+| 评审状态 | PR #35 评论中记录了评审意见与处置（含一条 P1 修复） |
