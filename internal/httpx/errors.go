@@ -71,6 +71,17 @@ const (
 	// 全量命中项放 details.violations[]。三码都在 E4 组，HTTP 一律 422。
 	CodeWeakPassword   Code = "WEAK_PASSWORD"   // E4 / 422
 	CodePasswordReused Code = "PASSWORD_REUSED" // E4 / 422
+	// CodeLastIdentifierCannotUnbind / CodeLastAuthenticatorCannotRemove 是 I1~I4 的**对外码**
+	// （接口 §5.4 E4 里本来就有 · 409）。I6（最后一个主标识符不可降级）**按 D3-B 不设对外码**——
+	// V1 没有暴露"设主标识符"端点，撞到即属内部缺陷（500）。
+	CodeLastIdentifierCannotUnbind    Code = "LAST_IDENTIFIER_CANNOT_UNBIND"    // E4 / 409
+	CodeLastAuthenticatorCannotRemove Code = "LAST_AUTHENTICATOR_CANNOT_REMOVE" // E4 / 409
+	// CodeIdentifierNotVerified 表示"这个标识符还没验证过"，不能当作可用登录方式/找回通道。
+	CodeIdentifierNotVerified Code = "IDENTIFIER_NOT_VERIFIED" // E4 / 409
+	// CodeIdentifierInvalidFormat 表示标识符格式不合法（规范化阶段就拒，不落库）。
+	CodeIdentifierInvalidFormat Code = "IDENTIFIER_INVALID_FORMAT" // E4 / 400
+	// CodeRegistrationNotAllowed 表示目标业务系统未开放自助注册（D3-B″ 补登记：E4/403）。
+	CodeRegistrationNotAllowed Code = "REGISTRATION_NOT_ALLOWED" // E4 / 403
 
 	// 管理面与策略（E7）
 	CodeBindingAlreadyExists   Code = "BINDING_ALREADY_EXISTS"   // E7 / 409
@@ -95,6 +106,8 @@ var knownCodes = []Code{
 	CodeIdentifierAlreadyBound, CodeIdentifierNotFound, CodeUserNotFound, CodeClientNotFound,
 	CodeKeyNotFound, CodeSnapshotNotFound, CodePolicySnapshotConflict, CodeCooldownActive,
 	CodePasswordPolicyViolation, CodeWeakPassword, CodePasswordReused,
+	CodeLastIdentifierCannotUnbind, CodeLastAuthenticatorCannotRemove, CodeIdentifierNotVerified,
+	CodeIdentifierInvalidFormat, CodeRegistrationNotAllowed,
 	CodeBindingAlreadyExists, CodeBindingNotFound, CodeTierDirectionViolation,
 }
 
@@ -127,7 +140,7 @@ type ErrorResponse struct {
 func HTTPStatus(c Code) int {
 	switch c {
 	case CodeInvalidRequest, CodeInvalidParam, CodeMissingParameter, CodeInvalidClient,
-		CodeFlowExpired, CodePageSizeExceeded:
+		CodeFlowExpired, CodePageSizeExceeded, CodeIdentifierInvalidFormat:
 		return http.StatusBadRequest
 	case CodeFlowNotFound, CodeSessionNotFound, CodeIdentifierNotFound, CodeUserNotFound,
 		CodeClientNotFound, CodeKeyNotFound, CodeSnapshotNotFound, CodeBindingNotFound:
@@ -138,8 +151,12 @@ func HTTPStatus(c Code) int {
 	case CodeSessionRevoked, CodeInsufficientRole, CodeThreePowerViolation, CodeACRInsufficient:
 		return http.StatusForbidden
 	case CodeIdentifierAlreadyBound, CodePolicySnapshotConflict, CodeCooldownActive,
-		CodeBindingAlreadyExists:
+		CodeBindingAlreadyExists, CodeLastIdentifierCannotUnbind, CodeLastAuthenticatorCannotRemove,
+		CodeIdentifierNotVerified:
 		return http.StatusConflict
+	case CodeRegistrationNotAllowed:
+		// 接口 §3.3 / §5.4「接口可覆盖」：E4 默认 404/409/422，本条覆盖为 403（AC-REG-09）。
+		return http.StatusForbidden
 	case CodePasswordPolicyViolation, CodeTierDirectionViolation,
 		CodeWeakPassword, CodePasswordReused:
 		return http.StatusUnprocessableEntity

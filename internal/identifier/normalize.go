@@ -1,9 +1,5 @@
-// Package identifier 负责标识符的规范化、脱敏与不变式校验。
-//
-// 口径（decisions.md D4 / 数据模型 §3.2）：
-//   - 三段式存储：盲索引 HMAC-SM3(value) + SM4 密文 value_enc + 脱敏 value_masked；
-//   - 规范化必须在**算盲索引之前**完成（否则同一邮箱大小写不同会变成两条记录）；
-//   - 本包只做纯函数规范化与校验；密码学实现由 internal/crypto 提供（S3 落地）。
+// 本文件给"怎么把一个原始标识符变成一个规范值"：邮箱小写、手机 E.164、用户名小写。
+// 包级说明见 blindindex.go（同一包只保留一处 package 注释）。
 package identifier
 
 import (
