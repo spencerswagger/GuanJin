@@ -6,7 +6,7 @@
 | 项 | 内容 |
 |---|---|
 | 文档类型 | **执行判据**（工程门禁层）：把「三闸绿了」变成第三人/CI 都能照做的判定规则；**不是**新契约、**不改**任何 `AC-*` 编号与账目 |
-| 版本 | **v1.3**（2026-11-04：**两处纸面门禁已核实成为 CI 机器强制**——①无 `//go:build integration` 文件即 `exit 1`；②`-list` 差集为 0 即 `exit 1`；③`test-summary.sh` 的 `skip>0 → exit 1` 已生效。实测 run `41803170713`：`integration_tagged_files=4`、`integration_only_cases=24 (all=144 plain=120)`、`tests_run=144 tests_pass=144 tests_skip=0 tests_fail=0 cached=no`、四 job 全 success；**唯一未闭合 = R10（`required_status_checks` 待 admin/spencer）**。§9.5 改为「现状表」，仅改判据与证据，`AC-*` 与账目零改动）。**v1.2**（2026-11-04：纳入第四道门禁 + 点名 3 处纸面门禁）
+| 版本 | **v1.4**（2026-11-04：①§9.2 锚点 **4 → 5 条具名索引**（`flows_expired_cleanup_idx` 供第二段清理）+ 迁移 17 条 + `tests_run=208 skip=0`，实测 run `41808510071`；②把「`DROP INDEX` → `Seq Scan` → 用例报错」的**变异验证**写成证据形式；③§9.4 覆盖率表补 **`flowstore` 85%**（D8 补登）；④§9.5 新增第 ⑤ 行：`flowstore` 下限在 unit profile 不可判，脚本侧已就绪（unit 打 INFO、integration scope 判 85%、无语句即红），**缺 CI 接线 → 未闭合，归属 Ark**；R10 仍是另一条未闭合）。**v1.3**（机器强制复核）
 | 主笔 / 归属 | Gate（测试 · 合规）。**本文件 owner = Gate**，其他人只引用、不复制（P6 一人一文件） |
 | 上位依据 | 《技术栈与工程约定》§9.2/§9.3/§9.4（CI 步骤与覆盖率下限）｜`docs/decisions.md` **P1**（不自动迁移）、**P6**（短特性分支）、**D12**（`acr` 白名单）、**D8-E 第二版**（密评不进强制项）｜`docs/m1-slices.md` **S0/S1/S11**｜`docs/acceptance-criteria.md` **`AC-ENG-01/03/05/06/07/08`**（本文件是这几条的**可执行化**，不新增期望值） |
 | 判据对象 | ①骨架分支 `feat/skeleton`（Ark）②M1 各切片（S1–S11）③**任何改到代码面的 PR**；文档-only PR 见 §0.2 |
@@ -301,6 +301,9 @@ tsc_exit=0  tsc_errors=0
 > 4) **真库行为确有覆盖**（不只是环境）：24 条 integration-only 用例来自 4 个带标签文件，全部在日志里出现 `=== RUN`，且**真发 SQL**——`INSERT INTO sessions/clients/users/role_bindings`、`DELETE FROM sessions/policy_snapshots`、缺表即 `t.Fatalf`（如 `测试库缺少 flows 表`）。2026-11-04 已由 Gate 复核：24/24 出现、`--- SKIP` 与 `--- FAIL` 各 0 条。
 > 5) **反向自证**：清空标签文件时 guard 走 `[FAIL]`（owner Edge/Ark 本地自证）；Gate 侧只在 CI 侧核实了正向（4 文件 / 差集 24），**反向红未在 CI 复现**，故按「据 owner 自证」记账，不写成「已独立验证」。
 
+> **v1.4 锚点更新（2026-11-04，main `5828f10` / run `41808510071`）**：D5 新增 `000016 create_flows_expired_cleanup_idx`（部分索引 `(updated_at) WHERE status='expired'`，专供**第二段清理**；前 4 条索引不动，因为 `flows_expires_idx` 的索引列与行集都不同）。CI 的 schema 断言已同步：`flows_named_indexes=**5**`（`[ "$idx" = "5" ] || exit 1`）、迁移逐条 `0/u`…`16/u`（**17 条**）；集成用例 `integration_only_cases=34`、`tests_run=208 tests_pass=208 tests_skip=0 cached=no`。
+> **变异验证（证据形式，已由 Edge 实测）**：把该索引 `DROP INDEX` 后，第二段清理的 `EXPLAIN` 退化为 **`Seq Scan on flows`**，`TestDBFlowCleanupStage2UsesExpiredCleanupIdx` **报错**——即这条断言不是"打印计划"，而是**会红**。Gate 侧复核：用例源码里是 `strings.Contains(plan, "flows_expired_cleanup_idx")` + `Seq Scan` 反向断言 + 3000 行种子（数据量太小时规划器选 Seq Scan 属统计问题，源码已注明）。
+
 ### 9.3 `summary.txt` 记什么（v1.1 扩为六行，旧四行不再判绿）
 
 ```
@@ -330,7 +333,8 @@ verdict=PARTIAL
 |---|---:|---|---:|
 | `crypto` | **90%** | `audit` | **90%** |
 | `factor` / `credential` / `identifier` / `flow` / `authz` | **85%** | `risk` / `gateway` | **80%** |
-| `store` | **75%** | `protocol` / `admin` / `agent` | **70%** |
+| **`flowstore`（D8 补登 2026-11-04）** | **85%** | `store` | **75%** |
+| `protocol` / `admin` / `agent` | **70%** | — | — |
 
 **判据三条**：
 1. **逐模块判、取更严**：模块下限与全局总闸**同时生效**；全局值**不得低于任何单模块下限**（否则它会掩盖模块掉档），二者冲突时以**更严**者为准。
@@ -356,6 +360,7 @@ verdict=PARTIAL
 | ① 无 `//go:build integration` 文件 | 已改为 **CI 内 `exit 1`**；实测 `integration_tagged_files=4` | **已生效** | 闭合（Ark，PR #13） |
 | ② 有文件但差集为 0（没有「仅带标签才存在」的用例） | `-list` 差集判定，差集 0 即 `exit 1`；实测 `integration_only_cases=24 (all=144 plain=120)` | **已生效** | 闭合（Ark，PR #13） |
 | ③ `tests_skip>0` 不判红 | `test-summary.sh` 已加 `[ "$skip" -eq 0 ] \|\| exit 1`，与 `fail>0`/`cached`/`run=0` 同级；实测 `tests_skip=0` 且输出 `[OK] test summary（SKIP=未验证=红）` | **已生效** | 闭合（Ark，PR #13） |
+| ⑤ **`flowstore` 85% 下限在 unit profile 里不可判** | 该包行为全在 `//go:build integration` 用例里，unit profile 不编译 → 12% 假低。脚本侧已改：unit scope 打 `[INFO]`（不静默跳过），`COVERAGE_TAGS=integration` 时才判 85%，且 integration profile 里若无 flowstore 语句直接判红；**实测**：unit scope 绿 + INFO、integration scope（12%）红、空语句 integration scope 红 | **未闭合（缺 CI 接线）** | **Ark**（在 `integration` job 加一步 `go test -tags=integration ./... -coverprofile=…` + `COVERAGE_TAGS=integration ./scripts/coverage-gate.sh`） |
 | ④ **branch protection 未要求 status checks** | `gh api repos/…/branches/main/protection` 仍无 `required_status_checks`；已记 `decisions.md` **R10** | **未闭合（唯一）** | **spencer（唯一 admin）** |
 
 > 判据立场（v1.3 更新）：①②③ 生效后，「**空题库/带 SKIP/吃缓存**」三条造假路径已被机器堵住，DB 类判据可以按真实用例数记账；但 **④ 未闭合前，「四道门禁全绿」仍只是「CI 会红」，不是「合并不可绕过」**——红着仍可点 merge，故 R10 是当前唯一未闭合项。
@@ -364,6 +369,7 @@ verdict=PARTIAL
 
 - **v1.2（2026-11-04，只改判据、不动 `AC-*` 与账目）**：①按 main `2ef3bd7` 的 run `41800113745` 核实 `integration` job **真跑**（`postgres:16` + `pg_isready` → `migrate up` 16 条逐条 → schema 六项**真断言** → `go test -tags=integration`，`tests_skip=0`、`cached=no`），并在 §9.2 把「**唯一权威真库环境 = CI `integration` job**、本机无 docker 不算证据」写死；②**点名界限**：该 run 日志明写 `[INFO] 暂无 integration 测试文件`，19 条全是普通单测，**没有任何一条真连 Postgres** → `AC-ENG-04` / `AC-FLOW-11` DB 侧 / `AC-AUD-02` 在 S3 落地前按**未验证**处理；③新增 **§9.5** 三条机器强制缺口（空题库只 `echo INFO`、`test-summary.sh` 不把 `skip>0` 判红、branch protection 无 `required_status_checks`），每条给改法与归属，**只报不改**。
 - **v1.3（2026-11-04，只改判据，`AC-*` 与账目零改动）**：按 main `f6aa05e` / run `41803170713` 复核——①「无集成用例=红」与「差集为 0=红」两道 guard **确在 workflow 里**（`[ "$tagged" -gt 0 ] || exit 1`、`[ "$extra" -gt 0 ] || exit 1`），实测 `integration_tagged_files=4`、`integration_only_cases=24 (all=144 plain=120)`；②`test-summary.sh` 的 `skip>0 → exit 1` 确已加入（`[ "$skip" -eq 0 ] || { echo "[FAIL] 存在 $skip 条 SKIP …"; exit 1; }`），实测 `tests_skip=0`；③24 条 integration-only 用例**真连库**（`INSERT INTO sessions/clients/users/role_bindings`、`DELETE FROM …`、缺表 `t.Fatalf`），24/24 在日志中出现、`--- SKIP` 与 `--- FAIL` 各 0；④§9.5 改写为「现状表」：①②③ **已生效**（Ark，PR #13），**④ branch protection 仍缺 `required_status_checks` = R10，唯一未闭合，归属 spencer**；⑤反向红（清空标签文件）为 owner 本地自证，**未在 CI 复现**，故记「据 owner 自证」。
+- **v1.4（2026-11-04，只改判据）**：①锚点 4→5（`000016 create_flows_expired_cleanup_idx`，`flows_named_indexes=5`，run `41808510071`，迁移 17 条、`tests_run=208 skip=0`）；②`DROP INDEX → Seq Scan → 用例报错`的变异验证入证据形式（源码为索引名 `strings.Contains` + `Seq Scan` 反向断言 + 3000 行种子）；③§9.4 补 `flowstore` 85%（D8 第 191 行）；④§9.5 新增 ⑤：`flowstore` 下限在 unit profile 不可判 —— 脚本已改（unit scope `[INFO]` 不静默、`COVERAGE_TAGS=integration` 判 85%、integration profile 无该包语句即红；Gate 本地三向实测：unit 绿+INFO / integration 12% 红 / 空语句 integration 红），**但 CI 尚未接线 → 未闭合，归属 Ark**；⑤R10 保持未闭合（spencer）。
 - **v1.1 归档调整（2026-11-03，判据零改动）**：①本文件由 `qa/gate-criteria.md` **迁到 `docs/qa/gate-criteria.md`**（按 Ark 裁定统一到 `docs/`，仓库根不再放 `qa/`；门禁脚本对 `qa/*` 与 `docs/qa/*` 双豁免，迁移不点红）；②**删除 `qa/compliance-precheck.md`（退役，不留 RETIRED 副本）**——其口径已被 `decisions.md` **D8-B【正式裁定】/ D8-E 第二版**（密评整体后置、密评不进门禁）与 `acceptance-criteria.md` **§11.1**（重启密评的 I-1~I-7 输入清单）吸收，保留两份会造成"两套有效口径"；③正文两处指向该退役文件的引用改指上述两处。**未改任何 `AC-*`、未改账目（仍 v11 = 83/0/0/6/0/1）。**
 - **v1.1（2026-11-02）**：增补 §9 —— ①**门控 SKIP = 未验证 = 红**（本地 `PARTIAL` 允许、PR 准入与 S11 不允许；`verdict` 三值算法；SKIP 合法性边界：只准环境缺失、单一门控函数、禁过滤/摘包/mock 顶替）；②**真库验收的权威环境 = CI integration job**，过渡期由 hugo 指定的那一台代跑、owner 提供命令与 sha、**Gate 复核归档**，**不得拿别人环境的绿当自己证据**；③**覆盖率按基线 §9.3 逐模块下限**（crypto 90 / store 75 …），**全局 60% 只作兜底、不得替代、也不另设更高阈值**，并写明按包聚合 / 排除项 / 向下取整的统计口径。`summary.txt` 由四行扩为**六行**（增 `tests_skip` / `db_verified`·`db_env` / `verdict`），旧四行自 v1.1 起不再判绿。**未改任何 `AC-*` 与账目（现 v11 = 83/0/0/6/0/1）。**
 - **v1（2026-11-02）**：首版。把「三闸绿」落成可照做的判据：§1 逐闸绿的条件、§2 本地怎么跑（PG 三库 + Redis）、§3 十三条红名单、§4 证据格式（`artifacts/<sha>/gate/`）、§5 闸自证（A–F 已实测，G 待 `web/` 落地）、§6 十一项 PR 准入清单、§7 与 `AC-ENG-*` 的关系（**不改账目**）、§8 四处不一致。**只落判据、不写测试代码**（依 hugo 裁决）；测试与验收任务等骨架落地后再落。

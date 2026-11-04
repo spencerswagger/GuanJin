@@ -3,12 +3,13 @@
 #
 # 双闸：
 #   1) **逐模块下限**（§9.3，唯一权威）：crypto/audit 90、factor/credential/identifier/flow/authz 85、
-#      risk/gateway 80、store 75、protocol/admin/agent 70；
+#      risk/gateway 80、store 75、flowstore 85（D8 补登）、protocol/admin/agent 70；
 #      只对**已有可执行语句**的模块生效 —— 尚未实现的包（只有 doc.go）不出现在 profile 里，**跳过但不放行**：
 #      一旦该包有了语句，这闸立刻开始管它。
 #   2) **总闸**（COVERAGE_MIN，默认 60）：兜底，防止"每个模块都刚好压线、整体却很低"。
 #
 # 用法：
+#   COVERAGE_TAGS=integration COVERAGE_PROFILE=x.out ./scripts/coverage-gate.sh   # integration profile（含 //go:build integration 用例）
 #   make coverage                                   # 复用 make test 产出的 profile
 #   COVERAGE_PROFILE=x.out ./scripts/coverage-gate.sh
 #
@@ -30,6 +31,15 @@ module_floor() {
     internal/factor|internal/credential|internal/identifier|internal/flow|internal/authz) echo 85 ;;
     internal/risk|internal/gateway) echo 80 ;;
     internal/store) echo 75 ;;
+    # D8 补登（2026-11-04）：flowstore 是 D5 的 I-F2/F5/F6/F8 唯一落点（锁/校验/amr 累加/两段式清理），
+    # 错一处则上层全返工 → 高于 store（75）、与 flow 同级（85）。
+    internal/flowstore)
+      # D8 补登：flowstore = 85%（I-F2/F5/F6/F8 唯一落点）。但它的行为全在 //go:build integration 用例里，
+      # **unit profile 不编译那些文件** → 只能用 integration profile 判（COVERAGE_TAGS 含 integration）。
+      case ",${COVERAGE_TAGS:-}," in
+        *,integration,*) echo 85 ;;
+        *) echo "" ;;   # 由下方"未判定"分支显式说明，不许静默跳过
+      esac ;;
     internal/protocol|internal/admin|internal/agent) echo 70 ;;
     *) echo "" ;;
   esac
@@ -88,9 +98,23 @@ if [ "$relax" != "1" ]; then
 
   for m in $(printf '%s\n' "${!stmts[@]}" | sort); do
     floor="$(module_floor "$m")"
-    [ -z "$floor" ] && continue
+    if [ -z "$floor" ]; then
+      # D8 补登模块在 unit profile 下没有下限可判：**显式说明**，不让它变成静默跳过
+      case "$m" in
+        internal/flowstore)
+          echo "[INFO] ${m}：下限 85% 须由 integration profile 判定（unit profile 不编译 //go:build integration 用例）"
+          echo "[INFO]       → 运行方式：COVERAGE_TAGS=integration COVERAGE_PROFILE=<integration 覆盖率> $0" ;;
+      esac
+      continue
+    fi
     st=${stmts[$m]}; cv=${covered[$m]:-0}
-    [ "$st" -eq 0 ] && continue
+    if [ "$st" -eq 0 ]; then
+      case "$m" in
+        internal/flowstore)
+          echo "[FAIL] ${m} 在 integration profile 里没有任何语句 → 下限 85% 无法判定（判据不成立即为红）"; fail=1 ;;
+      esac
+      continue
+    fi
     pct=$(( cv * 100 / st ))   # 向下取整：宁可判严，不虚高
     if [ "$pct" -lt "$floor" ]; then
       echo "[FAIL] 模块下限：${m} = ${pct}% < ${floor}%（技术栈 §9.3）"
@@ -100,6 +124,15 @@ if [ "$relax" != "1" ]; then
     fi
   done
 fi
+
+# ---- 1b) integration scope 必判项：profile 里必须真有 flowstore 的语句 ----
+case ",${COVERAGE_TAGS:-}," in
+  *,integration,*)
+    if [ -z "${stmts[internal/flowstore]:-}" ]; then
+      echo "[FAIL] integration profile 里没有 internal/flowstore 的语句 → 85% 下限无法判定（判据不成立即为红）"
+      fail=1
+    fi ;;
+esac
 
 # ---- 2) 总闸 ----
 total=$(go tool cover -func="$profile" | tail -1 | grep -oE '[0-9]+\.[0-9]+' || echo 0)
