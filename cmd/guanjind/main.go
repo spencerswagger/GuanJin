@@ -68,7 +68,23 @@ func startup(ctx context.Context, getenv func(string) string, logger *slog.Logge
 		return nil, err
 	}
 
+	// D5：`flow.ttl_seconds` 必须来自 `runtime_config`（缺失/不可解释 → 拒绝启动）。
+	// 代码里**不许**出现 600：TTL 一旦有第二套来源，`expires_at` 就说不清是按谁算的。
+	ttl, err := store.LoadFlowTTL(ctx, store.NewRuntimeConfigRepo(db))
+	if err != nil {
+		_ = store.Close(db)
+		return nil, fmt.Errorf("startup: flow ttl: %w", err)
+	}
+
 	mux := http.NewServeMux()
+	// 因子与挑战面（S5）：`/auth/challenge/{factor}`、`/auth/verify/{factor}`、`/authorize/flow`。
+	flowHandler, err := newFlowHandler(ctx, db, ttl, logger)
+	if err != nil {
+		_ = store.Close(db)
+		return nil, err
+	}
+	flowHandler.Routes(mux)
+
 	mux.HandleFunc("/livez", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
@@ -94,6 +110,7 @@ func startup(ctx context.Context, getenv func(string) string, logger *slog.Logge
 	logger.Info("startup checks passed",
 		"addr", cfg.HTTPAddr,
 		"tier_defaults", store.TierDefaultTiers,
+		"flow_ttl_seconds", int64(ttl.Seconds()),
 	)
 	return &app{srv: srv, db: db}, nil
 }
