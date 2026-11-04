@@ -177,7 +177,7 @@ const (
 	markExpiredSQL = `UPDATE flows SET status = 'expired' WHERE status = 'active' AND expires_at <= now()`
 	// markExpiredIfActiveSQL 读路径上的单行懒过期（同样用库时间判过期）。
 	markExpiredIfActiveSQL = `UPDATE flows SET status = 'expired' WHERE id = $1 AND status = 'active' AND expires_at <= now()`
-	// deleteExpiredBeforeSQL 第二段：只删已过期且超过保留期的行。
+	// deleteExpiredBeforeSQL 第二段：只删已过期且超过保留期的行。走 `flows_expired_cleanup_idx`。
 	deleteExpiredBeforeSQL = `DELETE FROM flows WHERE status = 'expired' AND updated_at < $1`
 )
 
@@ -210,11 +210,12 @@ func (r *FlowRepo) MarkExpiredIfActive(ctx context.Context, id uuid.UUID) (int64
 //
 // `cutoff` 由调用方显式给出（= now - ExpiredRetention），本函数不含"7 天"常量之外的隐式判断。
 //
-// ⚠️ 已知缺口（已报 Ark，待 D5 决定）：`flows_expires_idx` 是 `WHERE status='active'` 的
-// **部分**索引，只服务第一段；本段的谓词是 `status='expired' AND updated_at < cutoff`，
-// 现有 4 条具名索引**没有一条能覆盖**，全表扫到 status='expired' 段。M1 量级（TTL 600s、
-// 活跃流数有限）无感；若要收紧，需在 D5 增加 `(updated_at) WHERE status='expired'` 的
-// 部分索引——那是 schema 变更，走 D5/CH，不在本包擅自加。
+// 索引：谓词 `status='expired' AND updated_at < cutoff` 由**部分索引**
+// `flows_expired_cleanup_idx (updated_at) WHERE status='expired'` 覆盖（`000016` 引入，
+// 口径见 `decisions.md` D5「第二段清理索引裁定」）。它与第一段的
+// `flows_expires_idx (expires_at) WHERE status='active'` 列不同、行集也不同，两段各走各的。
+// `updated_at` 由 `flows_set_updated_at` 触发器维护，因此保留期语义 =「最后一次状态变更
+// （置 expired）的时间」，不另加列、不改触发器（D5 I-F6）。
 func (r *FlowRepo) DeleteExpiredBefore(ctx context.Context, cutoff time.Time) (int64, error) {
 	if cutoff.IsZero() {
 		return 0, errors.New("store: DeleteExpiredBefore requires an explicit cutoff")
