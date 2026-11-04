@@ -102,7 +102,7 @@ jobs:
         run: |
           migrate -path ./migrations -database "$GUANJIN_TEST_DSN" up
           migrate -path ./migrations -database "$GUANJIN_TEST_DSN" version
-      - name: schema 断言（15 张表 / flows 13 列 / 4 具名索引 / I-F1 CHECK / ttl seed）
+      - name: schema 断言（15 张表 / flows 13 列 / 5 具名索引 / I-F1 CHECK / ttl seed）
         env:
           PGPASSWORD: guanjin
         run: |
@@ -123,8 +123,9 @@ jobs:
           [ "$parts" -ge 1 ] || { echo "[FAIL] audit_logs 无月分区（D4-C 要求按月分区）"; exit 1; }
           col=$(q "SELECT count(*) FROM information_schema.columns WHERE table_schema='public' AND table_name='flows';")
           echo "flows_columns=$col"; [ "$col" = "13" ] || { echo "[FAIL] flows 期望 13 列，实际 $col"; exit 1; }
-          idx=$(q "SELECT count(*) FROM pg_indexes WHERE schemaname='public' AND tablename='flows' AND indexname IN ('flows_one_active_per_user_client_uniq','flows_session_idx','flows_expires_idx','flows_client_created_idx');")
-          echo "flows_named_indexes=$idx"; [ "$idx" = "4" ] || { echo "[FAIL] flows 具名索引期望 4，实际 $idx"; exit 1; }
+          # 5 条具名索引（D5「第二段清理索引裁定」：4 条 + flows_expired_cleanup_idx，由 000016 引入）
+          idx=$(q "SELECT count(*) FROM pg_indexes WHERE schemaname='public' AND tablename='flows' AND indexname IN ('flows_one_active_per_user_client_uniq','flows_session_idx','flows_expires_idx','flows_client_created_idx','flows_expired_cleanup_idx');")
+          echo "flows_named_indexes=$idx"; [ "$idx" = "5" ] || { echo "[FAIL] flows 具名索引期望 5，实际 $idx"; exit 1; }
           chk=$(q "SELECT count(*) FROM pg_constraint WHERE conname='flows_completed_requires_user';")
           echo "flows_if1_check=$chk"; [ "$chk" = "1" ] || { echo "[FAIL] 缺 I-F1 CHECK"; exit 1; }
           ttl=$(q "SELECT value FROM runtime_config WHERE key='flow.ttl_seconds';")

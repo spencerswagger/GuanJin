@@ -12,18 +12,19 @@ import (
 	"gorm.io/gorm"
 )
 
-// 本文件补一条**执行计划级**证据：两段式清理的第一段真的走 `flows_expires_idx`。
+// 本文件钉**执行计划级**证据：两段式清理的各段真的走各自的具名索引
+// （第一段 `flows_expires_idx`，第二段 `flows_expired_cleanup_idx`）。
 //
-// 为什么"net/http 层面的字符串包含"不算：`flows_expires_idx` 是 `WHERE status='active'`
-// 的**部分索引**，只有谓词与它一致时才可能被选中；一旦有人把语句改成
-// `status <> 'expired'` 或加个函数包装，索引立刻失效，而功能用例仍然全绿。
+// 为什么"net/http 层面的字符串包含"不算：这两条都是带 `WHERE` 的**部分索引**，
+// 只有谓词与索引定义同形时才可能被选中；一旦有人把语句改成 `status <> 'expired'`、
+// 给列套函数、或把 `status='expired'` 去掉，索引立刻失效，而功能用例仍然全绿。
 // 所以这里断言 **EXPLAIN 的计划节点**（索引名 + 扫描方式），并且断言用的 SQL
-// 就是仓储里的常量 `markExpiredSQL`——"测的就是跑的"。
+// 就是仓储里的常量（`markExpiredSQL` / `deleteExpiredBeforeSQL`）——"测的就是跑的"。
 
-// explainLines 收集 `EXPLAIN (COSTS OFF)` 的全部输出行。
-func explainLines(t *testing.T, db *gorm.DB, stmt string) []string {
+// explainLines 收集 `EXPLAIN (COSTS OFF)` 的全部输出行（args 用于带占位符的语句）。
+func explainLines(t *testing.T, db *gorm.DB, stmt string, args ...any) []string {
 	t.Helper()
-	rows, err := db.Raw("EXPLAIN (COSTS OFF) " + stmt).Rows()
+	rows, err := db.Raw("EXPLAIN (COSTS OFF) "+stmt, args...).Rows()
 	if err != nil {
 		t.Fatalf("EXPLAIN 失败：%v\nSQL: %s", err, stmt)
 	}
@@ -112,12 +113,62 @@ func TestDBFlowCleanupStage1UsesExpiresIndex(t *testing.T) {
 	}
 }
 
+// TestDBFlowCleanupStage2UsesExpiredCleanupIdx 证明第二段（物理删除）走
+// `flows_expired_cleanup_idx`——与第一段的 `flows_expires_idx` 对称。
+//
+// 依据：`decisions.md` D5「第二段清理索引裁定」（2026-11-04）——第二段谓词
+// `status='expired' AND updated_at < cutoff` 与第一段的 `(expires_at) WHERE status='active'`
+// **列不同、行集也不同**，所以新增独立的部分索引（`000016` 引入），不改造既有 4 条。
+// 部分索引只有谓词与索引定义同形才会被选中；这里断言的就是仓储常量
+// `deleteExpiredBeforeSQL`，改语句/改索引定义任何一边，这个用例都会红。
+func TestDBFlowCleanupStage2UsesExpiredCleanupIdx(t *testing.T) {
+	db := openTestDB(t)
+	f := newFixture(t, db)
+	ctx := context.Background()
+
+	// 绝大多数行是 active（不在本索引的行集里），只留少量满期 expired 行：
+	// 谓词有足够选择性，规划器才有理由选部分索引而不是全表扫。
+	const activeRows = 20000
+	if err := db.WithContext(ctx).Exec(`
+		INSERT INTO flows (id, client_id, target_acr, achieved_amr, completed_steps, status, expires_at)
+		SELECT gen_random_uuid(), ?, 'AAL1', '{}', '[]'::jsonb, 'active',
+		       now() + (g || ' seconds')::interval
+		  FROM generate_series(1, ?) g`, f.clientID, activeRows).Error; err != nil {
+		t.Fatalf("灌 active 行失败：%v", err)
+	}
+	// 满保留期（8 天 > ExpiredRetention 7 天）的 expired 行；updated_at 由触发器语义
+	// 视为"置 expired 的时间"，这里显式写死以便构造满期。
+	if err := db.WithContext(ctx).Exec(`
+		INSERT INTO flows (id, client_id, target_acr, achieved_amr, completed_steps, status, expires_at, created_at, updated_at)
+		SELECT gen_random_uuid(), ?, 'AAL1', '{}', '[]'::jsonb, 'expired',
+		       now() - interval '8 days 1 hour', now() - interval '8 days', now() - interval '8 days'
+		  FROM generate_series(1, 40) g`, f.clientID).Error; err != nil {
+		t.Fatalf("灌满期 expired 行失败：%v", err)
+	}
+	// 统计必须新鲜，否则规划器按 0 行估，计划不可信（也就不能拿它当证据）。
+	if err := db.WithContext(ctx).Exec(`ANALYZE flows`).Error; err != nil {
+		t.Fatalf("ANALYZE flows 失败：%v", err)
+	}
+
+	cutoff := time.Now().UTC().Add(-ExpiredRetention)
+	plan := strings.Join(explainLines(t, db, deleteExpiredBeforeSQL, cutoff), "\n")
+	if !strings.Contains(plan, "flows_expired_cleanup_idx") {
+		t.Fatalf("第二段没有用 flows_expired_cleanup_idx —— 部分索引失效（谓词必须逐字是 status='expired' AND updated_at < cutoff）\n实际计划：\n%s", plan)
+	}
+	if !strings.Contains(plan, "Index Scan") && !strings.Contains(plan, "Bitmap Index Scan") {
+		t.Fatalf("计划里出现索引名但不是索引扫描（可能是仅作为过滤条件/位图构建的误读）\n实际计划：\n%s", plan)
+	}
+	if strings.Contains(plan, "Seq Scan on flows") {
+		t.Fatalf("第二段退化成全表扫描，flows_expired_cleanup_idx 没被采用\n实际计划：\n%s", plan)
+	}
+}
+
 // TestDBFlowCleanupStage2KeepsRowsWithinRetention 证明第二段的边界：
 // **未满保留期**的 expired 行不得被删，满期的才删；并且删掉的就是那些行。
 //
-// 这一步不解释执行计划：`deleteExpiredBeforeSQL` 按 `status='expired' AND updated_at < cutoff`
-// 过滤，现有 4 条具名索引没有一条覆盖它（`flows_expires_idx` 是 `status='active'` 的部分索引）。
-// 该缺口已在 `repo_flows.go` 注明并报 Ark（改 D5 才能加索引），所以这里只钉**行为**，不钉计划。
+// 执行计划由 TestDBFlowCleanupStage2UsesExpiredCleanupIdx 钉（D5 裁定新增
+// `flows_expired_cleanup_idx`）；本用例只钉**行为边界**，两者互补：计划对了但
+// cutoff 语义错了同样不能过。
 func TestDBFlowCleanupStage2KeepsRowsWithinRetention(t *testing.T) {
 	db := openTestDB(t)
 	f := newFixture(t, db)
