@@ -98,17 +98,20 @@ func TestGatewayDoesNotWriteSessions(t *testing.T) {
 	}
 }
 
-// D16① 的结构性守卫：数据面**不碰 Redis**（`jti` 平台不存、不查、不比对；重放判在 SDK 侧）。
+// 结构性守卫：网关**核心逻辑**里不许直接持有 Redis 客户端。
 //
-// 为什么用源文件扫描而不是"记得别加"：这条一旦被打破（比如"顺手加个撤销缓存放 Redis"），
-// 撤销就从"零缓存窗口"变成"缓存过期才生效"，而 AC-SESS-01 要求撤销后**首个**请求即 403。
-func TestGatewayDoesNotTalkToRedis(t *testing.T) {
-	files := []string{"admit.go", "revoke.go", "pipeline.go", "inject.go", "slo.go", "proxy.go", "route.go"}
+// 这条不是"平台不用 Redis"——判重（AC-DP-08）**确实**要真 Redis，但它是 `ReplayGuard` 接缝，
+// 实现落在 `internal/gateway/adapter`（`RedisReplayGuard`）。核心包直接 import 客户端会带来两个后果：
+//   - 撤销判定（AC-SESS-01）与凭证判重混在同一层，"顺手把会话状态也缓存进 Redis"变得毫无门槛，
+//     而撤销一旦有缓存窗口就不再是"撤销后首个请求即 403"；
+//   - 核心逻辑没法用假实现做纯单测（本目录所有判据用例都是无网络跑的）。
+func TestGatewayCoreHasNoRedisClient(t *testing.T) {
+	files := []string{"admit.go", "revoke.go", "pipeline.go", "inject.go", "replay.go", "slo.go", "proxy.go", "route.go"}
 	for _, f := range files {
 		src := readSource(t, f)
 		for _, banned := range []string{"redis.Client", "go-redis", "redis.NewClient", "redis.Get"} {
 			if contains(src, banned) {
-				t.Fatalf("%s 出现 %q：数据面不碰 Redis（D16①：jti 平台不存不查）", f, banned)
+				t.Fatalf("%s 出现 %q：Redis 只许经 ReplayGuard 接缝（实现放 adapter）", f, banned)
 			}
 		}
 	}

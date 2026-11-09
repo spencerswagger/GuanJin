@@ -192,6 +192,8 @@ type testGuard struct {
 	factors []flow.FactorInfo
 	// skew 是令牌时钟偏移宽容度（默认 1s；AC-DP-06 的边界打点用）。
 	skew time.Duration
+	// replay 是判重存储（默认内存假实现；AC-DP-08）。
+	replay *memReplayGuard
 }
 
 func newTestGuard(t *testing.T, mutate func(*testGuard)) *testGuard {
@@ -214,6 +216,7 @@ func newTestGuard(t *testing.T, mutate func(*testGuard)) *testGuard {
 		keys:    keys,
 		factors: testFactors(),
 		skew:    time.Second,
+		replay:  newMemReplayGuard(),
 	}
 	if mutate != nil {
 		mutate(tg)
@@ -325,7 +328,8 @@ func newTestPipeline(t *testing.T, tg *testGuard, upstream *recordedUpstream) *P
 	if err != nil {
 		t.Fatalf("NewAssertionSigner: %v", err)
 	}
-	pipeline, err := NewPipeline(forward, tg.guard, signer, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	pipeline, err := NewPipeline(forward, tg.guard, signer, tg.replay,
+		slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatalf("NewPipeline: %v", err)
 	}
@@ -394,3 +398,42 @@ func readSource(t *testing.T, name string) string {
 
 // contains 是 strings.Contains 的短名字（避免测试文件反复带包名）。
 func contains(haystack, needle string) bool { return strings.Contains(haystack, needle) }
+
+// memReplayGuard 是判重的**假实现**（单元测试专用：真 Redis 由 adapter 的集成用例覆盖）。
+//
+// 语义必须与 `gateway.ReplayGuard` 一致：首次 true、窗口内重复 false、存储故障 error。
+type memReplayGuard struct {
+	mu   sync.Mutex
+	seen map[string]time.Time
+	err  error
+	// calls 记录判重调用次数（用于证明"每请求都判"）。
+	calls int
+}
+
+func newMemReplayGuard() *memReplayGuard {
+	return &memReplayGuard{seen: map[string]time.Time{}}
+}
+
+func (m *memReplayGuard) Claim(_ context.Context, jti string, window time.Duration) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.calls++
+	if m.err != nil {
+		return false, m.err
+	}
+	if _, ok := m.seen[jti]; ok {
+		return false, nil
+	}
+	m.seen[jti] = time.Now().Add(window)
+	return true, nil
+}
+
+// timeNowForTest 是一个简短别名（测试里多处要"当前时刻"，写全名太吵）。
+func timeNowForTest() time.Time { return time.Now().UTC() }
+
+// stubCaller 是 `httpx.CallerResolver` 的最小实现（只用于装配期校验的用例）。
+type stubCaller struct{}
+
+func (stubCaller) Resolve(context.Context, string) (httpx.Caller, error) {
+	return httpx.Caller{}, httpx.ErrCallerUnauthenticated
+}

@@ -127,6 +127,17 @@ func (u *itUpstream) assertion() string {
 // newITPipeline 用**真适配器**装出数据面。
 func newITPipeline(t *testing.T, db *gorm.DB, keys *itKeys, upstream *httptest.Server) *gateway.Pipeline {
 	t.Helper()
+	signer, err := gateway.NewAssertionSigner(keys.set)
+	if err != nil {
+		t.Fatalf("NewAssertionSigner: %v", err)
+	}
+	return newITPipelineWithSigner(t, db, keys, upstream, signer)
+}
+
+// newITPipelineWithSigner 允许注入签名器（AC-DP-08 的用例需要确定性 jti）。
+func newITPipelineWithSigner(t *testing.T, db *gorm.DB, keys *itKeys, upstream *httptest.Server,
+	signer *gateway.AssertionSigner) *gateway.Pipeline {
+	t.Helper()
 	parsed, err := url.Parse(upstream.URL)
 	if err != nil {
 		t.Fatalf("parse upstream: %v", err)
@@ -141,10 +152,6 @@ func newITPipeline(t *testing.T, db *gorm.DB, keys *itKeys, upstream *httptest.S
 	forward, err := gateway.New(router, gateway.Options{Logger: logger})
 	if err != nil {
 		t.Fatalf("gateway.New: %v", err)
-	}
-	signer, err := gateway.NewAssertionSigner(keys.set)
-	if err != nil {
-		t.Fatalf("NewAssertionSigner: %v", err)
 	}
 	guard, err := gateway.NewGuard(&gateway.Guard{
 		Caller: &protocol.CallerResolver{
@@ -164,7 +171,10 @@ func newITPipeline(t *testing.T, db *gorm.DB, keys *itKeys, upstream *httptest.S
 	if err != nil {
 		t.Fatalf("NewGuard: %v", err)
 	}
-	pipeline, err := gateway.NewPipeline(forward, guard, signer, logger)
+	// 判重用**真 Redis**（AC-DP-08 的判据就是"集成·真实 Redis"）：连不上直接判红，
+	// 不静默降级成"不判重"。
+	pipeline, err := gateway.NewPipeline(forward, guard, signer,
+		NewRedisReplayGuard(testRedisClient(t)), logger)
 	if err != nil {
 		t.Fatalf("NewPipeline: %v", err)
 	}
@@ -448,3 +458,39 @@ func verifyWithJWKS(t *testing.T, set *signing.Set, token string) map[string]any
 }
 
 var _ = context.Background
+
+// AC-DP-08（真 Redis + 真库 + 真验签）：同一 `jti` 的第二次请求 → 401 且不转发；
+// 正常请求（每请求新 jti）不受影响。
+//
+// 用确定性 jti 模拟"同一份断言被重放"——真实实现每请求新建 UUIDv7，重复只可能来自重放/缺陷。
+func TestAC_DP_08_PipelineRejectsReplayedJti(t *testing.T) {
+	db := openTestDB(t)
+	f := newFixture(t, db, "L2")
+	itCurrentClient = f.clientID
+	t.Cleanup(func() { itCurrentClient = "" })
+
+	keys := newITKeys(t)
+	up := newITUpstream(t)
+	// 用**确定性 jti** 的签名器：等价于"同一个 jti 被用两次"。
+	signer, err := gateway.NewAssertionSigner(keys.set)
+	if err != nil {
+		t.Fatalf("NewAssertionSigner: %v", err)
+	}
+	signer.NewJTI = func() (string, error) { return "0193f0aa-0000-7000-8000-00000000beef", nil }
+	pipeline := newITPipelineWithSigner(t, db, keys, up.srv, signer)
+
+	token := keys.userToken(t, f.userID.String(), f.clientID, f.session.String())
+	if rec := itRequest(pipeline, "/api/orders", token); rec.Code != http.StatusOK {
+		t.Fatalf("首次请求期望 200，实际 %d（body=%s）", rec.Code, rec.Body.String())
+	}
+	rec := itRequest(pipeline, "/api/orders", token)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("同 jti 二次期望 401，实际 %d（body=%s）", rec.Code, rec.Body.String())
+	}
+	if code := itCode(t, rec); code != httpx.CodeTokenInvalid {
+		t.Fatalf("错误码期望 TOKEN_INVALID，实际 %s", code)
+	}
+	if up.hits != 1 {
+		t.Fatalf("重放请求不该转发（上游命中 %d，期望 1）", up.hits)
+	}
+}

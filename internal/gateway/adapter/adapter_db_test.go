@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 
 	"github.com/spencerswagger/guanjin/internal/gateway"
@@ -43,6 +44,29 @@ func openTestDB(t *testing.T) *gorm.DB {
 	}
 	t.Cleanup(func() { _ = store.Close(db) })
 	return db
+}
+
+// testRedisClient 建一个**真 Redis** 客户端（AC-DP-08 的判据环境）。
+//
+// 与 `openTestDB` 同样的纪律：缺环境变量直接判红，**不 Skip**（SKIP = 未验证 = 红）；
+// 只在用得上它的用例里调用，避免不相干的用例被 Redis 探活绑住。
+func testRedisClient(t *testing.T) *redis.Client {
+	t.Helper()
+	addr := os.Getenv("GUANJIN_TEST_REDIS_ADDR")
+	if addr == "" {
+		t.Fatal("必须设置 GUANJIN_TEST_REDIS_ADDR（AC-DP-08 的判重存储是真 Redis）")
+	}
+	client := redis.NewClient(&redis.Options{
+		Addr:     addr,
+		Password: os.Getenv("GUANJIN_TEST_REDIS_PASSWORD"),
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := client.Ping(ctx).Err(); err != nil {
+		t.Fatalf("连不上真 Redis（%s）：%v —— 判重是判据的一部分，不许 mock", addr, err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+	return client
 }
 
 type fixture struct {
@@ -332,4 +356,13 @@ func TestDBSessionStatusAdapter(t *testing.T) {
 	if _, err := repo.SessionStatus(ctx, uuid.NewString()); !errors.Is(err, protocol.ErrSessionGone) {
 		t.Fatalf("不存在期望 protocol.ErrSessionGone，实际 %v", err)
 	}
+}
+
+// deadRedisClient 建一个**指向不可达地址**的客户端（用于"存储挂了"的 fail-closed 断言）。
+// 用 127.0.0.1:1（必然 refused），不依赖任何外部状态。
+func deadRedisClient(t *testing.T) *redis.Client {
+	t.Helper()
+	client := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1", MaxRetries: -1, DialTimeout: 200 * time.Millisecond})
+	t.Cleanup(func() { _ = client.Close() })
+	return client
 }

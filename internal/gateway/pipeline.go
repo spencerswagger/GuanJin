@@ -12,9 +12,10 @@ import (
 // 本文件把数据面的 7 件事按**固定顺序**串起来（顺序本身就是契约，改顺序 = 改语义）：
 //
 //	① 先弃客户端伪造的 `X-GuanJin-Assertion`（AC-DP-02/03：哪怕马上要被拒，也不许透传）
-//	② 路由匹配（无路由 → 503 `UPSTREAM_UNAVAILABLE`，不裸转发）
+//	② 路由匹配（无路由 → 404 `CLIENT_NOT_FOUND`，不裸转发）
 //	③ 准入：验签 → 会话（含实时撤销）→ 档位（401/403/500/503，一律不注入身份）
 //	④ 逐请求签断言（一次生成 `iat/exp/jti`，整条链路复用）
+//	④′ 重放判重（AC-DP-08，真 Redis；同 `jti` 窗口内二次 → 401，不转发）
 //	⑤ 转发（上游失败 → 503 `UPSTREAM_UNAVAILABLE` + `Retry-After`，AC-DP-13）
 //
 // ③④ 之间失败（如签名密钥不可用）按 `KEY_UNAVAILABLE`（503）处理并**不转发**：
@@ -23,11 +24,12 @@ import (
 // 日志纪律（AC-DP-10）：访问日志只记 `trace_id/method/path/status/duration_ms/client_id`。
 // 令牌、断言、口令、标识符明文**一律不进日志**——所以本文件的日志参数里没有它们。
 
-// Pipeline 是数据面的主处理器（无本地状态：多副本行为一致）。
+// Pipeline 是数据面的主处理器（无本地状态：多副本行为一致；判重状态在共享存储里）。
 type Pipeline struct {
 	forward *Handler
 	guard   *Guard
 	signer  *AssertionSigner
+	replay  ReplayGuard
 	logger  *slog.Logger
 }
 
@@ -35,7 +37,8 @@ type Pipeline struct {
 //
 // 这不是"防御性编程"：三件里少一件，数据面就退化成"裸反代"或"永远 401"，
 // 两种都该在启动期暴露，而不是等第一个请求。
-func NewPipeline(forward *Handler, guard *Guard, signer *AssertionSigner, logger *slog.Logger) (*Pipeline, error) {
+func NewPipeline(forward *Handler, guard *Guard, signer *AssertionSigner, replay ReplayGuard,
+	logger *slog.Logger) (*Pipeline, error) {
 	switch {
 	case forward == nil:
 		return nil, errors.New("gateway: pipeline requires a forwarder (nil = 裸转发风险)")
@@ -43,11 +46,14 @@ func NewPipeline(forward *Handler, guard *Guard, signer *AssertionSigner, logger
 		return nil, errors.New("gateway: pipeline requires a guard (nil = 认证可被绕过)")
 	case signer == nil:
 		return nil, errors.New("gateway: pipeline requires an assertion signer (nil = 上游拿不到身份)")
+	case replay == nil:
+		// 没有判重存储 = AC-DP-08 无从判定。宁可起不来，也不要"看起来在跑但少一条判据"。
+		return nil, ErrReplayGuardMissing
 	}
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &Pipeline{forward: forward, guard: guard, signer: signer, logger: logger}, nil
+	return &Pipeline{forward: forward, guard: guard, signer: signer, replay: replay, logger: logger}, nil
 }
 
 // ServeHTTP 实现 `http.Handler`。
@@ -70,10 +76,14 @@ func (p *Pipeline) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	// ② 路由
+	//
+	// 未匹配用 **404 `CLIENT_NOT_FOUND`**，不是 `UPSTREAM_UNAVAILABLE`：后者按 D8-C′④ 与
+	// `acceptance-criteria.md` 只给"转发到上游失败/超时"（AC-DP-13）。"这条路径没有归属的业务系统"
+	// 是**调用方用错了 URL 或部署少了路由项**，既不是上游故障、也不是依赖挂了。
 	route, ok := p.forward.router.Match(r.URL.Path)
 	if !ok {
-		httpx.WriteError(rec, traceID, httpx.CodeUpstreamUnavailable,
-			"no route configured for this request", nil)
+		httpx.WriteError(rec, traceID, httpx.CodeClientNotFound,
+			"该路径未归属任何业务系统", nil)
 		return
 	}
 	rec.clientID = route.ClientID
@@ -95,7 +105,14 @@ func (p *Pipeline) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(rec, traceID, httpx.CodeKeyUnavailable, "签名服务暂不可用，请稍后重试", nil)
 		return
 	}
-	if err := Apply(r, assertion); err != nil {
+	// ④′ 重放判重（AC-DP-08）：同一 `jti` 在有效窗口内第二次 → 401 且**不转发**。
+	// 存储不可用 → 503 `REDIS_UNAVAILABLE`（无法确认是否重放就拒，fail-closed）。
+	if err := p.checkReplay(r.Context(), assertion); err != nil {
+		p.writeAdmitError(rec, traceID, err)
+		return
+	}
+
+	if err := Apply(r, assertion.Token); err != nil {
 		p.logger.Error("data-plane: apply assertion failed",
 			"error", err, "trace_id", traceID, "client_id", route.ClientID)
 		httpx.WriteError(rec, traceID, httpx.CodeInternalError, "服务内部错误，请携带 trace_id 联系支持", nil)

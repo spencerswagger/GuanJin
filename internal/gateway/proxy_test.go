@@ -142,8 +142,12 @@ func TestUpstreamBasePathJoin(t *testing.T) {
 	}
 }
 
-// 无路由 → 503 UPSTREAM_UNAVAILABLE，且**绝不裸转发**（上游一次都不能被调用）。
-func TestNoRouteIs503AndNeverForwards(t *testing.T) {
+// 无路由 → **404 CLIENT_NOT_FOUND**，且绝不裸转发（上游一次都不能被调用）。
+//
+// 为什么不是 `UPSTREAM_UNAVAILABLE`：该码按 D8-C′④ / `acceptance-criteria.md` 只给"转发上游失败/超时"
+// （AC-DP-13）。未匹配路由是"这条路径没有归属的业务系统"（调用方 URL 用错或部署少了路由项），
+// 既不是上游故障也不是依赖挂了——拿上游故障码回它，会让运维照着码表去查一个不存在的问题。
+func TestNoRouteIs404ClientNotFoundAndNeverForwards(t *testing.T) {
 	up := newUpstream(t)
 	h := newHandler(t, Options{}, Route{Prefix: "/svc", ClientID: "svc", Upstream: up.url(t)})
 
@@ -151,15 +155,15 @@ func TestNoRouteIs503AndNeverForwards(t *testing.T) {
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusServiceUnavailable {
-		t.Fatalf("status = %d, want 503", rec.Code)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", rec.Code)
 	}
 	if up.last != nil {
 		t.Fatal("无路由时不得调用上游（裸转发 = 事故）")
 	}
-	assertErrorCode(t, rec.Body.Bytes(), httpx.CodeUpstreamUnavailable)
-	if rec.Header().Get("Retry-After") == "" {
-		t.Error("503 必须带 Retry-After（D8-C）")
+	assertErrorCode(t, rec.Body.Bytes(), httpx.CodeClientNotFound)
+	if rec.Header().Get("Retry-After") != "" {
+		t.Error("404 不该带 Retry-After（那是 503 的重试语义）")
 	}
 }
 

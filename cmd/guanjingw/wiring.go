@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 
 	"github.com/spencerswagger/guanjin/internal/config"
@@ -36,8 +37,9 @@ import (
 // "带着半截依赖跑起来"的后果是每条请求 401 或上游收不到身份，比不启动更危险。
 
 // newDataPlane 装出数据面主处理器。
-func newDataPlane(ctx context.Context, db *gorm.DB, cfg *config.Config, router *gateway.Router,
-	opts gateway.Options, skew time.Duration, logger *slog.Logger) (*gateway.Pipeline, error) {
+func newDataPlane(ctx context.Context, db *gorm.DB, rdb *redis.Client, cfg *config.Config,
+	router *gateway.Router, opts gateway.Options, skew time.Duration,
+	logger *slog.Logger) (*gateway.Pipeline, error) {
 
 	factors, err := platformFactors(db)
 	if err != nil {
@@ -85,7 +87,11 @@ func newDataPlane(ctx context.Context, db *gorm.DB, cfg *config.Config, router *
 		return nil, fmt.Errorf("startup: guard: %w", err)
 	}
 
-	pipeline, err := gateway.NewPipeline(forward, guard, signer, logger)
+	// 断言判重（AC-DP-08）用 Redis：判据写的是「集成·真实 Redis」，且判重是每请求热路径写，
+	// 用 `SET NX PX` 一条命令同时拿到"原子判重 + 自动过期"。**启动期不 ping**：
+	// Redis 挂了进程要活着、业务全拒（503 `REDIS_UNAVAILABLE`），而不是连探针都没有（D5-₂ 同理）。
+	replay := adapter.NewRedisReplayGuard(rdb)
+	pipeline, err := gateway.NewPipeline(forward, guard, signer, replay, logger)
 	if err != nil {
 		return nil, fmt.Errorf("startup: pipeline: %w", err)
 	}

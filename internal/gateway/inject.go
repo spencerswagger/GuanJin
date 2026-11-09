@@ -80,23 +80,34 @@ type AssertionInput struct {
 	Roles []string
 }
 
+// Assertion 是一份签好的断言（把 `jti`/有效期一起交出去，供重放判重使用）。
+//
+// 为什么要连 `jti` 一起返回：判重（AC-DP-08）判的就是它，而 `jti` 埋在 JWS 里——
+// 让调用方去解 token 既浪费又会诱使别人"顺手换一套解析"，不如签发时就给出事实。
+type Assertion struct {
+	Token string
+	JTI   string
+	Iat   time.Time
+	Exp   time.Time
+}
+
 // Sign 生成 compact JWS（`alg=SM3withSM2`、带 `kid`）。
 //
 // 调用方必须**每请求只调一次**（见文件头纪律 1）。
-func (s *AssertionSigner) Sign(in AssertionInput) (string, error) {
+func (s *AssertionSigner) Sign(in AssertionInput) (Assertion, error) {
 	if s == nil || s.Keys == nil {
-		return "", ErrNoSigner
+		return Assertion{}, ErrNoSigner
 	}
 	if in.Sub == "" || in.Aud == "" {
-		return "", errors.New("gateway: assertion requires sub and aud")
+		return Assertion{}, errors.New("gateway: assertion requires sub and aud")
 	}
 	if in.ACR == "" {
 		// acr 空 = 会话行有问题（D12(2) 白名单非空）：宁可拒签，也不发一个"没说级别"的断言。
-		return "", errors.New("gateway: assertion requires acr")
+		return Assertion{}, errors.New("gateway: assertion requires acr")
 	}
 	key, err := s.Keys.For(signing.PurposeGateway)
 	if err != nil {
-		return "", fmt.Errorf("%w: %v", ErrNoSigner, err)
+		return Assertion{}, fmt.Errorf("%w: %v", ErrNoSigner, err)
 	}
 	now := time.Now().UTC()
 	if s.Now != nil {
@@ -114,7 +125,11 @@ func (s *AssertionSigner) Sign(in AssertionInput) (string, error) {
 	}
 	jti, err := newJTI()
 	if err != nil {
-		return "", fmt.Errorf("gateway: generate jti: %w", err)
+		return Assertion{}, fmt.Errorf("gateway: generate jti: %w", err)
+	}
+	if jti == "" {
+		// 空 jti 会让判重失去对象（AC-DP-08）；这里拒签比"签出去但判不了重"安全。
+		return Assertion{}, errors.New("gateway: empty jti")
 	}
 
 	claims := map[string]any{
@@ -130,7 +145,16 @@ func (s *AssertionSigner) Sign(in AssertionInput) (string, error) {
 		"exp":   now.Add(AssertionTTL).Unix(),
 		"jti":   jti,
 	}
-	return signing.SignJWT(key, claims)
+	token, err := signing.SignJWT(key, claims)
+	if err != nil {
+		return Assertion{}, err
+	}
+	return Assertion{
+		Token: token,
+		JTI:   jti,
+		Iat:   now,
+		Exp:   now.Add(AssertionTTL),
+	}, nil
 }
 
 // Apply 把断言写进请求头（**覆盖**而非追加：下游只应看到网关现签的那一个）。

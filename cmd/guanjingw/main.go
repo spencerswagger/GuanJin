@@ -24,6 +24,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/redis/go-redis/v9"
+
 	"github.com/spencerswagger/guanjin/internal/config"
 	"github.com/spencerswagger/guanjin/internal/gateway"
 	"github.com/spencerswagger/guanjin/internal/httpx"
@@ -34,8 +36,8 @@ func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 
 	// 注意：`config.Load` 是三个进程共享的（要求 `GUANJIN_DB_DSN` / `GUANJIN_REDIS_ADDR` /
-	// `GUANJIN_MASTER_KEY` 全给）。数据面**不建 Redis 连接**（D16①：jti 平台不存不查），
-	// 但地址仍由共享配置要求——不为了本进程一个例外去改别人的 fail-closed 口径。
+	// `GUANJIN_MASTER_KEY` 全给）。数据面用 Redis 存**断言判重**（AC-DP-08：同 `jti` 二次 → 401），
+	// 故地址是本进程的必需项，不是沿用别人的配置。
 	cfg, err := config.Load(os.Getenv)
 	if err != nil {
 		// fail-fast：绝不带着半截配置启动
@@ -89,7 +91,12 @@ func main() {
 		os.Exit(2)
 	}
 
-	dataPlane, err := newDataPlane(ctx, db, cfg, router, gateway.Options{
+	// 判重存储（AC-DP-08）用 Redis：**启动期不 ping**（Redis 挂了进程要活着、业务全拒，
+	// 与 D5-₂ 同一口径）；连接在进程退出时统一关闭。
+	rdb := redis.NewClient(&redis.Options{Addr: cfg.RedisAddr, Password: cfg.RedisPassword})
+	defer func() { _ = rdb.Close() }()
+
+	dataPlane, err := newDataPlane(ctx, db, rdb, cfg, router, gateway.Options{
 		UpstreamTimeout: upstreamTimeout,
 		DialTimeout:     dialTimeout,
 	}, skew, logger)

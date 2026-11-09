@@ -83,7 +83,7 @@ func New(router *Router, opts Options) (*Handler, error) {
 // ServeHTTP 实现数据面请求处理。顺序**不可随意调整**：
 //
 //	① 先弃客户端伪造的同名头（AC-DP-02/03：哪怕这个请求马上要被拒，也不许头透传）
-//	② 路由匹配（无路由 → 503 UPSTREAM_UNAVAILABLE，**不裸转发**）
+//	② 路由匹配（无路由 → 404 CLIENT_NOT_FOUND，**不裸转发**；`UPSTREAM_UNAVAILABLE` 只留给转发失败）
 //	③ 转发（上游超时/拨号失败 → 503 UPSTREAM_UNAVAILABLE，AC-DP-13）
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// ① 先弃：进任何分支之前就删掉，后面所有消费者（转发、日志、错误处理）都拿不到它。
@@ -105,8 +105,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// ② 路由
 	route, ok := h.router.Match(r.URL.Path)
 	if !ok {
-		httpx.WriteError(rec, httpx.TraceIDFromContext(r.Context()), httpx.CodeUpstreamUnavailable,
-			"no route configured for this request", nil)
+		httpx.WriteError(rec, httpx.TraceIDFromContext(r.Context()), httpx.CodeClientNotFound,
+			"该路径未归属任何业务系统", nil)
 		return
 	}
 	rec.clientID = route.ClientID
