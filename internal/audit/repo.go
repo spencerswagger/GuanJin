@@ -273,7 +273,11 @@ func isNoRows(err error) bool {
 	return err != nil && (errors.Is(err, gorm.ErrRecordNotFound) || err.Error() == "sql: no rows in result set")
 }
 
-// EnsurePartitions 幂等建好给定月份的分区（生产月度任务与集成测试共用）。
+// EnsurePartitions 幂等建好给定月份的分区。
+//
+// 调用方两处：**生产** 由 `cmd/guanjind` 的 `startAuditPartitionJob`（启动即跑一次 + 每日 ticker，
+// 预建当月+未来 5 个月）调用；**测试** 由 `internal/audit` 的 `TestMain` 调用。
+// 生产侧不在这里再包事务/锁——本函数自己会在一个事务内先取链锁。
 //
 // **必须在同一事务内先取链锁**（`pg_advisory_xact_lock(chainLockKey)`）：
 // `CREATE TABLE ... PARTITION OF` 要对父表取 ACCESS EXCLUSIVE，而任何写入
