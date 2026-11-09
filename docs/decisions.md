@@ -442,6 +442,7 @@
 - **记法（能力矩阵，22 条）**：`GJ-CAP-17` = **`DEFERRED（M5）`**；`GJ-CAP-20/21` = **`N/A / DEFERRED（M2 前置）`**。依据 `acceptance-criteria.md:379`/`:380`；「Agent 面 `report`/`policies` 判据归 M2」在 `m1-slices.md:72`。
 - **不得双计**：`GJ-CAP-20/21` 对应的 AC 就是 `AC-AGENT-01~03`，这 3 条**已在 6 条 `N/A` 内**，AC 账目已计过一次，**能力矩阵不得再计**。
 - **不得相加、不得互相换算**：22 条能力 ≠ 90 条判据。`AC-ENG-05` 的账目 **`90 = 83 PASS-able / 0 PENDING / 0 BLOCKED / 6 NOT-APPLICABLE / 0 NOT-IMPLEMENTED / 1 后置（DEFERRED）`** 与 `GJ-CAP-17/20/21` **无关、不受影响**。
+- **三套计数不得互换**：22 条能力（`sdk-contract` / `GJ-CAP-*`）、90 条判据（`acceptance-criteria.md` / `AC-ENG-05` 账目）、65 个具名端点（+1 数据面通配，`D3-C`）分别计数、不得相加或互相换算。
 - **落地**：**Gate**（S11 收口材料按本条记：90 行逐条给结论与证据指针；6 条 `N/A` 必须带"为什么 N/A + 依据行号"；`AC-DP-08` 两半合并记一次、不拆行凑数）；**Nova/Edge**（写 PR 与文档时不得把能力编号说成 AC 条目）；**Spec**（后续裁定稿引用本条，不另起表述）。
 - **本条不改判据文件**：`acceptance-criteria.md` 一字未动（`90 = 83/0/0/6/0/1` 原样），也不改任何能力定义。
 
