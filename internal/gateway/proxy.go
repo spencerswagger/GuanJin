@@ -8,6 +8,7 @@ import (
 	"net/http/httputil"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/spencerswagger/guanjin/internal/httpx"
@@ -105,10 +106,16 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// ② 路由
 	route, ok := h.router.Match(r.URL.Path)
 	if !ok {
-		// 404 `CLIENT_NOT_FOUND`：语义边界写死在这里——**只**表示"路由表里找不到这条路径归属的 client"，
-		// 不得当通用 404 滥用；请求本身不合法（缺参/畸形）才用 `INVALID_REQUEST`。
-		// 为什么不是 `UPSTREAM_UNAVAILABLE`：那个码只表示"**已开始转发**但上游失败/超时"（D8-C′④ + AC-DP-13）；
-		// 路由缺失是部署漂移，拿上游故障码回它会让运维照着码表去查一个不存在的问题。
+		// 404 `CLIENT_NOT_FOUND`（`decisions.md:416` 定稿；`internal/httpx/errors.go:83` 该码 E4/404 默认即 404，
+		// 无需覆盖状态码 = 零例外）。
+		//
+		// **语义边界（防被当通用 404 用）**：`CLIENT_NOT_FOUND` **仅**指「路由 → client 映射缺失」
+		// （部署漂移，打 WARN + 计数）；其余"找不到"仍用各自专码
+		// （`USER_NOT_FOUND`/`KEY_NOT_FOUND`/`SESSION_NOT_FOUND`/`FLOW_NOT_FOUND`）；
+		// 请求本身不合法（畸形体/非法参数/协议）才用 `INVALID_REQUEST`（E1/400）。
+		// 为什么不是 `UPSTREAM_UNAVAILABLE`：那个码只表示"**已开始转发**但上游失败/超时"
+		// （D8-C′④ + AC-DP-13）；路由缺失拿上游故障码回，会让运维去查一个不存在的问题。
+		reportMissingRoute(h.logger, httpx.TraceIDFromContext(r.Context()), r.URL.Path)
 		httpx.WriteError(rec, httpx.TraceIDFromContext(r.Context()), httpx.CodeClientNotFound,
 			"该路径未归属任何业务系统", nil)
 		return
@@ -201,6 +208,27 @@ func (h *Handler) proxyFor(route Route) (*httputil.ReverseProxy, error) {
 	}
 	h.proxies[key] = proxy
 	return proxy, nil
+}
+
+// noRouteMissingTotal 统计"路由表里找不到归属"的次数（`CLIENT_NOT_FOUND` 的唯一产生点）。
+//
+// 为什么要计数：路由表是**部署配置**，缺一条不会让进程起不来（空表都合法），
+// 只会在运行期表现为某条业务路径 404。计数 + WARN 能让"部署漂移"在监控上看得见，
+// 而不是等业务方报"我们的页面打不开了"。
+var noRouteMissingTotal atomic.Int64
+
+// MissingRouteTotal 返回累计的"路由缺失"次数（供指标接线；S10 负责导出）。
+func MissingRouteTotal() int64 { return noRouteMissingTotal.Load() }
+
+// reportMissingRoute 记一次"路由缺失"：WARN 日志（带 trace_id 与 path）+ 计数。
+//
+// 不记 client_id：这条路径**没有**归属的 client，写了也只是空串。
+func reportMissingRoute(logger *slog.Logger, traceID, path string) {
+	noRouteMissingTotal.Add(1)
+	if logger != nil {
+		logger.Warn("data-plane: no route for path (路由表缺条目)",
+			"trace_id", traceID, "path", path, "code", string(httpx.CodeClientNotFound))
+	}
 }
 
 // stripAssertionHeader 删掉客户端自带（或任何中间环节塞进来）的断言头。

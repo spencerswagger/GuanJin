@@ -360,6 +360,10 @@ func TestNoRouteThroughPipelineIs404ClientNotFound(t *testing.T) {
 	if code := errorCode(t, rec); code == httpx.CodeUpstreamUnavailable {
 		t.Fatal("未匹配路由不得返回 UPSTREAM_UNAVAILABLE（那是转发失败的码）")
 	}
+	// 部署漂移必须可观测：计数递增（WARN 日志同点产生）。扣掉本用例之前可能已有的计数。
+	if got := MissingRouteTotal(); got < 1 {
+		t.Fatalf("路由缺失计数应递增（当前 %d）——否则部署少了路由项没人知道", got)
+	}
 	if up.hits != 0 {
 		t.Fatalf("上游被调用了 %d 次：无路由不得裸转发", up.hits)
 	}

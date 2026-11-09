@@ -195,6 +195,10 @@ func TestNoRouteIs404ClientNotFoundAndNeverForwards(t *testing.T) {
 	if rec.Header().Get("Retry-After") != "" {
 		t.Error("404 不该带 Retry-After（那是 503 的重试语义）")
 	}
+	// 计数递增：与 Pipeline 共用同一个计数器（`CLIENT_NOT_FOUND` 的唯一产生点）。
+	if MissingRouteTotal() < 1 {
+		t.Fatal("路由缺失计数应递增")
+	}
 	// 响应上也不得出现断言头（本包从不回填，这里锁死）。
 	for k := range rec.Header() {
 		if strings.EqualFold(k, AssertionHeader) {

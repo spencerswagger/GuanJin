@@ -128,23 +128,7 @@ func TestGatewayNeverStoresOrComparesJTI(t *testing.T) {
 		}
 	}
 
-	var files []string
-	for _, root := range []string{".", filepath.Join(".", "adapter")} {
-		entries, err := os.ReadDir(root)
-		if err != nil {
-			t.Fatalf("read dir %s: %v", root, err)
-		}
-		for _, e := range entries {
-			name := e.Name()
-			if e.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
-				continue
-			}
-			files = append(files, filepath.Join(root, name))
-		}
-	}
-	if len(files) < 8 {
-		t.Fatalf("扫描文件数异常（%d），检查路径（扫不到必须当失败，否则这条守线会静默失效）", len(files))
-	}
+	files := guardSources(t)
 
 	for _, file := range files {
 		raw, err := os.ReadFile(file)
@@ -163,6 +147,40 @@ func TestGatewayNeverStoresOrComparesJTI(t *testing.T) {
 			}
 		}
 	}
+}
+
+// guardSources 递归收集本包（含子包）的**生产代码**文件。
+//
+// 为什么递归：早先只扫 `.` 与 `./adapter` 两层，新增任何子目录（如 `internal/gateway/x/`）
+// 都会自动落在守线之外——"扫不到"必须当失败，否则这条闸会在无人察觉时失效。
+// 同时自检：必须真的看到 `adapter` 目录（结构一变就先红，而不是悄悄少扫一半）。
+func guardSources(t *testing.T) []string {
+	t.Helper()
+	var files []string
+	dirs := map[string]bool{}
+	err := filepath.WalkDir(".", func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			dirs[path] = true
+			return nil
+		}
+		if strings.HasSuffix(path, ".go") && !strings.HasSuffix(path, "_test.go") {
+			files = append(files, path)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk 包目录失败：%v", err)
+	}
+	if !dirs[filepath.Join(".", "adapter")] {
+		t.Fatalf("递归扫描没看到 adapter 子包（目录结构变了？）：%v", dirs)
+	}
+	if len(files) < 8 {
+		t.Fatalf("扫描文件数异常（%d）：扫不到必须当失败，否则守线会静默失效（files=%v）", len(files), files)
+	}
+	return files
 }
 
 // jtiForbiddenHits 返回该行命中的"平台侧判重"模式（存储或比对），空 = 干净。

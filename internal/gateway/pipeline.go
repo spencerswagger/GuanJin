@@ -76,12 +76,15 @@ func (p *Pipeline) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// ② 路由
 	//
-	// 未匹配用 **404 `CLIENT_NOT_FOUND`**，不是 `UPSTREAM_UNAVAILABLE`（后者按 D8-C′④ + AC-DP-13
-	// 只给"已开始转发但上游失败/超时"）。语义边界：`CLIENT_NOT_FOUND` **只**表示"路由表里找不到
-	// 这条路径归属的 client"（部署漂移，不是调用方参数错），不得当通用 404；请求本身不合法才用
-	// `INVALID_REQUEST`。`E4` 的默认状态就是 404，故无需覆盖状态码（少一层例外）。
+	// 未匹配用 **404 `CLIENT_NOT_FOUND`**（`decisions.md:416` 定稿；`internal/httpx/errors.go:83`：
+	// 该码 E4/404 默认即 404，零例外），不是 `UPSTREAM_UNAVAILABLE`（后者按 D8-C′④ + AC-DP-13
+	// 只给"已开始转发但上游失败/超时"）。
+	//
+	// **语义边界（防被当通用 404 用）**：`CLIENT_NOT_FOUND` **仅**指「路由 → client 映射缺失」
+	// （部署漂移，不是调用方参数错）；其余"找不到"用各自专码，请求本身不合法才用 `INVALID_REQUEST`。
 	route, ok := p.forward.router.Match(r.URL.Path)
 	if !ok {
+		reportMissingRoute(p.logger, traceID, r.URL.Path)
 		httpx.WriteError(rec, traceID, httpx.CodeClientNotFound,
 			"该路径未归属任何业务系统", nil)
 		return
