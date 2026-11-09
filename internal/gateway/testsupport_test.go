@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"io"
 	"log/slog"
+	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -22,6 +23,7 @@ import (
 	"github.com/spencerswagger/guanjin/internal/httpx"
 	"github.com/spencerswagger/guanjin/internal/protocol"
 	"github.com/spencerswagger/guanjin/internal/signing"
+	"github.com/tjfoc/gmsm/sm2"
 )
 
 // 本文件是 S8 的测试夹具：**真实密钥 + 真实验签**（不 mock SM2），
@@ -410,4 +412,18 @@ type stubCaller struct{}
 
 func (stubCaller) Resolve(context.Context, string) (httpx.Caller, error) {
 	return httpx.Caller{}, httpx.ErrCallerUnauthenticated
+}
+
+// jwkPublicForTest 把 JWK 的 x/y 还原成 `*sm2.PublicKey`（与业务系统 SDK 的取法一致）。
+func jwkPublicForTest(t *testing.T, jwk signing.JWK) *sm2.PublicKey {
+	t.Helper()
+	x, err := base64.RawURLEncoding.DecodeString(jwk.X)
+	if err != nil {
+		t.Fatalf("decode jwk.x: %v", err)
+	}
+	y, err := base64.RawURLEncoding.DecodeString(jwk.Y)
+	if err != nil {
+		t.Fatalf("decode jwk.y: %v", err)
+	}
+	return &sm2.PublicKey{Curve: sm2.P256Sm2(), X: new(big.Int).SetBytes(x), Y: new(big.Int).SetBytes(y)}
 }

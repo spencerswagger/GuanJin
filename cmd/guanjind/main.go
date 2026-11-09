@@ -25,6 +25,8 @@ import (
 
 	"gorm.io/gorm"
 
+	"github.com/redis/go-redis/v9"
+
 	"github.com/spencerswagger/guanjin/internal/config"
 	"github.com/spencerswagger/guanjin/internal/httpx"
 	"github.com/spencerswagger/guanjin/internal/store"
@@ -110,13 +112,12 @@ func startup(ctx context.Context, getenv func(string) string, logger *slog.Logge
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
 	})
-	// /readyz 反映依赖状态：装配期已 ping 过 DB 并校验过策略 seed，
-	// 所以这两项是 ok；Redis 尚未接入 → 如实留在 pending 里（不谎报）。
-	mux.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"status":"ready","checks":{"config":"ok","db":"ok","login_policies":"ok"},"pending":["redis"]}`))
-	})
+	// /readyz 反映**当前**依赖状态（每次现打，不吃启动期的旧结论）：DB 不通 → 503 `DB_UNAVAILABLE`、
+	// Redis 不通 → 503 `REDIS_UNAVAILABLE`（D8-C / AC-FC-01/02）。Redis 客户端与数据面/风控共用同一地址。
+	mux.HandleFunc("/readyz", readyzHandler(readyzDeps{
+		db:    db,
+		redis: redis.NewClient(&redis.Options{Addr: cfg.RedisAddr, Password: cfg.RedisPassword}),
+	}))
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, httpx.TraceIDFromContext(r.Context()), httpx.CodeInvalidRequest,
 			"endpoint not implemented yet", nil)

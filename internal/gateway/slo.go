@@ -43,6 +43,12 @@ type RevocationNotice struct {
 	Reason string
 	// At 撤销生效时刻。
 	At time.Time
+	// Subject 是签通知断言所需的**身份事实**（`uname`/`roles`/`acr`/`amr`/`cid`）；
+	// `aud` 由投递方按目标 client 覆盖（D16①：`aud` 永远是目标业务系统）。
+	//
+	// 为什么放在这里而不让 notifier 回库查：撤销路径已经握着这些事实（就在被撤销的会话上），
+	// 让投递端再查一次库，等于把"通知失败"的半径扩大到"查库也可能失败"。
+	Subject *AssertionInput
 }
 
 // Notifier 是**唯一**的投递接缝（实现属 R12 裁定之后；测试用假实现）。
