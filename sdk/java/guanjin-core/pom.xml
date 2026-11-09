@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  guanjin-core：**零 Spring / 零 servlet 依赖**（契约 §5.1.2、AC-SDK-09）。
+  这里放全部判定与验签前的通用逻辑：29 项配置、启动自检、JWKS 缓存、jti 防重放、claim 校验。
+  任何 org.springframework.* / javax.servlet.* 出现在本模块依赖树 = AC-SDK-09 FAIL。
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>com.guanjin</groupId>
+    <artifactId>guanjin-sdk-parent</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+  </parent>
+
+  <artifactId>guanjin-core</artifactId>
+  <name>guanjin-core</name>
+  <description>关津 SDK 核心（零 Spring / 零 servlet）</description>
+
+  <dependencies>
+    <!-- JSON：平台 JWKS 的 SM2 公钥是 `kty=EC, crv=SM2`，nimbus 的 ECKey 不支持该曲线，
+         故 JWKS 用 jackson 解析成原始 x/y（公钥构造留给验签切片，BouncyCastle）。
+         版本由 spring-boot-dependencies 2.7.18 BOM 管理（2.13.5），不手写版本号。 -->
+    <dependency>
+      <groupId>com.fasterxml.jackson.core</groupId>
+      <artifactId>jackson-databind</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+</project>

@@ -13,7 +13,9 @@ name: ci
 #     并比对 `INFO stats.total_commands_processed` 的增量；任一不满足即判红（真 Redis 未被使用 = 未验证 = 红）。
 #   - migrate CLI 版本**单一来源** = Makefile 的 `MIGRATE_VERSION`（v4.19.1）：job 里跑 `make migrate-tool`
 #     装到 `./bin`，迁移命令走 `make migrate-up`，顺带把「PATH 找不到 migrate → 回退 ./bin/migrate」这条回退路径在 CI 里验到。
-#   - **合并门禁包含 integration**：`go` / `race` / `web` / `integration` 四个 job 全绿才许合入 main。
+#   - **合并门禁包含 integration**：`go` / `race` / `web` / `integration` / `sdk` 五个 job 全绿才许合入 main。
+#   - **sdk 是 Java 8 双门禁**（docs/sdk-contract.md §5.1.1）：JDK 17 走 release=8 + **真实 JDK 8** 各跑一遍；
+#     `jti` 防重放**必须连真 Redis**（不许 mock），有 SKIP 即红。
 
 on:
   push:
@@ -220,6 +222,55 @@ jobs:
           set -euo pipefail
           COVERAGE_TAGS=integration COVERAGE_PROFILE=integration-cover.out COVERAGE_MIN=60 \
             ./scripts/coverage-gate.sh | tee integration-coverage.txt
+
+  sdk:
+    # Java 8 SDK（sdk/java）：单测 + **真 Redis** 集成用例 + Java 8 机械门禁。
+    # 双 JDK 是契约要求：release=8 挡 API 面，真实 JDK 8 挡"用 17 编、目标 8"的虚假安全感。
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        java: ['8', '17']
+    services:
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ matrix.java }}
+          cache: maven
+      - name: mvn -Pintegration verify（单测 + 真 Redis 集成）
+        env:
+          GUANJIN_TEST_REDIS_ADDR: localhost:6379
+          GUANJIN_TEST_REDIS_PASSWORD: ''
+        run: mvn -B -f sdk/java/pom.xml -Pintegration verify
+      - name: 证据：tests_run / tests_skip（SKIP 必须为 0）+ 集成用例必须真跑
+        run: |
+          set -euo pipefail
+          files="$(ls sdk/java/*/target/surefire-reports/*.txt sdk/java/*/target/failsafe-reports/*.txt 2>/dev/null || true)"
+          [ -n "$files" ] || { echo "[FAIL] 没有任何测试报告 → 未验证 = 红"; exit 1; }
+          run=0; skip=0
+          for f in $files; do
+            line="$(grep -h 'Tests run:' "$f" | head -1)"
+            r="$(printf '%s' "$line" | sed -E 's/Tests run: ([0-9]+).*/\1/')"
+            s="$(printf '%s' "$line" | sed -E 's/.*Skipped: ([0-9]+).*/\1/')"
+            run=$((run + r)); skip=$((skip + s))
+          done
+          it="$(ls sdk/java/*/target/failsafe-reports/*.txt 2>/dev/null | wc -l | tr -d ' ')"
+          echo "tests_run=$run tests_skip=$skip failsafe_reports=$it"
+          [ "$skip" = "0" ] || { echo "[FAIL] 存在 SKIP（未验证 = 红）"; exit 1; }
+          [ "$it" -gt 0 ] || { echo "[FAIL] 没有集成用例报告 → 视为未验证 = 红"; exit 1; }
+      - name: Java 8 机械门禁（core 依赖树 / 14 条禁用 API / class 版本）
+        run: ./scripts/check-sdk-java8.sh
 
   web:
     runs-on: ubuntu-latest

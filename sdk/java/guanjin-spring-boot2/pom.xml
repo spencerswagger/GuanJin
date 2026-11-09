@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  guanjin-spring-boot2：javax 适配层（契约 §5.1）。Spring 只出现在这里，
+  将来支持 Boot 3.x 只需再加一个 jakarta 适配模块，核心零改动。
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>com.guanjin</groupId>
+    <artifactId>guanjin-sdk-parent</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+  </parent>
+
+  <artifactId>guanjin-spring-boot2</artifactId>
+  <name>guanjin-spring-boot2</name>
+  <description>关津 SDK 的 Spring Boot 2.7（javax）适配层</description>
+
+  <dependencies>
+    <dependency>
+      <groupId>com.guanjin</groupId>
+      <artifactId>guanjin-core</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-autoconfigure</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-configuration-processor</artifactId>
+      <optional>true</optional>
+    </dependency>
+
+    <!-- ★ 2.x 关键：javax.servlet，非 jakarta.servlet（契约 §5.1） -->
+    <dependency>
+      <groupId>javax.servlet</groupId>
+      <artifactId>javax.servlet-api</artifactId>
+      <scope>provided</scope>
+    </dependency>
+
+    <!-- 重放存储的 Redis 客户端：**复用宿主已注入的 StringRedisTemplate**（契约 §3.5：
+         SDK 不自读 Redis 地址、不新增连接配置）。optional = 不强制宿主引入，
+         宿主没引入时 `replay-store=redis` 会在启动期 fail-fast 而不是静默降级。 -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-data-redis</artifactId>
+      <optional>true</optional>
+    </dependency>
+
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+
+    <!-- MockHttpServletResponse 需要 spring-web 的 MediaType（仅测试用） -->
+    <dependency>
+      <groupId>org.springframework</groupId>
+      <artifactId>spring-web</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+</project>
