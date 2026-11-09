@@ -192,6 +192,9 @@ type testGuard struct {
 	factors []flow.FactorInfo
 	// skew 是令牌时钟偏移宽容度（默认 1s；AC-DP-06 的边界打点用）。
 	skew time.Duration
+	// now 是**注入的固定时钟**（AC-DP-06 必须用它：用真实 `time.Now()` 算 `iat` 会让
+	// "超前 6s" 在慢机器上因为 setups 耗时被吃掉余量而偶发失败——Gate 抓到的 flaky）。
+	now time.Time
 }
 
 func newTestGuard(t *testing.T, mutate func(*testGuard)) *testGuard {
@@ -214,6 +217,7 @@ func newTestGuard(t *testing.T, mutate func(*testGuard)) *testGuard {
 		keys:    keys,
 		factors: testFactors(),
 		skew:    time.Second,
+		now:     now,
 	}
 	if mutate != nil {
 		mutate(tg)
@@ -222,7 +226,9 @@ func newTestGuard(t *testing.T, mutate func(*testGuard)) *testGuard {
 		Caller: &protocol.CallerResolver{
 			Keys:     keys,
 			Sessions: &fakeSessionStatus{status: "active"},
-			Now:      time.Now,
+			// 与 Guard 共用同一个固定时钟：签发侧算 `iat/exp`、校验侧算窗口，必须同源，
+			// 否则"边界打点"测的其实是测试机有多快。
+			Now: func() time.Time { return tg.now },
 		},
 		Sessions: tg.sessions,
 		Policies: tg.policies,
@@ -233,7 +239,7 @@ func newTestGuard(t *testing.T, mutate func(*testGuard)) *testGuard {
 		Factors:  tg.factors,
 		Issuer:   testIssuer,
 		Skew:     tg.skew,
-		Now:      time.Now,
+		Now:      func() time.Time { return tg.now },
 		Logger:   slog.New(slog.NewTextHandler(io.Discard, nil)),
 	})
 	if err != nil {

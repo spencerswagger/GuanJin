@@ -110,26 +110,30 @@ func TestAC_DP_04_TamperedTokenIsRejected(t *testing.T) {
 // （`iat` 在 mutate 里**现取**时间：本用例要先解封两把 SM2 钥，取值过早会让
 // "now+2s"在慢机器上落到 skew 之内，测试会随机假通过。）
 func TestAC_DP_06_ClockSkewBoundaries(t *testing.T) {
+	// 时间全部相对**注入的固定时钟** `tg.now`（与 Guard / CallerResolver 同一个）：
+	// 用真实 `time.Now()` 现算 `iat`，会在慢机器上被 setup 耗时吃掉余量 —— "超前 6s"偶发通过，
+	// 这是 Gate 抓到过的 flaky；固定时钟让"6s 就是 6s"。
 	cases := []struct {
 		name       string
-		mutate     func(map[string]any)
+		expOffset  *time.Duration // 非 nil 时覆盖 exp（相对 tg.now）
+		iatOffset  *time.Duration // 非 nil 时覆盖 iat（相对 tg.now）
 		wantStatus int
 		wantCode   httpx.Code
 	}{
 		{
 			name:       "exp 已过期（1 秒前）",
-			mutate:     func(c map[string]any) { c["exp"] = time.Now().UTC().Add(-time.Second).Unix() },
+			expOffset:  durPtr(-time.Second),
 			wantStatus: http.StatusUnauthorized,
 			wantCode:   httpx.CodeTokenInvalid,
 		},
 		{
 			name:       "iat 超前 4s（skew 5s 内）",
-			mutate:     func(c map[string]any) { c["iat"] = time.Now().UTC().Add(4 * time.Second).Unix() },
+			iatOffset:  durPtr(4 * time.Second),
 			wantStatus: http.StatusOK,
 		},
 		{
 			name:       "iat 超前 6s（超出 skew 5s）",
-			mutate:     func(c map[string]any) { c["iat"] = time.Now().UTC().Add(6 * time.Second).Unix() },
+			iatOffset:  durPtr(6 * time.Second),
 			wantStatus: http.StatusUnauthorized,
 			wantCode:   httpx.CodeTokenInvalid,
 		},
@@ -140,7 +144,15 @@ func TestAC_DP_06_ClockSkewBoundaries(t *testing.T) {
 			up := newRecordedUpstream(t)
 			p := newTestPipeline(t, tg, up)
 
-			rec := doRequest(p, http.MethodGet, "/api/billing/orders", issueUserToken(t, tg.keys, tc.mutate))
+			token := issueUserToken(t, tg.keys, func(c map[string]any) {
+				if tc.expOffset != nil {
+					c["exp"] = tg.now.Add(*tc.expOffset).Unix()
+				}
+				if tc.iatOffset != nil {
+					c["iat"] = tg.now.Add(*tc.iatOffset).Unix()
+				}
+			})
+			rec := doRequest(p, http.MethodGet, "/api/billing/orders", token)
 			if rec.Code != tc.wantStatus {
 				t.Fatalf("期望 %d，实际 %d（body=%s）", tc.wantStatus, rec.Code, rec.Body.String())
 			}
@@ -152,6 +164,9 @@ func TestAC_DP_06_ClockSkewBoundaries(t *testing.T) {
 		})
 	}
 }
+
+// durPtr 是"可选时长"的取值助手（nil = 该字段不动）。
+func durPtr(d time.Duration) *time.Duration { return &d }
 
 // AC-DP-07：`iss` 不符 / `aud` 不符或缺失 → 401（`aud` 必须等于**路由命中的 client**）。
 func TestAC_DP_07_IssuerAndAudienceMismatch(t *testing.T) {
