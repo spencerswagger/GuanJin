@@ -77,8 +77,12 @@ func (c *Chain) Append(ctx context.Context, db *gorm.DB, rec Record) ([]byte, er
 		// （换连接池模式、事务隔离级别变化、或将来有人删掉那一行），行锁仍会挡住
 		// "两个写者同时把同一条当链尾"。锁序固定为 **先 advisory、后行锁**，避免与
 		// `EnsurePartitions` 的 "advisory → ACCESS EXCLUSIVE" 形成交叉死锁。
-		res := tx.Raw(`SELECT integrity_tag, occurred_at, created_at FROM audit_logs
-			ORDER BY created_at DESC, id DESC LIMIT 1 FOR UPDATE`).Scan(&tail)
+		tailSQL := `SELECT integrity_tag, occurred_at, created_at FROM audit_logs
+			ORDER BY created_at DESC, id DESC LIMIT 1`
+		if !c.disableRowLock {
+			tailSQL += ` FOR UPDATE` // 第二道防线（Gate 反证时由测试摘除）
+		}
+		res := tx.Raw(tailSQL).Scan(&tail)
 		if res.Error != nil && !isNoRows(res.Error) {
 			return fmt.Errorf("audit: read chain tail: %w", res.Error)
 		}

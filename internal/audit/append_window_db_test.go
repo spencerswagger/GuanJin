@@ -123,56 +123,70 @@ func TestAppendWindowForcedOpenStillKeepsChainIntact(t *testing.T) {
 		workers, elapsed.Round(time.Millisecond), dup, broken != nil)
 }
 
-// **反证**：把 advisory 锁关掉（`disableChainLock`，仅测试用），窗口内并发峰值必然 >1，
-// 且探针必须能检测到分叉/断链——否则正向那条"零分叉"就只是探针失灵。
+// **b1（Gate 口径）**：只摘掉 advisory 锁、保留链尾行 `FOR UPDATE`。
 //
-// 这条是 Gate 要求的"反证必须红"：它证明本文件的检测手段有效。
-func TestAppendWithoutChainLockForks(t *testing.T) {
+// 行锁可能顶上来把写者串行在同一条链尾上，因此这一段**不判红**，只记录事实：
+// 零分叉 → "行锁足以串行"；有分叉 → "行锁不足以串行"。两段都先断言条数，防跨轮污染失真。
+func TestAppendB1AdvisoryRemovedRowLockHolds(t *testing.T) {
+	forks, records := runConcurrentAppends(t, func(c *Chain) { c.disableChainLock = true })
+	if len(records) != bWorkers {
+		t.Fatalf("写入条数 %d ≠ 期望 %d（跨轮污染时统计不可信）", len(records), bWorkers)
+	}
+	t.Logf("b1（只摘 advisory，保留 FOR UPDATE）：条数=%d forks=%v", len(records), forks)
+}
+
+// **b2（Gate 判据）**：两道串行机制**一起摘掉** → 必须检出分叉。
+//
+// 这一条才证明"探针能检出分叉"；若 b2 仍零分叉，说明测量手段无效，
+// `AC-AUD-04` 的所有零分叉结论都不成立（应记"未稳定通过"）。
+func TestAppendB2BothLocksRemovedMustFork(t *testing.T) {
+	forks, records := runConcurrentAppends(t, func(c *Chain) {
+		c.disableChainLock = true
+		c.disableRowLock = true
+	})
+	if len(records) != bWorkers {
+		t.Fatalf("写入条数 %d ≠ 期望 %d（跨轮污染时统计不可信）", len(records), bWorkers)
+	}
+	if !forks {
+		t.Fatalf("两道锁都摘掉后仍零分叉（n=%d）：探针检测不到分叉，正向结论无效", len(records))
+	}
+	t.Logf("b2 成立：两道锁摘掉后检出分叉（n=%d）", len(records))
+}
+
+const bWorkers = 20
+
+// runConcurrentAppends 跑 bWorkers 个并发写者，返回"是否检出分叉"与实际写入条数。
+func runConcurrentAppends(t *testing.T, tweak func(*Chain)) (bool, []Record) {
+	t.Helper()
 	db := openAuditTestDB(t)
-	chain := auditTestChain(t)
+	base := auditTestChain(t)
 	month := cleanMonth(t)
 	month = requirePartition(t, db, month)
 	cleanupMonth(t, db, month)
-	if err := EnsurePartitions(context.Background(), db, []time.Time{month}); err != nil {
-		t.Fatalf("EnsurePartitions: %v", err)
-	}
 
-	var inside, peak int32
-	unlocked := *chain
-	unlocked.disableChainLock = true
-	unlocked.afterTailRead = func() {
-		cur := atomic.AddInt32(&inside, 1)
-		for {
-			old := atomic.LoadInt32(&peak)
-			if cur <= old || atomic.CompareAndSwapInt32(&peak, old, cur) {
-				break
-			}
-		}
-		time.Sleep(2 * time.Millisecond)
-		atomic.AddInt32(&inside, -1)
-	}
-	chain = &unlocked
+	c := *base
+	tweak(&c)
+	chain := &c
 
-	const workers = 20
 	var wg sync.WaitGroup
-	for i := 0; i < workers; i++ {
+	for i := 0; i < bWorkers; i++ {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
 			_, _ = chain.Append(context.Background(), db, Record{
-				Action: "unlocked", Result: "success",
+				Action: "b-probe", Result: "success",
 				OccurredAt: month.Add(time.Duration(i) * time.Millisecond),
 			})
 		}(i)
 	}
 	wg.Wait()
 
-	if p := atomic.LoadInt32(&peak); p < 2 {
-		t.Fatalf("关掉 advisory 锁后 hook 内并发峰值 = %d（期望 ≥2）：说明这个探针制造不出并发窗口", p)
-	}
 	records, err := chain.Load(context.Background(), db, month, month.AddDate(0, 1, 0))
 	if err != nil {
 		t.Fatalf("Load: %v", err)
+	}
+	if len(records) == 0 {
+		t.Fatal("没有写入任何记录")
 	}
 	seen := map[string]int{}
 	for _, r := range records {
@@ -188,8 +202,6 @@ func TestAppendWithoutChainLockForks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Verify: %v", err)
 	}
-	if dup == 0 && broken == nil {
-		t.Fatalf("关掉锁后仍无分叉（dup=0, broken=nil, n=%d）：说明探针检测不到分叉，正向结论无效", len(records))
-	}
-	t.Logf("反证成立：关锁后 dup_prev_tag=%d broken=%v peak=%d", dup, broken, atomic.LoadInt32(&peak))
+	t.Logf("dup_prev_tag=%d broken=%v n=%d", dup, broken != nil, len(records))
+	return dup > 0 || broken != nil, records
 }

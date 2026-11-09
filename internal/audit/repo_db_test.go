@@ -847,6 +847,11 @@ func TestChainRealPathsForCoverage(t *testing.T) {
 	}
 	verifier.now = func() time.Time { return month }
 
+	// **清掉跨运行残留的锚**：不断言的话，"空月不写锚"会读到上一次运行留下的值 → 假红。
+	if err := db.Exec(`DELETE FROM runtime_config WHERE key = ?`, AnchorKey(month)).Error; err != nil {
+		t.Fatalf("clear anchor: %v", err)
+	}
+
 	// ① 空区间复核 + 空月份不写锚。
 	res, err := verifier.RunOnce(context.Background())
 	if err != nil {

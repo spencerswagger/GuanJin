@@ -61,9 +61,12 @@ type Chain struct {
 	// 插入可控延迟，用来证明并发防线真的有效。见 `repo.go` 的 `Append`。
 	afterTailRead func()
 
-	// disableChainLock 是**仅测试用**的反证开关（生产恒为 false）：跳过 advisory 锁，
-	// 用来证明"去掉串行化后探针确实能检测到分叉"——否则"零分叉"可能只是探针失灵。
+	// disableChainLock 是**仅测试用**的反证开关（生产恒为 false）：跳过 advisory 锁。
+	// 配合 `disableRowLock` 做 b1（只摘 advisory）/ b2（两道都摘）两段反证。
 	disableChainLock bool
+
+	// disableRowLock 是**仅测试用**的反证开关（生产恒为 false）：去掉链尾行的 `FOR UPDATE`。
+	disableRowLock bool
 
 	key crypto.HMACKey
 }
