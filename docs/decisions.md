@@ -447,6 +447,20 @@
 
 ---
 
+## D18 无 client 上下文时的 `ACR_INSUFFICIENT` 不带 `details.flow` —— **待 spencer 拍板（未生效）**
+
+> **状态：草案，未生效。** 拍板前**不得作为判据依据**，实现侧可先按此备稿但**不得宣布生效**；拍板后本条才转为有效口径（并补一行"已拍板 2026-xx-xx"）。
+
+- **结论**：**无 `client_id` 上下文**的自助操作（如 `POST /api/v1/me/identifiers`）返回 `ACR_INSUFFICIENT`（403）时，**不带 `details.flow`**，最多给**平铺**的 `current_acr` / `target_acr`；**不得**为此造 Descriptor、**不得**给 `terminal_state` 增新值（`not_started` 之类等于改 **D7** 的枚举词表）。
+- **依据（逐条，不是"感觉上更简单"）**：
+  1. **`details` 本就是可选的**：`接口清单:739` 的措辞是「`ACR_INSUFFICIENT` 不直接失败，响应 `details.flow` 给出当前档位与待补步骤」；但同一份文件的 **§5.4** 明写 `details` 为**可选项**（「如 `{"retry_after":…}` / `{"flow":{…}}`（**引导阶梯认证时回带**）」）→ 「三面都回 `details.flow`」不是强制项。
+  2. **Descriptor 的必填字段在无上下文时无来源**：**D7 / CH-2** 冻结的 Descriptor 必填 `flow_id`、`client{...}`、`expires_at`；无 client 上下文时这三项**全无来源**，硬造即是**新增契约面**（F0 禁自造 wire 名/字段）。
+  3. **技术上开不出 flow**：`flows.client_id` 是 **NOT NULL** 且有 `flows_client_not_blank` CHECK（`migrations/000015_create_flows.up.sql:9` / `:28`）→ 无上下文根本落不了一行 flow；此时给出 `flow_id` 会**误导客户端**去调 `/auth/challenge/{factor}`（CH-1 要求 `purpose ∈ {login, step_up}` 必带 `flow_id`），必然失败，属于"看起来给了引导、实际给不出"的假引导。
+- **受影响 / 落地（拍板后）**：**Core**（自助面 `ACR_INSUFFICIENT` 的错误构造：平铺字段、不塞 `details.flow`）；**Gate**（`AC-FLOW-09` 断言只取平铺 `current_acr`/`target_acr`，**不得**断言 `details.flow` 存在）；**Nova / Vue**（客户端在该场景**不得**据此调 `/auth/challenge`，改走"提示去某个业务系统完成阶梯"）。
+- **与既有条目的关系**：`AC-DP-09`（**有** client 上下文的数据面）仍然**带** `details.flow` —— 本条只裁无上下文那一类，两者不冲突；本条不改 D7/CH-2 的 Descriptor 字段，也不改 `AC-DP-09`。
+
+---
+
 ## 契约变更清单（对外可见）—— 状态：**CH-1~CH-5 已追认（经 hugo 追认，2026-11-02）；CH-6 为内部口径；CH-7 已裁定；CH-8 待追认（2026-11-04）；CH-9 待追认（2026-11-10）**
 
 > 本表只收**对外可见**的变更（影响业务系统、SDK、前端或对外错误码的）。基线 `/docs/baseline/` 一个字不改，这些变更以本表为准并在**下版契约文档**（OpenAPI + `sdk-contract.md` + 页面规格口径）一次性落盘；落盘时机 = 全部 M1 判据回填后、M1 编码前。**本表状态：CH-1~CH-5 = 已追认（经 hugo 追认，2026-11-02，记录法见 P8）；CH-6 = 内部口径、无需追认；CH-7 = 已裁定；CH-8 = 待追认（2026-11-04）；CH-9 = 待追认（2026-11-10，SLO 通知）。** 后续新增变更一律按 **P8②** 追加行（编号只增不重排）；作废条目改「已撤回」并保留原行。
