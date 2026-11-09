@@ -28,17 +28,17 @@ import (
 // fail-fast：拿不到签名密钥/解析器就直接让进程起不来——否则端点会静默回 401，
 // 看起来像"用户没登录"，实际是"装配没接上"。
 func newSessionWiring(ctx context.Context, db *gorm.DB, cfg *config.Config, logger *slog.Logger) (
-	*session.HTTPHandler, *admin.SessionsHTTP, error) {
+	*session.HTTPHandler, *admin.SessionsHTTP, session.TokenResolver, error) {
 	keys, err := loadSigningKeys(ctx, db, cfg)
 	if err != nil {
-		return nil, nil, fmt.Errorf("startup: S7 requires signing keys: %w", err)
+		return nil, nil, nil, fmt.Errorf("startup: S7 requires signing keys: %w", err)
 	}
 	resolver, err := newCallerResolver(keys, db)
 	if err != nil {
-		return nil, nil, fmt.Errorf("startup: S7 caller resolver: %w", err)
+		return nil, nil, nil, fmt.Errorf("startup: S7 caller resolver: %w", err)
 	}
 	if resolver == nil {
-		return nil, nil, errors.New("startup: S7 caller resolver is nil")
+		return nil, nil, nil, errors.New("startup: S7 caller resolver is nil")
 	}
 
 	// 撤销级联走 D5 的窄接口 `AbandonBySession`（不直接 import flowstore，避免成环）。
@@ -50,7 +50,7 @@ func newSessionWiring(ctx context.Context, db *gorm.DB, cfg *config.Config, logg
 	// 装配在 `slo_wiring.go`：目标取路由表该 client 的 `upstream`，报文复用断言的十项 claim。
 	notifier, err := newSLORevokeNotifier(db, cfg, keys, logger)
 	if err != nil {
-		return nil, nil, fmt.Errorf("startup: %w", err)
+		return nil, nil, nil, fmt.Errorf("startup: %w", err)
 	}
 
 	mgr, err := session.NewManager(ops, flowRepo, events, session.Options{
@@ -58,15 +58,15 @@ func newSessionWiring(ctx context.Context, db *gorm.DB, cfg *config.Config, logg
 		Notifier: notifier,
 	})
 	if err != nil {
-		return nil, nil, fmt.Errorf("startup: session manager: %w", err)
+		return nil, nil, nil, fmt.Errorf("startup: session manager: %w", err)
 	}
 	sessionHandler, err := session.NewHTTPHandler(mgr, resolver, logger)
 	if err != nil {
-		return nil, nil, fmt.Errorf("startup: session http: %w", err)
+		return nil, nil, nil, fmt.Errorf("startup: session http: %w", err)
 	}
 	adminSessions, err := admin.NewSessionsHTTP(mgr, resolver, logger)
 	if err != nil {
-		return nil, nil, fmt.Errorf("startup: admin sessions http: %w", err)
+		return nil, nil, nil, fmt.Errorf("startup: admin sessions http: %w", err)
 	}
-	return sessionHandler, adminSessions, nil
+	return sessionHandler, adminSessions, resolver, nil
 }

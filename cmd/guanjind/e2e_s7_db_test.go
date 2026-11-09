@@ -90,7 +90,7 @@ func TestE2E_SessionRevokeMakesTokenUseless(t *testing.T) {
 	})
 
 	// 3) 装配（真实的 `newSessionWiring`：真 resolver + 真仓储），挂到 mux 上跑 HTTP。
-	sessRoutes, adminRoutes, err := newSessionWiring(ctx, db, cfg, discardLogger())
+	sessRoutes, adminRoutes, _, err := newSessionWiring(ctx, db, cfg, discardLogger())
 	if err != nil {
 		t.Fatalf("newSessionWiring: %v", err)
 	}
