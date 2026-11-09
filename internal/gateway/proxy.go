@@ -112,15 +112,24 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	rec.clientID = route.ClientID
 
 	// ③ 转发
+	h.ServeRoute(rec, r, route)
+}
+
+// ServeRoute 把一条**已通过准入**的请求转发到 `route` 指向的上游。
+//
+// 与 `ServeHTTP` 的分工：`ServeHTTP` 是"剥离 → 匹配 → 转发"的独立形态（S8·1 的基座，
+// 直接挂在 `http.ServeMux` 上也能跑）；`Pipeline` 走"剥离 → 匹配 → 准入 → 签发 → ServeRoute"，
+// 访问日志由 `Pipeline` 记一条（避免同一请求两条访问日志、两个耗时口径）。
+func (h *Handler) ServeRoute(w http.ResponseWriter, r *http.Request, route Route) {
 	proxy, err := h.proxyFor(route)
 	if err != nil {
 		// 构造期就该失败的东西在运行期失败 = 装配缺陷；仍按"拒服"处理，不裸转发。
 		h.logger.Error("build proxy failed", "error", err, "client_id", route.ClientID)
-		httpx.WriteError(rec, httpx.TraceIDFromContext(r.Context()), httpx.CodeUpstreamUnavailable,
+		httpx.WriteError(w, httpx.TraceIDFromContext(r.Context()), httpx.CodeUpstreamUnavailable,
 			"upstream unavailable", nil)
 		return
 	}
-	proxy.ServeHTTP(rec, r)
+	proxy.ServeHTTP(w, r)
 }
 
 // proxyFor 按上游基址缓存 ReverseProxy（每个上游一套连接池）。
@@ -166,8 +175,10 @@ func (h *Handler) proxyFor(route Route) (*httputil.ReverseProxy, error) {
 				req.URL.Path = singleJoiningSlash(base, req.URL.Path)
 			}
 			req.Host = target.Host
-			// 兜底再删一次：ReverseProxy 会克隆请求，任何中间件都可能在克隆前后加回头。
-			stripAssertionHeader(req.Header)
+			// **禁止在这里删断言头**：Director 是"已通过准入 → 网关现签的头"出门的地方，
+			// 在这里 strip 会把刚签好的身份删掉（S8·2 的实测坑）。剥离只有两个时机：
+			// ① 请求**进**数据面时（`Pipeline.ServeHTTP` / `Handler.ServeHTTP` 的第一步）；
+			// ② 业务系统侧验签之后（SDK，D10 的六步时序）——那是另一件事，不在这里。
 		},
 		// 上游失败语义（AC-DP-13）：**503 UPSTREAM_UNAVAILABLE**，
 		// 不是 500、不是 DEPENDENCY_UNAVAILABLE、更不是已废弃的 SERVICE_DEGRADED；
