@@ -44,7 +44,7 @@ func TestAuditPartitionJobCreatesMissingMonth(t *testing.T) {
 	db := auditTestDB(t)
 	ctx := context.Background()
 	target := fakeMonth(time.Now(), 3)
-	name := fmt.Sprintf("public.audit_logs_p%s", target.Format("200601"))
+	name := fmt.Sprintf("audit_logs_p%s", target.Format("200601"))
 
 	// 前置：清干净（跨运行可能残留），并确认"不存在"。
 	if err := audit.DropPartitions(ctx, db, []time.Time{target}); err != nil {
@@ -75,7 +75,7 @@ func TestAuditPartitionJobRunsOnceAtStartup(t *testing.T) {
 	defer cancel()
 
 	target := fakeMonth(time.Now(), 1)
-	name := fmt.Sprintf("public.audit_logs_p%s", target.Format("200601"))
+	name := fmt.Sprintf("audit_logs_p%s", target.Format("200601"))
 	if err := audit.DropPartitions(ctx, db, []time.Time{target}); err != nil {
 		t.Fatalf("drop partition: %v", err)
 	}

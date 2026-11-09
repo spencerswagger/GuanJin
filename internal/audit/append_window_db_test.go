@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -23,12 +24,48 @@ func TestAppendWindowForcedOpenStillKeepsChainIntact(t *testing.T) {
 	db := openAuditTestDB(t)
 	chain := auditTestChain(t)
 	month := cleanMonth(t)
-	requirePartition(t, db, month)
+	month = requirePartition(t, db, month)
 	cleanupMonth(t, db, month)
 
-	// 让"读链尾 → 插入"的窗口**必然张开** 2ms（生产代码里的注入点，恒为 nil）。
+	// **本用例自己建分区**：不依赖 `TestMain` 预建窗口（Gate 实测该用例 3/3 红在
+	// `23514 no partition of relation "audit_logs"`——分区没建就直接断言"零分叉"，
+	// 结论无效）。建完再断言确实存在，避免"以为建了"。
+	if err := EnsurePartitions(context.Background(), db, []time.Time{month}); err != nil {
+		t.Fatalf("EnsurePartitions: %v", err)
+	}
+	var ready bool
+	if err := db.Raw(`SELECT to_regclass(?) IS NOT NULL`,
+		fmt.Sprintf("audit_logs_p%s", month.Format("200601"))).Scan(&ready).Error; err != nil {
+		t.Fatalf("check partition: %v", err)
+	}
+	if !ready {
+		t.Fatalf("分区 audit_logs_p%s 未建好，无法验证防线", month.Format("200601"))
+	}
+
+	// 让"读链尾 → 插入"的窗口**必然张开** 2ms（生产代码里的注入点，恒为 nil），
+	// 并**证明窗口真的张开**：统计同时在 hook 内的 goroutine 数，峰值必须 ≥2
+	// （否则"零分叉"可能只是并发根本没重叠）。
+	var (
+		inside   int32
+		peak     int32
+		mu       sync.Mutex
+		observed int
+	)
 	delayed := *chain
-	delayed.afterTailRead = func() { time.Sleep(2 * time.Millisecond) }
+	delayed.afterTailRead = func() {
+		cur := atomic.AddInt32(&inside, 1)
+		for {
+			old := atomic.LoadInt32(&peak)
+			if cur <= old || atomic.CompareAndSwapInt32(&peak, old, cur) {
+				break
+			}
+		}
+		mu.Lock()
+		observed++
+		mu.Unlock()
+		time.Sleep(2 * time.Millisecond)
+		atomic.AddInt32(&inside, -1)
+	}
 	chain = &delayed
 
 	const workers = 20
@@ -56,6 +93,14 @@ func TestAppendWindowForcedOpenStillKeepsChainIntact(t *testing.T) {
 	if len(records) != workers {
 		t.Fatalf("期望 %d 条，实际 %d", workers, len(records))
 	}
+	// **串行化被证明**：advisory 锁在 hook 之前取得，因此 hook 内并发峰值必须恒为 1。
+	// 峰值 ≥2 就说明锁没起作用（并发真的重叠了），那才是防线失效。
+	if p := atomic.LoadInt32(&peak); p != 1 {
+		t.Fatalf("hook 内并发峰值 = %d（期望 1）：说明写者在该窗口内重叠，串行化失效", p)
+	}
+	if observed < workers {
+		t.Fatalf("hook 被进入 %d 次（期望 ≥%d）", observed, workers)
+	}
 	broken, err := chain.Verify(records, records[0].PrevTag)
 	if err != nil {
 		t.Fatalf("Verify: %v", err)
@@ -76,4 +121,75 @@ func TestAppendWindowForcedOpenStillKeepsChainIntact(t *testing.T) {
 	}
 	fmt.Printf("SUMMARY workers=%d elapsed=%s dup_prev_tag=%d broken=%v\n",
 		workers, elapsed.Round(time.Millisecond), dup, broken != nil)
+}
+
+// **反证**：把 advisory 锁关掉（`disableChainLock`，仅测试用），窗口内并发峰值必然 >1，
+// 且探针必须能检测到分叉/断链——否则正向那条"零分叉"就只是探针失灵。
+//
+// 这条是 Gate 要求的"反证必须红"：它证明本文件的检测手段有效。
+func TestAppendWithoutChainLockForks(t *testing.T) {
+	db := openAuditTestDB(t)
+	chain := auditTestChain(t)
+	month := cleanMonth(t)
+	month = requirePartition(t, db, month)
+	cleanupMonth(t, db, month)
+	if err := EnsurePartitions(context.Background(), db, []time.Time{month}); err != nil {
+		t.Fatalf("EnsurePartitions: %v", err)
+	}
+
+	var inside, peak int32
+	unlocked := *chain
+	unlocked.disableChainLock = true
+	unlocked.afterTailRead = func() {
+		cur := atomic.AddInt32(&inside, 1)
+		for {
+			old := atomic.LoadInt32(&peak)
+			if cur <= old || atomic.CompareAndSwapInt32(&peak, old, cur) {
+				break
+			}
+		}
+		time.Sleep(2 * time.Millisecond)
+		atomic.AddInt32(&inside, -1)
+	}
+	chain = &unlocked
+
+	const workers = 20
+	var wg sync.WaitGroup
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			_, _ = chain.Append(context.Background(), db, Record{
+				Action: "unlocked", Result: "success",
+				OccurredAt: month.Add(time.Duration(i) * time.Millisecond),
+			})
+		}(i)
+	}
+	wg.Wait()
+
+	if p := atomic.LoadInt32(&peak); p < 2 {
+		t.Fatalf("关掉 advisory 锁后 hook 内并发峰值 = %d（期望 ≥2）：说明这个探针制造不出并发窗口", p)
+	}
+	records, err := chain.Load(context.Background(), db, month, month.AddDate(0, 1, 0))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	seen := map[string]int{}
+	for _, r := range records {
+		seen[string(r.PrevTag)]++
+	}
+	dup := 0
+	for _, n := range seen {
+		if n > 1 {
+			dup++
+		}
+	}
+	broken, err := chain.Verify(records, records[0].PrevTag)
+	if err != nil {
+		t.Fatalf("Verify: %v", err)
+	}
+	if dup == 0 && broken == nil {
+		t.Fatalf("关掉锁后仍无分叉（dup=0, broken=nil, n=%d）：说明探针检测不到分叉，正向结论无效", len(records))
+	}
+	t.Logf("反证成立：关锁后 dup_prev_tag=%d broken=%v peak=%d", dup, broken, atomic.LoadInt32(&peak))
 }

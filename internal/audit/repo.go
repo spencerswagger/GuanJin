@@ -56,9 +56,11 @@ func (c *Chain) Append(ctx context.Context, db *gorm.DB, rec Record) ([]byte, er
 
 	var tag []byte
 	err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		// ① 串行化链尾（事务级 advisory lock）。
-		if err := tx.Exec(`SELECT pg_advisory_xact_lock(?)`, chainLockKey).Error; err != nil {
-			return fmt.Errorf("audit: take chain lock: %w", err)
+		// ① 串行化链尾（事务级 advisory lock）。`disableChainLock` 仅测试反证用。
+		if !c.disableChainLock {
+			if err := tx.Exec(`SELECT pg_advisory_xact_lock(?)`, chainLockKey).Error; err != nil {
+				return fmt.Errorf("audit: take chain lock: %w", err)
+			}
 		}
 		// ② 读链尾：按 (occurred_at, id) 的最后一条（与校验同序）。
 		var (
