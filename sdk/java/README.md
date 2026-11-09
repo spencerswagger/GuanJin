@@ -31,13 +31,20 @@ Java 8 双门禁（契约 §5.1.1）：JDK 9+ 构建走 `release=8`（挡 API �
 | `AC-DP-03`（SDK 反向）/ `GJ-CAP-01/02/04` | **SM2 真验签**：`SM3withSM2` + `kid` 选键 + 未知 kid 强刷一次 + `alg` 不协商；篡改 payload / 未知 kid / `alg=SM2`（用户令牌用途）→ 401 | `Sm2AssertionVerifierTest`（6 条，向量由平台签发代码产出）、`Sm2FilterIT`（3 条，真 HTTP JWKS + 真 Redis） |
 | `AC-SDK-08` ③ | **三处消费者**都取不到断言头：handler / 下游转发 / 日志 | `AssertionHeaderConsumersTest.AC_SDK_08_threeConsumersCannotSeeAssertionHeader` |
 | `AC-SDK-08` ④ | Filter 排在 Spring Security **之前**（`HIGHEST_PRECEDENCE + 100` < `SecurityProperties.DEFAULT_FILTER_ORDER` = -100，直接引用常量断言） | `GuanjinFilterOrderTest` |
+| `GJ-CAP-10`（Spring 落点） | `SecurityContext` 注入：`GuanjinAuthenticationConverter.toAuthentication(p)` 产出已认证 `Authentication`，principal = `GuanjinPrincipal`（**不含断言原文**，credentials/details 均 null），authorities = `role-prefix` + 可选 `GrantedAuthoritiesResolver`（GJ-CAP-11，抛异常即 fail-closed 403）；未认证取身份是 **401** 不是 500 | `GuanjinSecurityContextTest`（8 条，含 filter 注入→清理） |
 | `GJ-CAP-12~16/18` | **jcasbin 真判定**：模型来自 `classpath:/guanjin/model.conf`（配置 #17），策略来自业务声明的 `AuthzModel`（不内联硬编码）；`@RequirePermission` 执行点；`checkRow`（auditor 豁免）/`checkLabel`（主体 ≥ 客体）；`defaultRole` 兜底 | `AuthzTest`（8 条）、`GuanjinAuthorizationInterceptorTest`（5 条） |
 
 ## 还没交付什么（显式标注，不静默缺）
 
 - **`GJ-CAP-17 Scope`**（行级条件下推为 SQL 过滤）：未实现，避免在 SDK 里猜业务表结构。
-- **Spring Security `Authentication` 注入**（`GJ-CAP-10` 的 Spring 落点）：目前身份落点是
-  `GuanjinContextHolder` + 请求属性；`SecurityContext` 注入随 `spring-security-core` 切片补。
+- **`GJ-CAP-17 Scope` / `GJ-CAP-20 PolicyReport` / `GJ-CAP-21 PolicyPull`：M1 判据里没有对应 AC**，
+  按纪律不实现、不自造 AC：
+  - `GJ-CAP-12~18`（含 `Scope`）——`docs/acceptance-criteria.md:379` 明写「M1 只验『接入 + 验签 + 剥离』，
+    **不验本地授权判定模型** → **M5**」；
+  - `GJ-CAP-20/21`——对应判据 `AC-AGENT-01~03` 标 **`NOT-APPLICABLE · M2 前置`**（`acceptance-criteria.md:292-294`），
+    且 `m1-slices.md` S8 行注明 `POST /api/v1/agent/report`「M1 只落验签件，判据归 M2」。
+  - 已实现的相邻部分是 `AC-SDK-10②`（`agent.pull.enabled=false` → 30s 内零次 `/api/v1/agent/policies`，有正控制），
+    这条是 M1 判据，未退化。
 - **策略上报 / 拉取的 HMAC canonical 串**（`GJ-CAP-20`/`21`）：`agent.pull.enabled=true` 而没有
   `PullRequestSigner` bean 时启动失败（**不发未签名回源请求**）。
 - **`AuthzModel` 的上报**（GJ-CAP-20 的 `PolicyReporter`）：未实现，故平台侧策略快照暂为空。

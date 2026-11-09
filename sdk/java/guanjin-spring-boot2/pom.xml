@@ -77,6 +77,13 @@
       <optional>true</optional>
     </dependency>
 
+    <!-- SecurityContext 注入（GJ-CAP-10 的 Spring 落点）：optional = 宿主没引 Spring Security 也能用 SDK -->
+    <dependency>
+      <groupId>org.springframework.security</groupId>
+      <artifactId>spring-security-core</artifactId>
+      <optional>true</optional>
+    </dependency>
+
     <!-- `HandlerMethod`（@RequirePermission 的执行点）在 spring-web；MockHttpServletResponse 也要它。
          optional = 不强制宿主引入（任何 Spring Web 应用本来就有） -->
     <dependency>

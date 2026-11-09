@@ -150,10 +150,11 @@ public class GuanjinAutoConfiguration {
     @ConditionalOnProperty(prefix = "guanjin", name = "enabled", havingValue = "true", matchIfMissing = true)
     public FilterRegistrationBean<GuanjinAssertionFilter> guanjinAssertionFilter(
             GuanjinProperties properties, AssertionVerifier verifier, ReplayGuard replayGuard,
-            PathMatcher pathMatcher) {
+            PathMatcher pathMatcher, ObjectProvider<SecurityContextInjector> injectors) {
+        SecurityContextInjector injector = injectors.getIfAvailable();
         FilterRegistrationBean<GuanjinAssertionFilter> reg =
                 new FilterRegistrationBean<GuanjinAssertionFilter>(
-                        new GuanjinAssertionFilter(properties, verifier, replayGuard, pathMatcher));
+                        new GuanjinAssertionFilter(properties, verifier, replayGuard, pathMatcher, injector));
         reg.setOrder(GuanjinAssertionFilter.ORDER);
         reg.addUrlPatterns("/*");
         reg.setName("guanjinAssertionFilter");
@@ -208,6 +209,37 @@ public class GuanjinAutoConfiguration {
         }
         Authz.init(model, properties.getAuthz().getModelConf());
         return new GuanjinAuthzHolder(model, properties.getAuthz().getModelConf());
+    }
+
+    /**
+     * 身份 → {@code Authentication} 的转换器（GJ-CAP-10 {@code toAuthentication}）。
+     * 业务方可提供 {@link com.guanjin.core.authz.GrantedAuthoritiesResolver} bean（GJ-CAP-11，可选）。
+     */
+    @Bean
+    @ConditionalOnMissingBean(GuanjinAuthenticationConverter.class)
+    public GuanjinAuthenticationConverter guanjinAuthenticationConverter(
+            GuanjinProperties properties,
+            ObjectProvider<com.guanjin.core.authz.GrantedAuthoritiesResolver> resolvers) {
+        return new GuanjinAuthenticationConverter(properties.getSecurity().getRolePrefix(),
+                resolvers.getIfAvailable());
+    }
+
+    /**
+     * {@code SecurityContext} 注入（GJ-CAP-10 的 Spring 落点）：只在宿主引了 Spring Security
+     * 且 {@code inject-security-context=true}（默认）时生效。
+     */
+    @Configuration(proxyBeanMethods = false)
+    @ConditionalOnClass(name = "org.springframework.security.core.context.SecurityContextHolder")
+    static class SecurityContextConfiguration {
+
+        @Bean
+        @ConditionalOnMissingBean(SecurityContextInjector.class)
+        @ConditionalOnProperty(prefix = "guanjin.security", name = "inject-security-context",
+                havingValue = "true", matchIfMissing = true)
+        public SecurityContextInjector guanjinSpringSecurityContextInjector(
+                GuanjinAuthenticationConverter converter) {
+            return new SpringSecurityContextInjector(converter);
+        }
     }
 
     /** memory 实现：仅 {@code replay-store=memory}（profile 门控已在 validate 里挡）。 */
