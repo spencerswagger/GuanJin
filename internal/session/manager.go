@@ -94,7 +94,9 @@ type Manager struct {
 	store  SessionStore
 	flows  FlowAbandoner
 	events EventWriter
-	logger *slog.Logger
+	// notifier 为 nil 时**不通知**（默认行为，与加挂点之前一致）；见 `notice.go`。
+	notifier RevokeNotifier
+	logger   *slog.Logger
 	// now 可注入：超时判定与"挤掉最旧"的排序都依赖时钟，测试必须能钉住时间。
 	now func() time.Time
 }
@@ -105,6 +107,9 @@ type Options struct {
 	Now func() time.Time
 	// Logger 为空时用 slog.Default。
 	Logger *slog.Logger
+	// Notifier 是 S10 的单点登出通知挂点；**nil = 不通知**（默认），
+	// 非 nil 时在撤销提交成功后异步投递，失败不影响撤销（`AC-DP-12`，见 `notice.go`）。
+	Notifier RevokeNotifier
 }
 
 // NewManager 装配会话管理器；缺依赖即返回错误（装配期 fail-fast，不留 nil 分支）。
@@ -117,7 +122,8 @@ func NewManager(st SessionStore, flows FlowAbandoner, events EventWriter, opt Op
 	case events == nil:
 		return nil, fmt.Errorf("%w: auth event writer", ErrNilDependency)
 	}
-	m := &Manager{store: st, flows: flows, events: events, now: opt.Now, logger: opt.Logger}
+	m := &Manager{store: st, flows: flows, events: events, now: opt.Now, logger: opt.Logger,
+		notifier: opt.Notifier}
 	if m.now == nil {
 		m.now = time.Now
 	}
@@ -221,7 +227,7 @@ func (m *Manager) Revoke(ctx context.Context, in RevokeInput) error {
 		}
 		return nil
 	}
-	m.cascade(ctx, []uuid.UUID{in.SessionID}, in.Reason, in.EventType, in.TraceID)
+	m.cascade(ctx, []uuid.UUID{in.SessionID}, in.Reason, in.EventType, in.TraceID, now)
 	return nil
 }
 
@@ -243,7 +249,7 @@ func (m *Manager) RevokeAllByUser(ctx context.Context, userID uuid.UUID, reason 
 		return 0, err
 	}
 	if rows > 0 {
-		m.cascade(ctx, ids, reason, eventType, traceID)
+		m.cascade(ctx, ids, reason, eventType, traceID, now)
 	}
 	return rows, nil
 }
@@ -270,7 +276,7 @@ func (m *Manager) RevokeOthers(ctx context.Context, userID, keepID uuid.UUID, re
 				victims = append(victims, id)
 			}
 		}
-		m.cascade(ctx, victims, reason, eventType, traceID)
+		m.cascade(ctx, victims, reason, eventType, traceID, now)
 	}
 	return rows, nil
 }
@@ -361,13 +367,16 @@ func (m *Manager) ExpireStale(ctx context.Context) (int64, error) {
 	return expirer.ExpireStale(ctx, m.now().UTC())
 }
 
-// cascade 是撤销后的**统一副作用**：作废活跃流 + 写认证事件。
+// cascade 是撤销后的**统一副作用**：作废活跃流 + 写认证事件 + 投递单点登出通知。
 //
 // 流作废失败**不回滚会话撤销**：撤销是安全事实，必须先生效；流的 `abandoned` 置位失败
 // 只影响"能不能继续补步"，而 `Validate` 已经会拒掉该会话。事件写失败同理（只留日志）——
 // 让撤销因为审计写失败而回滚，等于用可用性换审计，方向反了。
+//
+// `at` 由调用方传入（与 `sessions.revoked_at` 同一次取时），不再各自 `m.now()`：
+// 通知里的 `At` 必须等于撤销生效时刻，否则业务方按时间对账会对不上。
 func (m *Manager) cascade(ctx context.Context, ids []uuid.UUID, reason RevokeReason,
-	eventType string, traceID *string) {
+	eventType string, traceID *string, at time.Time) {
 	for _, id := range ids {
 		if _, err := m.flows.AbandonBySession(ctx, id); err != nil {
 			m.logger.Warn("session: abandon flows failed", "session_id", id, "error", err)
@@ -377,13 +386,15 @@ func (m *Manager) cascade(ctx context.Context, ids []uuid.UUID, reason RevokeRea
 			m.logger.Warn("session: load revoked session for event failed", "session_id", id, "error", err)
 			continue
 		}
-		m.appendEvent(ctx, id, s.UserID, s.ClientID, eventType, string(reason), traceID, &s.ACR)
+		m.appendEvent(ctx, id, s.UserID, s.ClientID, eventType, string(reason), traceID, &s.ACR, at)
+		// S10：撤销已提交 → 通知（异步、失败不影响撤销；`notifier` 为 nil 时完全不做）。
+		m.fireRevokeNotice(ctx, noticeOf(s, reason, at))
 	}
 }
 
 // appendEvent 写一条 `auth_events`（失败只留日志，理由见 cascade）。
 func (m *Manager) appendEvent(ctx context.Context, sessionID, userID uuid.UUID, clientID,
-	eventType, reason string, traceID *string, acr *string) {
+	eventType, reason string, traceID *string, acr *string, at time.Time) {
 	reasonCopy := reason
 	sid := sessionID
 	uid := userID
@@ -398,7 +409,7 @@ func (m *Manager) appendEvent(ctx context.Context, sessionID, userID uuid.UUID, 
 		ACR:        acr,
 		AMR:        model.StringArray{},
 		TraceID:    traceID,
-		OccurredAt: m.now().UTC(),
+		OccurredAt: at,
 	}
 	if err := m.events.Append(ctx, e); err != nil {
 		m.logger.Warn("session: append auth event failed",

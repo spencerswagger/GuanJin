@@ -33,6 +33,8 @@ type fakeStore struct {
 	revokedOther []uuid.UUID
 	touched      []uuid.UUID
 	evicted      []uuid.UUID
+	// getCalls 数 GetByID 次数：用来断言"没挂通知时不额外查库"。
+	getCalls int
 }
 
 func newFakeStore() *fakeStore {
@@ -58,6 +60,7 @@ func (f *fakeStore) Create(_ context.Context, s *model.Session) error {
 }
 
 func (f *fakeStore) GetByID(_ context.Context, id uuid.UUID) (*model.Session, error) {
+	f.getCalls++
 	s, ok := f.sessions[id]
 	if !ok {
 		return nil, store.ErrSessionNotFound
