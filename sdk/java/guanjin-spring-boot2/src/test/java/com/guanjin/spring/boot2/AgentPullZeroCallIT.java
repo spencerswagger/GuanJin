@@ -112,8 +112,11 @@ class AgentPullZeroCallIT {
     static class StubBeans {
 
         @Bean
-        AssertionVerifier assertionVerifier(GuanjinProperties properties) {
-            return new StubVerifier(properties.getGateway().getIssuer(), properties.resolvedAud());
+        com.guanjin.core.authz.AuthzModel authzModel() {
+            return com.guanjin.core.authz.AuthzModel.builder()
+                    .role("order_viewer").can("orders", "read")
+                    .defaultRole("user").can("profile", "read")
+                    .build();
         }
 
         @Bean

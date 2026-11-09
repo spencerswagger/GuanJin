@@ -14,7 +14,7 @@ Java 8 双门禁（契约 §5.1.1）：JDK 9+ 构建走 `release=8`（挡 API �
 （挡"用 17 编、目标 8"的虚假安全感）。`scripts/check-sdk-java8.sh` 另外机械校验
 「core 依赖树无 spring/servlet」+「14 条禁用 API」+「class 文件 major version ≤ 52」。
 
-## 本切片（S9 最小接入）已交付什么
+## 已交付什么（S9 两刀：最小接入 + 验签/判定主路径）
 
 | 判据 | 交付物 | 证据（测试名） |
 |---|---|---|
@@ -27,16 +27,34 @@ Java 8 双门禁（契约 §5.1.1）：JDK 9+ 构建走 `release=8`（挡 API �
 | `AC-SDK-08`（剥离/注入半边） | D10 六步：读头→验签(SPI)→claim→重放→注入→**替换请求视图** | `GuanjinAssertionFilterTest.AC_SDK_08_*` |
 | `AC-SDK-10` | ①默认 `replay-store=redis`；②默认 `agent.pull.enabled=false`，30s 内 `/api/v1/agent/policies` **零调用** | `GuanjinConfigValidatorTest.AC_SDK_10_*`、`AgentPullZeroCallIT.AC_SDK_10_*` |
 | `AC-SESS-05` | 多副本（非 `local\|test`）用 `memory` → 启动失败；默认即 `redis` | `GuanjinConfigValidatorTest.AC_SESS_05_*`、`RedisReplayStoreIT.AC_SESS_05_*` |
-| `AC-DP-08`（SDK 半边） | 同 `jti` 二次 → **401 `TOKEN_INVALID`**（由验签方产生并记账，平台数据面不判重） | `ReplayGuardTest.AC_DP_08_*`、`GuanjinAssertionFilterTest.AC_DP_08_*`、`RedisReplayFilterIT.AC_DP_08_*` |
+| `AC-DP-08`（SDK 半边） | 同 `jti` 二次 → **401 `TOKEN_INVALID`**（由验签方产生并记账，平台数据面不判重） | `ReplayGuardTest.AC_DP_08_*`、`GuanjinAssertionFilterTest.AC_DP_08_*`、`RedisReplayFilterIT.AC_DP_08_*`、`Sm2FilterIT.AC_DP_08_replayOfRealGatewayJtiIs401` |
+| `AC-DP-03`（SDK 反向）/ `GJ-CAP-01/02/04` | **SM2 真验签**：`SM3withSM2` + `kid` 选键 + 未知 kid 强刷一次 + `alg` 不协商；篡改 payload / 未知 kid / `alg=SM2`（用户令牌用途）→ 401 | `Sm2AssertionVerifierTest`（6 条，向量由平台签发代码产出）、`Sm2FilterIT`（3 条，真 HTTP JWKS + 真 Redis） |
+| `AC-SDK-08` ③ | **三处消费者**都取不到断言头：handler / 下游转发 / 日志 | `AssertionHeaderConsumersTest.AC_SDK_08_threeConsumersCannotSeeAssertionHeader` |
+| `AC-SDK-08` ④ | Filter 排在 Spring Security **之前**（`HIGHEST_PRECEDENCE + 100` < `SecurityProperties.DEFAULT_FILTER_ORDER` = -100，直接引用常量断言） | `GuanjinFilterOrderTest` |
+| `GJ-CAP-12~16/18` | **jcasbin 真判定**：模型来自 `classpath:/guanjin/model.conf`（配置 #17），策略来自业务声明的 `AuthzModel`（不内联硬编码）；`@RequirePermission` 执行点；`checkRow`（auditor 豁免）/`checkLabel`（主体 ≥ 客体）；`defaultRole` 兜底 | `AuthzTest`（8 条）、`GuanjinAuthorizationInterceptorTest`（5 条） |
 
-## 本切片**没有**交付什么（显式标注，不静默缺）
+## 还没交付什么（显式标注，不静默缺）
 
-- **SM2 验签实现**（`GJ-CAP-01`/`02`/`04` 的密码学部分）：`AssertionVerifier` 是 SPI，
-  `Sm2AssertionVerifier`（BouncyCastle + `kid` 选键 + `alg` 固定 `SM3withSM2`）随验签切片落地。
-  **在此之前**：容器里没有 `AssertionVerifier` bean 时启动**直接失败**——不会出现"没验签却在保护"的形态。
-- **jcasbin 判定**（`GJ-CAP-12`~`18`）、**Spring Security `Authentication` 注入**（`GJ-CAP-10` 的 Spring 落点）、
-  **策略上报 / 拉取的 HMAC 签名**（`GJ-CAP-20`/`21` 的 canonical 串）：均属后续切片。
-  `agent.pull.enabled=true` 而没有 `PullRequestSigner` bean 时同样启动失败（**不发未签名回源请求**）。
+- **`GJ-CAP-17 Scope`**（行级条件下推为 SQL 过滤）：未实现，避免在 SDK 里猜业务表结构。
+- **Spring Security `Authentication` 注入**（`GJ-CAP-10` 的 Spring 落点）：目前身份落点是
+  `GuanjinContextHolder` + 请求属性；`SecurityContext` 注入随 `spring-security-core` 切片补。
+- **策略上报 / 拉取的 HMAC canonical 串**（`GJ-CAP-20`/`21`）：`agent.pull.enabled=true` 而没有
+  `PullRequestSigner` bean 时启动失败（**不发未签名回源请求**）。
+- **`AuthzModel` 的上报**（GJ-CAP-20 的 `PolicyReporter`）：未实现，故平台侧策略快照暂为空。
+
+## 跨语言验签向量（不是自造 claim）
+
+`sdk/java/guanjin-core/src/test/resources/vectors/assertion-vectors.json` 由**平台自己的签发代码**产出：
+
+```bash
+# 生成器在 artifacts/ 下（不入库），import internal/signing —— 即数据面签发断言的那条路径
+go run ./artifacts/local/gen-sdk-vectors
+```
+
+8 条向量：`valid` / `tamperedPayload`（签名真、payload 被换）/ `unknownKid` / `expired` / `futureIat` /
+`wrongIss` / `wrongAud` / `oidcAlg`（`alg=SM2` 的用户令牌用途键 → 拒绝算法降级）。
+`valid` 的 `iat` 取过去、`exp` 取 2030，保证"运行时刻"的 `ClaimValidator` 也接受它；
+时间敏感的 claim 断言用向量里的 `referenceNow` 判，不依赖跑测试的钟。
 
 ## 怎么验（真 Redis，不许 mock）
 
@@ -60,8 +78,26 @@ GUANJIN_TEST_REDIS_ADDR=127.0.0.1:6379 GUANJIN_TEST_REDIS_PASSWORD=123456 \
 // guanjin.client.id=orders
 // guanjin.client.hmac-secret=${GUANJIN_HMAC_SECRET}   # 环境变量注入，禁入仓库/禁日志
 
-// 2) 什么都不用写：自动配置会做启动自检（拉 JWKS、打印放行清单），失败即进程退出非 0
-// 3) 业务侧取身份
+// 2) 声明授权模型（authz.enabled=true 时**必需**：没有策略依据就拒绝启动）
+@Bean
+AuthzModel authzModel() {
+    return AuthzModel.builder()
+        .role("order_admin").can("orders", "read", "write")
+        .role("auditor").can("orders", "read").withClearance(3)  // auditor 行级豁免
+        .defaultRole("user").can("profile", "read")              // 权限最小兜底
+        .build();
+}
+
+// 3) 保护接口（一行注解；模型/策略都不写在代码里）
+@RequirePermission(resource = "orders", action = "write")
+@PostMapping("/orders")
+public Order create(@RequestBody OrderReq req) {
+    Authz.checkRow(req.getUserId());   // 行级：只能动自己的（auditor 豁免）
+    Authz.checkLabel(req.getLabel());  // 密级：主体 ≥ 客体
+    return orderService.create(req);
+}
+
+// 4) 取身份
 GuanjinPrincipal p = GuanjinContextHolder.current();   // 公开路径为 null
 ```
 
