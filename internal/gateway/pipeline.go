@@ -12,7 +12,7 @@ import (
 // 本文件把数据面的 7 件事按**固定顺序**串起来（顺序本身就是契约，改顺序 = 改语义）：
 //
 //	① 先弃客户端伪造的 `X-GuanJin-Assertion`（AC-DP-02/03：哪怕马上要被拒，也不许透传）
-//	② 路由匹配（无路由 → 404 `CLIENT_NOT_FOUND`，不裸转发）
+//	② 路由匹配（无路由 → 404 `INVALID_REQUEST`，不裸转发）
 //	③ 准入：验签 → 会话（含实时撤销）→ 档位（401/403/500/503，一律不注入身份）
 //	④ 逐请求签断言（一次生成 `iat/exp/jti`，整条链路复用）
 //	⑤ 转发（上游失败 → 503 `UPSTREAM_UNAVAILABLE` + `Retry-After`，AC-DP-13）
@@ -76,12 +76,13 @@ func (p *Pipeline) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// ② 路由
 	//
-	// 未匹配用 **404 `CLIENT_NOT_FOUND`**，不是 `UPSTREAM_UNAVAILABLE`：后者按 D8-C′④ 与
-	// `acceptance-criteria.md` 只给"转发到上游失败/超时"（AC-DP-13）。"这条路径没有归属的业务系统"
-	// 是**调用方用错了 URL 或部署少了路由项**，既不是上游故障、也不是依赖挂了。
+	// 未匹配用 **404 `INVALID_REQUEST`**（`decisions.md:411` 定稿），不是 `UPSTREAM_UNAVAILABLE`：
+	// 后者按 D8-C′④ + `acceptance-criteria.md` AC-DP-13 只给"已开始转发但上游失败/超时"。
+	// "这条路径没有归属的业务系统"是**调用方用错了 URL 或部署少了路由项**，既不是上游故障、
+	// 也不是依赖挂了。码名复用 E1 的既有码（§5.4 无"路由缺失"专用码、F0 禁自造），状态覆盖成 404。
 	route, ok := p.forward.router.Match(r.URL.Path)
 	if !ok {
-		httpx.WriteError(rec, traceID, httpx.CodeClientNotFound,
+		httpx.WriteErrorStatus(rec, traceID, httpx.CodeInvalidRequest, http.StatusNotFound,
 			"该路径未归属任何业务系统", nil)
 		return
 	}

@@ -14,6 +14,7 @@ import (
 
 	"github.com/tjfoc/gmsm/sm2"
 
+	"github.com/spencerswagger/guanjin/internal/httpx"
 	"github.com/spencerswagger/guanjin/internal/signing"
 )
 
@@ -332,5 +333,43 @@ func TestAC_DP_13_UpstreamUnavailableKeepsSemantics(t *testing.T) {
 	}
 	if rec.Header().Get("Retry-After") == "" {
 		t.Fatal("503 必须带 Retry-After（httpx 的统一口径）")
+	}
+}
+
+// 未匹配路由（生产路径 `Pipeline.ServeHTTP`）：404 `INVALID_REQUEST`，不是 `UPSTREAM_UNAVAILABLE`，
+// 且**零注入**、上游一次都不调用——即使请求带了合法令牌。
+//
+// 这条与 `TestNoRouteIs404InvalidRequestAndNeverForwards` 成对：那条测基座 `Handler.ServeHTTP`，
+// 这条测真正挂到 `cmd/guanjingw` 上的链路。两处口径必须一致，否则"改一处漏一处"就会
+// 让数据面按不同码回同一个错误。
+func TestNoRouteThroughPipelineIs404InvalidRequest(t *testing.T) {
+	tg := newTestGuard(t, nil)
+	up := newRecordedUpstream(t)
+	p := newTestPipeline(t, tg, up)
+
+	req := newRequest("/api/nope/orders")
+	req.Header.Set(BearerHeader, "Bearer "+issueUserToken(t, tg.keys, nil))
+	rec := serve(p, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("期望 404，实际 %d（body=%s）", rec.Code, rec.Body.String())
+	}
+	if code := errorCode(t, rec); code != httpx.CodeInvalidRequest {
+		t.Fatalf("错误码期望 INVALID_REQUEST，实际 %s", code)
+	}
+	if code := errorCode(t, rec); code == httpx.CodeUpstreamUnavailable {
+		t.Fatal("未匹配路由不得返回 UPSTREAM_UNAVAILABLE（那是转发失败的码）")
+	}
+	if up.hits != 0 {
+		t.Fatalf("上游被调用了 %d 次：无路由不得裸转发", up.hits)
+	}
+	if rec.Header().Get("Retry-After") != "" {
+		t.Error("404 不该带 Retry-After")
+	}
+	// 零注入：响应上不得出现断言头。
+	for k := range rec.Header() {
+		if strings.EqualFold(k, AssertionHeader) {
+			t.Fatalf("响应上出现了断言头 %q：被拒时不得注入身份", k)
+		}
 	}
 }
