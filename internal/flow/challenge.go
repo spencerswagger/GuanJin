@@ -8,6 +8,7 @@ import (
 	"github.com/spencerswagger/guanjin/internal/credential"
 	"github.com/spencerswagger/guanjin/internal/factor"
 	"github.com/spencerswagger/guanjin/internal/httpx"
+	"github.com/spencerswagger/guanjin/internal/store"
 )
 
 // 本文件是 **challenge 状态机**（`challenges` 表的一次性/尝试次数/过期语义）。
@@ -191,9 +192,31 @@ func CodeOf(err error) (httpx.Code, bool) {
 		return httpx.CodeFactorNotSupported, true
 	case errors.Is(err, ErrNoEligibleFactor):
 		return httpx.CodeNoEligibleFactor, true
+	// D8-C / AC-FC-02：**数据库不可用 → 503 `DB_UNAVAILABLE`**（fail-closed，不降级放行）。
+	//
+	// 两类来源：① 仓储已判成 `DB_UNAVAILABLE` 的 `*store.Error`；② 少数读路径把驱动层
+	// 原始错误（拨号失败/连接被重置）直接上抛。以前这两类都落到 handler 的 default → 500，
+	// 而判据要的是 **503 + `Retry-After`**。
+	//
+	// 这里只 import `internal/store` 的**纯判定函数**（`IsUnavailable`）与错误载体：
+	// 编排层仍然只通过窄接口（Reader/Starter/…）调用仓储，不碰任何仓储实现。
+	case storeIsDBUnavailable(err):
+		return httpx.CodeDBUnavailable, true
 	default:
 		return "", false
 	}
+}
+
+// storeIsDBUnavailable 是"这次失败是数据库当时不可用"的唯一判定。
+//
+// 顺序有意义：先看仓储有没有**已经判定**（`*store.Error.Code`），再用连接层判定兜底
+// （原始驱动错误没经过 `MapError` 时只有第二条能认出来）。
+func storeIsDBUnavailable(err error) bool {
+	var se *store.Error
+	if errors.As(err, &se) && se.Code == httpx.CodeDBUnavailable {
+		return true
+	}
+	return store.IsUnavailable(err)
 }
 
 // CodeStepAlreadySatisfied 是 D3-F 追加的码（E4 / 409）。

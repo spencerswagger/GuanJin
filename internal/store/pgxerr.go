@@ -91,19 +91,24 @@ func (e *Error) Mapped() bool { return e != nil && e.Code != "" }
 
 // SQLSTATE 常量（PostgreSQL 错误码文档 Appendix A）。
 const (
-	sqlStateUniqueViolation     = "23505"
-	sqlStateForeignKeyViolation = "23503"
-	sqlStateCheckViolation      = "23514"
-	sqlStateNotNullViolation    = "23502"
-	sqlStateRestrictViolation   = "23001" // forbid_mutation() 触发器（只增表保护，I5）
-	sqlStateInvalidTextRepr     = "22P02"
-	sqlStateNumericOutOfRange   = "22003"
-	sqlStateSerializationFail   = "40001"
-	sqlStateDeadlockDetected    = "40P01"
-	sqlStateUndefinedTable      = "42P01"
-	sqlStateUndefinedColumn     = "42703"
-	sqlStateConnectionFailure   = "08006"
-	sqlStateTooManyConnections  = "53300"
+	sqlStateUniqueViolation            = "23505"
+	sqlStateForeignKeyViolation        = "23503"
+	sqlStateCheckViolation             = "23514"
+	sqlStateNotNullViolation           = "23502"
+	sqlStateRestrictViolation          = "23001" // forbid_mutation() 触发器（只增表保护，I5）
+	sqlStateInvalidTextRepr            = "22P02"
+	sqlStateNumericOutOfRange          = "22003"
+	sqlStateSerializationFail          = "40001"
+	sqlStateDeadlockDetected           = "40P01"
+	sqlStateUndefinedTable             = "42P01"
+	sqlStateUndefinedColumn            = "42703"
+	sqlStateConnectionFailure          = "08006"
+	sqlStateSQLClientUnableToEstablish = "08001" // SQLCLIENT_UNABLE_TO_ESTABLISH_SQLCONNECTION
+	sqlStateProtocolViolation          = "08P01" // PROTOCOL_VIOLATION（连接中途断开）
+	sqlStateTooManyConnections         = "53300"
+	sqlStateAdminShutdown              = "57P01" // 运维/容器停库（AC-FC-02 的真实停库常走这条）
+	sqlStateCrashShutdown              = "57P02" // 数据库崩溃
+	sqlStateCannotConnectNow           = "57P03" // 启动中/正在恢复
 )
 
 // constraintRule 是「(SQLSTATE, 约束名) → 业务码」的一条规则。
@@ -249,6 +254,17 @@ func MapError(err error) error {
 	}
 	var pgErr *pgconn.PgError
 	if !errors.As(err, &pgErr) {
+		// 连接层失败（PG 进程被停、端口不通、连接被重置）**不是** PgError：
+		// 原来会原样上抛，HTTP 层只能回 500，而 AC-FC-02 要 **503 `DB_UNAVAILABLE`**。
+		// 判定边界见 `unavailable.go`（只认连接/会话层，不认业务错误）。
+		if IsUnavailable(err) {
+			return &Error{
+				Code:   codeDBUnavailable,
+				Status: httpx.HTTPStatus(codeDBUnavailable),
+				Reason: "数据库连接层失败（D8-C / AC-FC-02）",
+				cause:  err,
+			}
+		}
 		return err
 	}
 
@@ -291,8 +307,13 @@ func MapError(err error) error {
 		out.Code, out.Status = codeInvalidParameter, httpx.HTTPStatus(codeInvalidParameter)
 	case sqlStateSerializationFail, sqlStateDeadlockDetected:
 		// 并发冲突：可重试，不给业务码（调用方按 Retryable 决定重试）。
-	case sqlStateConnectionFailure, sqlStateTooManyConnections:
+	case sqlStateConnectionFailure, sqlStateTooManyConnections,
+		sqlStateAdminShutdown, sqlStateCrashShutdown, sqlStateCannotConnectNow,
+		sqlStateProtocolViolation, sqlStateSQLClientUnableToEstablish:
+		// 连接/会话层失败一律 DB_UNAVAILABLE（D8-C）；`IsUnavailable` 与这里共用同一份
+		// SQLSTATE 清单，改一处即可，别再抄第二份。
 		out.Code, out.Status = codeDBUnavailable, httpx.HTTPStatus(codeDBUnavailable)
+		out.Reason = "数据库连接层失败（D8-C / AC-FC-02）"
 	case sqlStateUndefinedTable, sqlStateUndefinedColumn:
 		// schema 漂移（迁移没跑 / 模型与迁移不一致）：缺陷，不映射成业务码。
 	}

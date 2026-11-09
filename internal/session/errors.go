@@ -52,7 +52,23 @@ func CodeOf(err error) httpx.Code {
 		return httpx.CodeClientNotFound
 	case errors.Is(err, store.ErrClientDisabled):
 		return httpx.CodeInvalidClient
+	// D8-C / AC-FC-02：**数据库不可用 → 503 `DB_UNAVAILABLE`**（不降级、不伪装成 401/500）。
+	// 两类来源都要认：
+	//   1. `*store.Error` 已经判成 `DB_UNAVAILABLE`（PG 回了连接类 SQLSTATE）；
+	//   2. 少数读路径把驱动层的原始错误直接上抛（拨号失败/连接被重置），由 `IsUnavailable` 兜住。
+	// 认不出来就会落到 handler 的 default → 500，而判据要的是 503 + `Retry-After`。
+	case storeIsDBUnavailable(err):
+		return httpx.CodeDBUnavailable
 	default:
 		return ""
 	}
+}
+
+// storeIsDBUnavailable 是"这次失败是数据库当时不可用"的唯一判定（见 `internal/store/unavailable.go`）。
+func storeIsDBUnavailable(err error) bool {
+	var se *store.Error
+	if errors.As(err, &se) && se.Code == httpx.CodeDBUnavailable {
+		return true
+	}
+	return store.IsUnavailable(err)
 }
