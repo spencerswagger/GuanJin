@@ -44,6 +44,19 @@ func newUpstream(t *testing.T) *upstreamRecorder {
 	return u
 }
 
+// assertionHeader 取上游收到的断言头（空 = 没收到；用 EqualFold 扫，冻结名是 `X-GuanJin-Assertion`）。
+func (u *upstreamRecorder) assertionHeader() string {
+	if u.headers == nil {
+		return ""
+	}
+	for k, v := range u.headers {
+		if strings.EqualFold(k, AssertionHeader) && len(v) > 0 {
+			return v[0]
+		}
+	}
+	return ""
+}
+
 func (u *upstreamRecorder) url(t *testing.T) *url.URL {
 	t.Helper()
 	parsed, err := url.Parse(u.srv.URL)
@@ -142,24 +155,55 @@ func TestUpstreamBasePathJoin(t *testing.T) {
 	}
 }
 
-// 无路由 → 503 UPSTREAM_UNAVAILABLE，且**绝不裸转发**（上游一次都不能被调用）。
-func TestNoRouteIs503AndNeverForwards(t *testing.T) {
+// 无路由 → **404 `CLIENT_NOT_FOUND`**，且绝不裸转发（上游一次都不能被调用）。
+//
+// 为什么不是 `UPSTREAM_UNAVAILABLE`：该码按 D8-C′④ / `acceptance-criteria.md` AC-DP-13
+// 只给"**已开始转发**但上游失败/超时"。未匹配路由是"这条路径没有归属的业务系统"
+// （调用方 URL 用错或部署少了路由项），既不是上游故障也不是依赖挂了——拿上游故障码回它，
+// 会让运维照着码表去查一个不存在的问题。
+func TestNoRouteIs404ClientNotFoundAndNeverForwards(t *testing.T) {
 	up := newUpstream(t)
 	h := newHandler(t, Options{}, Route{Prefix: "/svc", ClientID: "svc", Upstream: up.url(t)})
 
 	req := httptest.NewRequest(http.MethodGet, "/unknown", nil)
+	// 客户端自带的伪造断言头：被拒的请求更不许把它透传给上游。
+	req.Header.Set(AssertionHeader, "forged-on-no-route")
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusServiceUnavailable {
-		t.Fatalf("status = %d, want 503", rec.Code)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", rec.Code)
 	}
 	if up.last != nil {
 		t.Fatal("无路由时不得调用上游（裸转发 = 事故）")
 	}
-	assertErrorCode(t, rec.Body.Bytes(), httpx.CodeUpstreamUnavailable)
-	if rec.Header().Get("Retry-After") == "" {
-		t.Error("503 必须带 Retry-After（D8-C）")
+	if up.assertionHeader() != "" {
+		t.Fatalf("上游收到了断言头 %q：无路由时不得注入身份", up.assertionHeader())
+	}
+	assertErrorCode(t, rec.Body.Bytes(), httpx.CodeClientNotFound)
+
+	// 反向断言：**不得**出现 `UPSTREAM_UNAVAILABLE`（该码只属转发失败），也不得回 `Retry-After`。
+	var body struct {
+		Code httpx.Code `json:"code"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	if body.Code == httpx.CodeUpstreamUnavailable {
+		t.Fatal("未匹配路由不得返回 UPSTREAM_UNAVAILABLE（那是转发失败的码）")
+	}
+	if rec.Header().Get("Retry-After") != "" {
+		t.Error("404 不该带 Retry-After（那是 503 的重试语义）")
+	}
+	// 计数递增：与 Pipeline 共用同一个计数器（`CLIENT_NOT_FOUND` 的唯一产生点）。
+	if MissingRouteTotal() < 1 {
+		t.Fatal("路由缺失计数应递增")
+	}
+	// 响应上也不得出现断言头（本包从不回填，这里锁死）。
+	for k := range rec.Header() {
+		if strings.EqualFold(k, AssertionHeader) {
+			t.Fatalf("响应上出现了断言头 %q", k)
+		}
 	}
 }
 
