@@ -117,7 +117,8 @@ public class GuanjinAutoConfiguration {
     @Bean
     public GuanjinStartupReport guanjinStartupReport(GuanjinProperties properties, Environment springEnv,
                                                      JwksClient jwksClient,
-                                                     AssertionVerifier verifier) {
+                                                     AssertionVerifier verifier,
+                                                     ObjectProvider<SecurityContextInjector> injectors) {
         GuanjinEnvironment env = GuanjinEnvironment.of(Arrays.asList(springEnv.getActiveProfiles()));
         if (!properties.isEnabled()) {
             // 能走到这里说明 profile 门控已通过（local|test）；生产置 false 会在 validate 里直接失败
@@ -127,6 +128,19 @@ public class GuanjinAutoConfiguration {
                     String.valueOf(properties.resolvedJwksUri()), java.util.Collections.<String>emptyList(),
                     java.util.Collections.<String>emptyList(), java.util.Collections.<String>emptyList(),
                     java.util.Collections.<String>emptyList()));
+        }
+        // #26：默认 true 却没有 spring-security-core = "配置说要做、实际没做" → 启动失败（不许静默降级）。
+        // 合法出路是显式置 false（契约 #26 明文允许的形态：只影响取身份的方式，不跳过验签、不影响判定），
+        // 且它**不受 profile 门控、生产也允许**（AC-SDK-02 的门控只管 enabled / authz.enabled）。
+        if (properties.isEnabled() && properties.getSecurity().isInjectSecurityContext()
+                && injectors.getIfAvailable() == null) {
+            throw new GuanjinConfigException(GuanjinConfigKeys.SECURITY_INJECT_SECURITY_CONTEXT,
+                    "=true（默认）但 classpath 上没有 spring-security-core（或没有可用的 SecurityContextInjector）："
+                            + "拒绝「配置说要做、实际没做」。两条修法任选其一："
+                            + "① 引入 org.springframework.security:spring-security-core；"
+                            + "② 显式置 guanjin.security.inject-security-context=false"
+                            + "（契约 #26 明文允许的合法形态：只影响宿主取身份的方式，不跳过验签、不影响判定；"
+                            + "不受 profile 门控，生产也允许）");
         }
         if (verifier == null) {
             // 防御性兜底：默认 bean 一定在；宿主若用 @Primary/@Conditional 把它弄没了，这里拒绝启动
@@ -150,10 +164,11 @@ public class GuanjinAutoConfiguration {
     @ConditionalOnProperty(prefix = "guanjin", name = "enabled", havingValue = "true", matchIfMissing = true)
     public FilterRegistrationBean<GuanjinAssertionFilter> guanjinAssertionFilter(
             GuanjinProperties properties, AssertionVerifier verifier, ReplayGuard replayGuard,
-            PathMatcher pathMatcher) {
+            PathMatcher pathMatcher, ObjectProvider<SecurityContextInjector> injectors) {
+        SecurityContextInjector injector = injectors.getIfAvailable();
         FilterRegistrationBean<GuanjinAssertionFilter> reg =
                 new FilterRegistrationBean<GuanjinAssertionFilter>(
-                        new GuanjinAssertionFilter(properties, verifier, replayGuard, pathMatcher));
+                        new GuanjinAssertionFilter(properties, verifier, replayGuard, pathMatcher, injector));
         reg.setOrder(GuanjinAssertionFilter.ORDER);
         reg.addUrlPatterns("/*");
         reg.setName("guanjinAssertionFilter");
@@ -208,6 +223,37 @@ public class GuanjinAutoConfiguration {
         }
         Authz.init(model, properties.getAuthz().getModelConf());
         return new GuanjinAuthzHolder(model, properties.getAuthz().getModelConf());
+    }
+
+    /**
+     * 身份 → {@code Authentication} 的转换器（GJ-CAP-10 {@code toAuthentication}）。
+     * 业务方可提供 {@link com.guanjin.core.authz.GrantedAuthoritiesResolver} bean（GJ-CAP-11，可选）。
+     */
+    @Bean
+    @ConditionalOnMissingBean(GuanjinAuthenticationConverter.class)
+    public GuanjinAuthenticationConverter guanjinAuthenticationConverter(
+            GuanjinProperties properties,
+            ObjectProvider<com.guanjin.core.authz.GrantedAuthoritiesResolver> resolvers) {
+        return new GuanjinAuthenticationConverter(properties.getSecurity().getRolePrefix(),
+                resolvers.getIfAvailable());
+    }
+
+    /**
+     * {@code SecurityContext} 注入（GJ-CAP-10 的 Spring 落点）：只在宿主引了 Spring Security
+     * 且 {@code inject-security-context=true}（默认）时生效。
+     */
+    @Configuration(proxyBeanMethods = false)
+    @ConditionalOnClass(name = "org.springframework.security.core.context.SecurityContextHolder")
+    static class SecurityContextConfiguration {
+
+        @Bean
+        @ConditionalOnMissingBean(SecurityContextInjector.class)
+        @ConditionalOnProperty(prefix = "guanjin.security", name = "inject-security-context",
+                havingValue = "true", matchIfMissing = true)
+        public SecurityContextInjector guanjinSpringSecurityContextInjector(
+                GuanjinAuthenticationConverter converter) {
+            return new SpringSecurityContextInjector(converter);
+        }
     }
 
     /** memory 实现：仅 {@code replay-store=memory}（profile 门控已在 validate 里挡）。 */

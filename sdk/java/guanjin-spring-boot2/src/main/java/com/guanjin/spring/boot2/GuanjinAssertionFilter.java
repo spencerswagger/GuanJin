@@ -51,14 +51,22 @@ public class GuanjinAssertionFilter implements Filter {
     private final AssertionVerifier verifier;
     private final ReplayGuard replayGuard;
     private final PathMatcher pathMatcher;
+    private final SecurityContextInjector contextInjector;
     private final ObjectMapper json = new ObjectMapper();
 
     public GuanjinAssertionFilter(GuanjinProperties properties, AssertionVerifier verifier,
                                   ReplayGuard replayGuard, PathMatcher pathMatcher) {
+        this(properties, verifier, replayGuard, pathMatcher, null);
+    }
+
+    public GuanjinAssertionFilter(GuanjinProperties properties, AssertionVerifier verifier,
+                                  ReplayGuard replayGuard, PathMatcher pathMatcher,
+                                  SecurityContextInjector contextInjector) {
         this.properties = properties;
         this.verifier = verifier;
         this.replayGuard = replayGuard;
         this.pathMatcher = pathMatcher;
+        this.contextInjector = contextInjector == null ? SecurityContextInjector.NOOP : contextInjector;
     }
 
     @Override
@@ -93,11 +101,15 @@ public class GuanjinAssertionFilter implements Filter {
             GuanjinPrincipal principal = GuanjinPrincipal.from(assertion);
             GuanjinContextHolder.set(principal);
             req.setAttribute(PRINCIPAL_ATTRIBUTE, principal);
+            // ④′ 宿主上下文（GJ-CAP-10）：Spring Security 在 classpath 且 inject-security-context=true 时写 SecurityContext；
+            // 断言原文不进 principal/credentials（业务与日志都拿不到令牌）
+            contextInjector.inject(principal);
             // ⑤ 替换请求视图 → ⑥ handler
             chain.doFilter(new HeaderStrippingRequestWrapper(req, headerName), res);
         } catch (GuanjinSdkException e) {
             writeRejection(res, e);
         } finally {
+            contextInjector.clear();
             GuanjinContextHolder.clear();
         }
     }
