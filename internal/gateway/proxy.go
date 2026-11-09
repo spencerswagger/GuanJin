@@ -8,6 +8,7 @@ import (
 	"net/http/httputil"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/spencerswagger/guanjin/internal/httpx"
@@ -83,7 +84,7 @@ func New(router *Router, opts Options) (*Handler, error) {
 // ServeHTTP 实现数据面请求处理。顺序**不可随意调整**：
 //
 //	① 先弃客户端伪造的同名头（AC-DP-02/03：哪怕这个请求马上要被拒，也不许头透传）
-//	② 路由匹配（无路由 → 503 UPSTREAM_UNAVAILABLE，**不裸转发**）
+//	② 路由匹配（无路由 → 404 `CLIENT_NOT_FOUND`，**不裸转发**；`UPSTREAM_UNAVAILABLE` 只留给转发失败）
 //	③ 转发（上游超时/拨号失败 → 503 UPSTREAM_UNAVAILABLE，AC-DP-13）
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// ① 先弃：进任何分支之前就删掉，后面所有消费者（转发、日志、错误处理）都拿不到它。
@@ -105,22 +106,41 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// ② 路由
 	route, ok := h.router.Match(r.URL.Path)
 	if !ok {
-		httpx.WriteError(rec, httpx.TraceIDFromContext(r.Context()), httpx.CodeUpstreamUnavailable,
-			"no route configured for this request", nil)
+		// 404 `CLIENT_NOT_FOUND`（`decisions.md:416` 定稿；`internal/httpx/errors.go:83` 该码 E4/404
+		// 默认即 404，所以直接走 `WriteError`、不覆盖状态码——与已落实现一致、少改一处）。
+		//
+		// **语义边界（防被当通用 404 用）**：`CLIENT_NOT_FOUND` **仅**指「路由 → client 映射缺失」
+		// （部署漂移，打 WARN + 计数）；其余"找不到"仍用各自专码
+		// （`USER_NOT_FOUND`/`KEY_NOT_FOUND`/`SESSION_NOT_FOUND`/`FLOW_NOT_FOUND`）；
+		// 请求本身不合法（畸形体/非法参数/协议）才用 `INVALID_REQUEST`（E1/400）。
+		// 为什么不是 `UPSTREAM_UNAVAILABLE`：那个码只表示"**已开始转发**但上游失败/超时"
+		// （D8-C′④ + AC-DP-13）；路由缺失拿上游故障码回，会让运维去查一个不存在的问题。
+		reportMissingRoute(h.logger, httpx.TraceIDFromContext(r.Context()), r.URL.Path)
+		httpx.WriteError(rec, httpx.TraceIDFromContext(r.Context()), httpx.CodeClientNotFound,
+			"该路径未归属任何业务系统", nil)
 		return
 	}
 	rec.clientID = route.ClientID
 
 	// ③ 转发
+	h.ServeRoute(rec, r, route)
+}
+
+// ServeRoute 把一条**已通过准入**的请求转发到 `route` 指向的上游。
+//
+// 与 `ServeHTTP` 的分工：`ServeHTTP` 是"剥离 → 匹配 → 转发"的独立形态（S8·1 的基座，
+// 直接挂在 `http.ServeMux` 上也能跑）；`Pipeline` 走"剥离 → 匹配 → 准入 → 签发 → ServeRoute"，
+// 访问日志由 `Pipeline` 记一条（避免同一请求两条访问日志、两个耗时口径）。
+func (h *Handler) ServeRoute(w http.ResponseWriter, r *http.Request, route Route) {
 	proxy, err := h.proxyFor(route)
 	if err != nil {
 		// 构造期就该失败的东西在运行期失败 = 装配缺陷；仍按"拒服"处理，不裸转发。
 		h.logger.Error("build proxy failed", "error", err, "client_id", route.ClientID)
-		httpx.WriteError(rec, httpx.TraceIDFromContext(r.Context()), httpx.CodeUpstreamUnavailable,
+		httpx.WriteError(w, httpx.TraceIDFromContext(r.Context()), httpx.CodeUpstreamUnavailable,
 			"upstream unavailable", nil)
 		return
 	}
-	proxy.ServeHTTP(rec, r)
+	proxy.ServeHTTP(w, r)
 }
 
 // proxyFor 按上游基址缓存 ReverseProxy（每个上游一套连接池）。
@@ -166,8 +186,10 @@ func (h *Handler) proxyFor(route Route) (*httputil.ReverseProxy, error) {
 				req.URL.Path = singleJoiningSlash(base, req.URL.Path)
 			}
 			req.Host = target.Host
-			// 兜底再删一次：ReverseProxy 会克隆请求，任何中间件都可能在克隆前后加回头。
-			stripAssertionHeader(req.Header)
+			// **禁止在这里删断言头**：Director 是"已通过准入 → 网关现签的头"出门的地方，
+			// 在这里 strip 会把刚签好的身份删掉（S8·2 的实测坑）。剥离只有两个时机：
+			// ① 请求**进**数据面时（`Pipeline.ServeHTTP` / `Handler.ServeHTTP` 的第一步）；
+			// ② 业务系统侧验签之后（SDK，D10 的六步时序）——那是另一件事，不在这里。
 		},
 		// 上游失败语义（AC-DP-13）：**503 UPSTREAM_UNAVAILABLE**，
 		// 不是 500、不是 DEPENDENCY_UNAVAILABLE、更不是已废弃的 SERVICE_DEGRADED；
@@ -186,6 +208,27 @@ func (h *Handler) proxyFor(route Route) (*httputil.ReverseProxy, error) {
 	}
 	h.proxies[key] = proxy
 	return proxy, nil
+}
+
+// noRouteMissingTotal 统计"路由表里找不到归属"的次数（`CLIENT_NOT_FOUND` 的唯一产生点）。
+//
+// 为什么要计数：路由表是**部署配置**，缺一条不会让进程起不来（空表都合法），
+// 只会在运行期表现为某条业务路径 404。计数 + WARN 能让"部署漂移"在监控上看得见，
+// 而不是等业务方报"我们的页面打不开了"。
+var noRouteMissingTotal atomic.Int64
+
+// MissingRouteTotal 返回累计的"路由缺失"次数（供指标接线；S10 负责导出）。
+func MissingRouteTotal() int64 { return noRouteMissingTotal.Load() }
+
+// reportMissingRoute 记一次"路由缺失"：WARN 日志（带 trace_id 与 path）+ 计数。
+//
+// 不记 client_id：这条路径**没有**归属的 client，写了也只是空串。
+func reportMissingRoute(logger *slog.Logger, traceID, path string) {
+	noRouteMissingTotal.Add(1)
+	if logger != nil {
+		logger.Warn("data-plane: no route for path (路由表缺条目)",
+			"trace_id", traceID, "path", path, "code", string(httpx.CodeClientNotFound))
+	}
 }
 
 // stripAssertionHeader 删掉客户端自带（或任何中间环节塞进来）的断言头。

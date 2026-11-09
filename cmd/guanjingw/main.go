@@ -7,8 +7,9 @@
 //     本文件不 import `crypto/tls`、不设"跳过校验"的暗门（`internal/gateway` 有静态判据守着）；
 //   - 剥离的对象是**客户端伪造的同名头**（先弃后签）；SDK 侧的"验签后剥离"是另一件事（D10）。
 //
-// 当前进度（S8·1）：转发内核 + 路由 + 先弃同名头 + 上游失败语义已装配；
-// 认证/撤销/断言签发（S8·2）与单点登出通知（S8·3）在此文件按同一形态接入。
+// 当前进度（S8·2 完成）：剥离 → 路由 → 准入（验签 + 会话 + 实时撤销 + 档位）→
+// 逐请求签发 `X-GuanJin-Assertion` → 转发，全部经 `gateway.Pipeline` 串起来；
+// 单点登出通知的**失败隔离**已在 `gateway.SloBroadcaster`（wire 契约 R12 待裁，见 D16④）。
 package main
 
 import (
@@ -26,11 +27,15 @@ import (
 	"github.com/spencerswagger/guanjin/internal/config"
 	"github.com/spencerswagger/guanjin/internal/gateway"
 	"github.com/spencerswagger/guanjin/internal/httpx"
+	"github.com/spencerswagger/guanjin/internal/store"
 )
 
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 
+	// 注意：`config.Load` 是三个进程共享的（要求 `GUANJIN_DB_DSN` / `GUANJIN_REDIS_ADDR` /
+	// `GUANJIN_MASTER_KEY` 全给）。数据面用 Redis 存**断言判重**（AC-DP-08：同 `jti` 二次 → 401），
+	// 故地址是本进程的必需项，不是沿用别人的配置。
 	cfg, err := config.Load(os.Getenv)
 	if err != nil {
 		// fail-fast：绝不带着半截配置启动
@@ -63,12 +68,34 @@ func main() {
 		os.Exit(2)
 	}
 
-	dataPlane, err := gateway.New(router, gateway.Options{
-		TraceHeader:     cfg.TraceHeader,
+	skew, err := durationEnv("GUANJIN_GATEWAY_CLOCK_SKEW", 0)
+	if err != nil {
+		logger.Error("startup failed", "error", err)
+		os.Exit(2)
+	}
+
+	// 数据库：准入判定（会话/角色/门槛）与访问记录都直读直写库——
+	// 启动期必须 ping 通，不带着"连不上库的数据面"对外服务（那是每条请求 503）。
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+	db, err := store.Open(ctx, store.Options{DSN: cfg.DatabaseDSN})
+	if err != nil {
+		logger.Error("startup failed: open postgres", "error", err)
+		os.Exit(2)
+	}
+	defer func() { _ = store.Close(db) }()
+	if err := store.Ping(ctx, db); err != nil {
+		logger.Error("startup failed: postgres unreachable", "error", err)
+		os.Exit(2)
+	}
+
+	// 本进程**不建 Redis 连接**：数据面不判 `jti` 重放（裁定：由 SDK/S9 产生并记账），
+	// 也不缓存会话状态（撤销零缓存窗口，AC-SESS-01）。`GUANJIN_REDIS_ADDR` 仍由共享
+	// `config.Load` 要求（三个进程同一份 fail-closed 口径），但数据面不消费它。
+	dataPlane, err := newDataPlane(ctx, db, cfg, router, gateway.Options{
 		UpstreamTimeout: upstreamTimeout,
 		DialTimeout:     dialTimeout,
-		Logger:          logger,
-	})
+	}, skew, logger)
 	if err != nil {
 		logger.Error("startup failed: data plane", "error", err)
 		os.Exit(2)
@@ -102,8 +129,6 @@ func main() {
 		}
 	}()
 
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
 	<-ctx.Done()
 	sctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
