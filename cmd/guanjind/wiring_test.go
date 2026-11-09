@@ -71,7 +71,45 @@ func TestToRiskPolicy(t *testing.T) {
 
 // 缺依赖 → 装配期就失败（不等到第一个请求）。
 func TestNewFlowHandlerRequiresDependencies(t *testing.T) {
-	if _, _, err := newFlowHandler(context.Background(), nil, nil, store.StartupConfig{}, discardLogger()); err == nil {
+	if _, _, _, err := newFlowHandler(context.Background(), nil, nil, store.StartupConfig{}, discardLogger()); err == nil {
 		t.Fatal("缺 DB 必须装配失败")
+	}
+}
+
+// 有效禁用 = 平台级 ∪ 客户端级（AC-FLOW-05：两级互不覆盖，任一级禁用即不可用）。
+func TestMergeDisabledFactorsIsUnion(t *testing.T) {
+	clientDisabled := func(context.Context, string) ([]factor.FactorType, error) {
+		return []factor.FactorType{factor.FactorPassword}, nil
+	}
+	platformDisabled := func(context.Context) (map[string]bool, error) {
+		return map[string]bool{"totp": true, "password": true}, nil
+	}
+	merged, err := mergeDisabledFactors(clientDisabled, platformDisabled)(context.Background(), "c-1")
+	if err != nil {
+		t.Fatalf("merge: %v", err)
+	}
+	seen := map[factor.FactorType]int{}
+	for _, t2 := range merged {
+		seen[t2]++
+	}
+	if seen[factor.FactorPassword] != 1 {
+		t.Fatalf("两级都禁用同一因子时不得重复计入：%v", merged)
+	}
+	if seen[factor.FactorType("totp")] != 1 {
+		t.Fatalf("平台级禁用必须并入有效集合：%v", merged)
+	}
+	if len(merged) != 2 {
+		t.Fatalf("want 2 factors, got %v", merged)
+	}
+}
+
+// 平台级读不出来 → 报错（fail-closed：不许降级成"只按客户端级算"）。
+func TestMergeDisabledFactorsFailsClosed(t *testing.T) {
+	clientDisabled := func(context.Context, string) ([]factor.FactorType, error) { return nil, nil }
+	platformDisabled := func(context.Context) (map[string]bool, error) {
+		return nil, errors.New("runtime_config unavailable")
+	}
+	if _, err := mergeDisabledFactors(clientDisabled, platformDisabled)(context.Background(), "c-1"); err == nil {
+		t.Fatal("平台级禁用读失败必须报错（否则管理员关掉的因子会被悄悄放回来）")
 	}
 }
