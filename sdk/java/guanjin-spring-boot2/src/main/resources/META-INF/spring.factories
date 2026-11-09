@@ -1,0 +1,4 @@
+# Spring Boot 2.x 的自动配置注册方式（3.x 改成了 AutoConfiguration.imports，
+# 与本项目的 javax 产物不兼容，见 docs/sdk-contract.md §5.1）。
+org.springframework.boot.autoconfigure.EnableAutoConfiguration=\
+com.guanjin.spring.boot2.GuanjinAutoConfiguration

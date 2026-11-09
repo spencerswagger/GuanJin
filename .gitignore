@@ -5,6 +5,9 @@ dist/
 *.test
 *.out
 
+# Maven 构建产物（sdk/java）
+sdk/java/**/target/
+
 # 前端依赖与产物（SDK / 前端的 node_modules 不入库）
 node_modules/
 web/dist/
