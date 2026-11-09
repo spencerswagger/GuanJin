@@ -505,43 +505,40 @@ func TestAC_AUD_11_JobRunsOnTickerAndSkipsEmptyMonth(t *testing.T) {
 
 	// 有数据 + 真 Job 跑一拍：覆盖 ticker → RunOnce → AnchorCurrentMonth 的整条路径。
 	appendN(t, chain, db, month, 2)
+	// **必须清零"最近成功复核时刻"**（包级指标，前面用例已设过），否则等待循环会读到旧值。
+	ResetMetricsForTest()
 	seedSegmentAnchor(t, chain, db, anchors, month)
-	// **必须清零"最近成功复核时刻"**：它是包级指标，前面的用例已经把它设过，
-	// 不清零的话下面的等待循环会立刻 break（读到旧值），Job 可能一次都没跑就断言锚点 → 假红
-	// （CI 上就红在这里）。
-	ResetMetricsForTest()
-	ResetMetricsForTest()
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	stop := StartJob(ctx, verifier, 10*time.Millisecond, slog.New(slog.NewTextHandler(io.Discard, nil)))
-	deadline := time.Now().Add(2 * time.Second)
-	for {
-		if age, ok := AnchorAge(time.Now().UTC()); ok && age < time.Minute {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("Job 没在 2s 内完成一次整链复核（ticker 未生效）")
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	stop()
-	// 锚点应已被 Job 写入，且等于链尾。
-	tag, err := anchors.Get(context.Background(), month)
-	if err != nil {
-		t.Fatalf("anchor Get: %v", err)
-	}
+
 	records, err := chain.Load(context.Background(), db, month, month.AddDate(0, 1, 0))
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	// 显式守卫：空段时给出可读失败，而不是 `index out of range [-1]` 的 panic
-	// （panic 会把整个包的后续用例一起带掉，掩盖真正的信息）。
 	if len(records) == 0 {
-		t.Fatalf("本段应有 2 条记录，实际 0 条（月份=%s，锚点 tag 长度=%d）",
-			month.Format("200601"), len(tag))
+		t.Fatalf("本段应有 2 条记录，实际 0 条（月份=%s）", month.Format("200601"))
 	}
-	if len(tag) == 0 || string(tag) != string(records[len(records)-1].IntegrityTag) {
-		t.Fatal("Job 跑完后锚点应等于链尾")
+	want := records[len(records)-1].IntegrityTag
+
+	stop := StartJob(context.Background(), verifier, 10*time.Millisecond,
+		slog.New(slog.NewTextHandler(io.Discard, nil)))
+	defer stop()
+
+	// **等"锚点变成链尾"这件事本身**，而不是等包级 `AnchorAge`：后者是进程级共享变量、
+	// 受其它用例影响（CI 上就红在这里：读到旧值 → 循环立刻 break → Job 一次没跑就断言）。
+	deadline := time.Now().Add(3 * time.Second)
+	var got []byte
+	for time.Now().Before(deadline) {
+		got, err = anchors.Get(context.Background(), month)
+		if err != nil {
+			t.Fatalf("anchor Get: %v", err)
+		}
+		if string(got) == string(want) {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if string(got) != string(want) {
+		t.Fatalf("Job 跑完后锚点应等于链尾：期望 %x，实际 %x（月份=%s）",
+			want, got, month.Format("200601"))
 	}
 }
 
