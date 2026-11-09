@@ -459,6 +459,10 @@ func TestAC_AUD_11_JobRunsOnTickerAndSkipsEmptyMonth(t *testing.T) {
 	// 有数据 + 真 Job 跑一拍：覆盖 ticker → RunOnce → AnchorCurrentMonth 的整条路径。
 	appendN(t, chain, db, month, 2)
 	seedSegmentAnchor(t, chain, db, anchors, month)
+	// **必须清零"最近成功复核时刻"**：它是包级指标，前面的用例已经把它设过，
+	// 不清零的话下面的等待循环会立刻 break（读到旧值），Job 可能一次都没跑就断言锚点 → 假红
+	// （CI 上就红在这里）。
+	ResetMetricsForTest()
 	ResetMetricsForTest()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
