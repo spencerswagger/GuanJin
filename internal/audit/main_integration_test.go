@@ -4,9 +4,11 @@ package audit
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"os"
 	"testing"
+	"time"
 
 	"gorm.io/gorm"
 
@@ -34,6 +36,12 @@ func TestMain(m *testing.M) {
 		fmt.Fprintf(os.Stderr, "[audit.TestMain] open db: %v\n", err)
 		os.Exit(1)
 	}
+	// 基准月 = **链尾月份 + 1**（不用随机：后跑的用例若拿到更早月份会撞下界守卫）。
+	if err := setPoolBaseMonth(db); err != nil {
+		fmt.Fprintf(os.Stderr, "[audit.TestMain] pool base month: %v\n", err)
+		_ = store.Close(db)
+		os.Exit(1)
+	}
 	if err := preparePartitions(db); err != nil {
 		fmt.Fprintf(os.Stderr, "[audit.TestMain] prepare partitions: %v\n", err)
 		_ = store.Close(db)
@@ -43,6 +51,33 @@ func TestMain(m *testing.M) {
 	dropPartitions(db)
 	_ = store.Close(db)
 	os.Exit(code)
+}
+
+// setPoolBaseMonth 把分区池的基准月设为"当前链尾月份 + 1"（没有链尾时用当前月 + 1）。
+//
+// 这样按调用顺序分配的月份**严格单调且一定晚于链尾**，不会命中 `ErrOccurredAtTooOld`。
+func setPoolBaseMonth(db *gorm.DB) error {
+	// `max()` 在空表上返回 NULL：用 `sql.NullTime` 接，别让 Scan 直接报错。
+	var tail sql.NullTime
+	if err := db.Raw(`SELECT max(occurred_at) FROM audit_logs`).Scan(&tail).Error; err != nil {
+		return err
+	}
+	// 基准月 = max(链尾月份 + 1, 2040-01)：既要晚于链尾（否则撞下界守卫），
+	// 又要**远离真实月份**——`cmd/guanjind` 的分区用例会删/建"当月 + N 个月"的分区，
+	// 若基准月与之重合，`DROP TABLE` 会把本包的行连同分区一起删掉
+	// （实测：`AC-AUD_03` 报"应有 4 条，实际 0"）。
+	var base time.Time
+	if tail.Valid && !tail.Time.IsZero() {
+		base = time.Date(tail.Time.UTC().Year(), tail.Time.UTC().Month(), 1, 0, 0, 0, 0, time.UTC).AddDate(0, 1, 0)
+	} else {
+		now := time.Now().UTC()
+		base = time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC).AddDate(0, 1, 0)
+	}
+	if floor := time.Date(2040, 1, 1, 0, 0, 0, 0, time.UTC); base.Before(floor) {
+		base = floor
+	}
+	poolBaseMonth.Store(base)
+	return nil
 }
 
 // preparePartitions 走 `EnsurePartitions`：**同一事务内先取链锁再建表**。

@@ -49,6 +49,14 @@ func openAuditTestDB(t *testing.T) *gorm.DB {
 	if !db.Migrator().HasTable("audit_logs") {
 		t.Fatalf("缺 audit_logs 表：先跑 make migrate-up DATABASE_URL=$GUANJIN_TEST_DSN")
 	}
+	// **限连接占用**：`AC-AUD-04` 要 100 个并发写，而多包并行 + `max_connections=100`
+	// 会打满服务端（实测 `FATAL: sorry, too many clients already (53300)`）。
+	// 100 个 goroutine 在 16 条连接上排队，仍是 100 个并发**逻辑**写——
+	// 不靠降并发来"修"，判据强度不变。
+	if sqlDB, err := db.DB(); err == nil {
+		sqlDB.SetMaxOpenConns(16)
+		sqlDB.SetMaxIdleConns(16)
+	}
 	t.Cleanup(func() { _ = store.Close(db) })
 	return db
 }
@@ -84,28 +92,45 @@ const (
 	partitionMonthCount = 36
 )
 
-// partitionMonths 是预建分区覆盖的固定月份窗口（跨运行可复用、幂等）。
+// partitionMonths 是预建分区覆盖的月份窗口：**基准月起连续 `partitionMonthCount` 个月**。
+//
+// 基准月由 `TestMain` 按"链尾月份 + 1"设定（见 `setPoolBaseMonth`）；`TestMain` 里
+// 先设基准再建分区，所以这里读得到。若基准未设（例如单跑某个用例），退化为
+// `partitionStartYear` 起算——此时那些用例会因下界守卫而失败，属预期（不该单跑它们）。
 func partitionMonths() []time.Time {
+	base, ok := poolBaseMonth.Load().(time.Time)
+	if !ok || base.IsZero() {
+		base = time.Date(partitionStartYear, 1, 1, 0, 0, 0, 0, time.UTC)
+	}
 	out := make([]time.Time, 0, partitionMonthCount)
-	base := time.Date(partitionStartYear, 1, 1, 0, 0, 0, 0, time.UTC)
 	for i := 0; i < partitionMonthCount; i++ {
 		out = append(out, base.AddDate(0, i, 0))
 	}
 	return out
 }
 
-// monthSeq 给每个用例分配**池内**的唯一个月（不建表、不撞月）。
+// monthSeq 给每个用例分配**单调递增**的月份序号（不建表、不撞月、且一定晚于链尾）。
 var monthSeq atomic.Int64
 
-// cleanMonth 从预建池里取一个月（唯一、不撞月、零 DDL）。
+// poolBaseMonth 是分区池的**基准月**（`TestMain` 里按"链尾月份 + 1"设定）。
+//
+// 为什么必须以链尾为基：`Append` 有下界守卫——`occurred_at` 早于链尾所在分区月初就拒。
+// 早先用 jitter 随机挑月份，后跑的用例可能拿到**更早**的月份 → 直接撞守卫
+// （实测：单包 5 轮红 1 轮、全量 `-p 8` 3 轮红 2 轮，每轮 47 条）。
+var poolBaseMonth atomic.Value // time.Time
+
+// cleanMonth 按调用顺序分配 `poolBaseMonth + n`（严格单调、不撞月、零 DDL）。
 func cleanMonth(t *testing.T) time.Time {
 	t.Helper()
-	months := partitionMonths()
-	n := monthSeq.Add(1) - 1
-	if int(n) >= len(months) {
-		t.Fatalf("分区池不够用（用例数 %d > %d），调大 partitionMonthCount", n+1, len(months))
+	base, ok := poolBaseMonth.Load().(time.Time)
+	if !ok || base.IsZero() {
+		t.Fatal("分区池基准月未初始化（应由 TestMain 设定）")
 	}
-	return months[n]
+	n := monthSeq.Add(1) - 1
+	if int(n) >= partitionMonthCount {
+		t.Fatalf("分区池不够用（用例数 %d > %d），调大 partitionMonthCount", n+1, partitionMonthCount)
+	}
+	return base.AddDate(0, int(n), 0)
 }
 
 // requirePartition 断言该月分区**已由 TestMain 预建**（运行期不建表，防 40P01 死锁）。
@@ -180,13 +205,23 @@ func TestAC_AUD_03_DeletedMiddleRecordIsDetected(t *testing.T) {
 	requirePartition(t, db, month)
 	cleanupMonth(t, db, month)
 	appendN(t, chain, db, month, 5)
+	// `Append` 是按值传参，生成的 id 拿不回来；先读一遍拿到**真实 id**再按 id 删。
+	beforeDelete, err := chain.Load(context.Background(), db, month, month.AddDate(0, 1, 0))
+	if err != nil {
+		t.Fatalf("Load(before delete): %v", err)
+	}
+	if len(beforeDelete) != 5 {
+		t.Fatalf("前置：期望 5 条，实际 %d", len(beforeDelete))
+	}
 
 	// 直接删中间一条（模拟"有人删了证据"）。
 	// 生产环境 `audit_logs` 有 append-only 触发器（UPDATE/DELETE 一律 23001），
 	// 这里必须**临时关掉**才能构造出"已被篡改的库"——这正是本用例要检测的对象；
 	// 用完立刻恢复（t.Cleanup 里）。
 	allowMutationForTest(t, db, month)
-	if err := db.Exec(`DELETE FROM audit_logs WHERE occurred_at = ?`, month.Add(2*time.Second)).Error; err != nil {
+	// **按 id 删**（不是按 `occurred_at`）：后者会连带删掉同一时刻的另一条（如果存在），
+	// 造成"应有 4 条、实际 3 条"的假红（已在 `-p 8` 多轮里出现过）。
+	if err := db.Exec(`DELETE FROM audit_logs WHERE id = ?`, beforeDelete[2].ID).Error; err != nil {
 		t.Fatalf("delete middle: %v", err)
 	}
 
