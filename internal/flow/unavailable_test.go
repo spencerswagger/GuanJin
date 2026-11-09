@@ -3,7 +3,9 @@ package flow
 import (
 	"context"
 	"errors"
+	"net"
 	"net/http"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -74,6 +76,35 @@ func TestCodeOfDependencyUnavailable(t *testing.T) {
 				t.Fatalf("码表把 %s 映成了 %d，want %d", code, got, tc.wantStatus)
 			}
 		})
+	}
+}
+
+// 端点级反证（收窄后新增）：**socket 超时不是"库挂了"** → 500，不是 503。
+//
+// 为什么这条要落在端点上而不是只测 `IsUnavailable`：判据关心的是"客户端拿到什么"。
+// 若这里回 503，客户端会把它当"依赖瞬时不可用"退避重试，而真实原因是慢查询/网络停顿——
+// 告警与排障方向都会被带偏（这正是评审报的窄缺口）。
+func TestHTTPChallengeSocketTimeoutIsNot503(t *testing.T) {
+	env := newTestEnv(t)
+	flowID := env.startFlow(t)
+	// socket 读超时：`net.OpError` 里装的是 deadline 超时。
+	env.orch.deps.Reader = failingReader{err: &net.OpError{Op: "read", Net: "tcp", Err: os.ErrDeadlineExceeded}}
+
+	resp, body := postJSON(t, env.srv.URL+"/auth/challenge/password",
+		`{"client_id":"c-1","purpose":"login","flow_id":"`+flowID+`"}`)
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusServiceUnavailable {
+		t.Fatalf("超时不得回 503（会被当成依赖挂了去重试），实际 %d/%s", resp.StatusCode, body.Code)
+	}
+	if resp.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("超时按未知错误处理应为 500，实际 %d", resp.StatusCode)
+	}
+	if body.Code == httpx.CodeDBUnavailable || body.Code == httpx.CodeRedisUnavailable {
+		t.Fatalf("超时不得给出依赖码，实际 %q", body.Code)
+	}
+	if got := resp.Header.Get("Retry-After"); got != "" {
+		t.Fatalf("500 不应带 Retry-After（那是 503 的信号），实际 %q", got)
 	}
 }
 

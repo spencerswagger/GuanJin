@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"net"
+	"os"
 	"syscall"
 	"testing"
 	"time"
@@ -81,6 +82,9 @@ func TestIsUnavailableSQLStates(t *testing.T) {
 		{"23503 foreign_key_violation", "23503", false},
 		{"42P01 undefined_table（schema 漂移 = 缺陷）", "42P01", false},
 		{"40001 serialization_failure（可重试，但不是不可用）", "40001", false},
+		// 慢查询被服务端取消：`statement_timeout` 就长这样，说成"库挂了"会让客户端把
+		// 慢 SQL 当瞬时故障去重试（判据原文：超时不得被映成 503）。
+		{"57014 query_canceled（statement_timeout）", "57014", false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -115,13 +119,24 @@ func TestIsUnavailableConnectionLayer(t *testing.T) {
 		err  error
 		want bool
 	}{
-		{"net.OpError(dial refused)", dialErr, true},
+		// --- 真正的连接层硬失败（正控：收窄之后这些必须仍然 true）---
+		{"net.OpError(dial refused) = 真停库", dialErr, true},
 		{"包裹后的 net.OpError", &wrappedError{cause: dialErr}, true},
+		{"net.OpError(ECONNREFUSED)", &net.OpError{Op: "dial", Net: "tcp", Err: syscall.ECONNREFUSED}, true},
 		{"driver.ErrBadConn", driver.ErrBadConn, true},
 		{"sql.ErrConnDone", sql.ErrConnDone, true},
 		{"io.EOF（进程被 kill 时很常见）", io.EOF, true},
 		{"io.ErrUnexpectedEOF", io.ErrUnexpectedEOF, true},
 		{"ECONNRESET", syscall.ECONNRESET, true},
+		{"EPIPE", syscall.EPIPE, true},
+		{"ECONNABORTED", syscall.ECONNABORTED, true},
+		// --- 超时：**不算**依赖不可用（收窄的那一条；先判超时再判 errno）---
+		{"net.OpError(read/os.ErrDeadlineExceeded) = socket 超时", &net.OpError{Op: "read", Net: "tcp", Err: os.ErrDeadlineExceeded}, false},
+		{"net.OpError(dial/ETIMEDOUT) = 黑洞吞掉的 dial", &net.OpError{Op: "dial", Net: "tcp", Err: syscall.ETIMEDOUT}, false},
+		{"net.OpError(Timeout()==true 的自定义错误)", &net.OpError{Op: "read", Net: "tcp", Err: fakeTimeout{}}, false},
+		{"只有文本 i/o timeout（没实现 Timeout()）", errors.New("read tcp 127.0.0.1:53000->127.0.0.1:5432: i/o timeout"), false},
+		{"裸 os.ErrDeadlineExceeded", os.ErrDeadlineExceeded, false},
+		{"裸 syscall.ETIMEDOUT", syscall.ETIMEDOUT, false},
 		// 调用方主动取消不是"数据库不可用"（否则告警会被客户端断开刷屏）。
 		{"context.Canceled", context.Canceled, false},
 		{"context.DeadlineExceeded（取舍见 unavailable.go 文件头）", context.DeadlineExceeded, false},
@@ -144,6 +159,13 @@ func TestMapErrorPassesThroughNonConnectionErrors(t *testing.T) {
 		t.Fatalf("非 PG/连接错误应原样返回，实际 %v", got)
 	}
 }
+
+// fakeTimeout 是"只实现 net.Error 的 Timeout()"的桩：模拟驱动/中间层自带的超时类型。
+type fakeTimeout struct{}
+
+func (fakeTimeout) Error() string   { return "i/o timeout (custom)" }
+func (fakeTimeout) Timeout() bool   { return true }
+func (fakeTimeout) Temporary() bool { return true }
 
 type wrappedError struct{ cause error }
 
