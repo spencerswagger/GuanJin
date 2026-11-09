@@ -49,7 +49,7 @@ GUANJIN_TEST_REDIS_ADDR=127.0.0.1:6379 GUANJIN_TEST_REDIS_PASSWORD=123456 \
 ./scripts/check-sdk-java8.sh
 ```
 
-集成用例（`*IT.java`，failsafe）覆盖：`RedisReplayStoreIT`（`SET NX PX` 语义 + TTL + AUTH 失败 + 端口不通）、
+集成用例（`*IT.java`，failsafe）覆盖：`RedisReplayStoreIT`（`SET NX PX` 语义 + TTL + 连接被重置 + 端口不通）、
 `RedisReplayFilterIT`（同 `jti` 二次 401、Redis 挂 503）、`AgentPullZeroCallIT`（30s 零调用 + 正控制）。
 
 ## 接入片段

@@ -62,7 +62,9 @@ class RedisReplayFilterIT {
 
     @Test
     void AC_SDK_06_redisOutageYields503RedisUnavailable() throws Exception {
-        LettuceConnectionFactory factory = RedisTestSupport.factory("definitely-wrong-password");
+        // 真 TCP：连接被重置 = Redis 挂掉（不依赖"服务端是否有口令"，CI 也能真红）
+        RedisTestSupport.BlackHole hole = new RedisTestSupport.BlackHole();
+        LettuceConnectionFactory factory = hole.factory();
         try {
             StringRedisTemplate template = new StringRedisTemplate(factory);
             template.afterPropertiesSet();
@@ -80,6 +82,7 @@ class RedisReplayFilterIT {
                     new ObjectMapper().readTree(res.getContentAsString()).get("code").asText());
         } finally {
             factory.destroy();
+            hole.close();
         }
     }
 

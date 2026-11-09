@@ -47,18 +47,20 @@ class RedisReplayStoreIT {
     }
 
     @Test
-    void AC_SDK_06_wrongCredentialsMeansUnavailableNotPassThrough() {
-        // 真 Redis：用错误口令 AUTH → 客户端报错（不是"没有响应"）
-        LettuceConnectionFactory factory = RedisTestSupport.factory("definitely-wrong-password");
+    void AC_SDK_06_connectionDroppedMeansUnavailableNotPassThrough() throws Exception {
+        // 真 TCP：服务端 accept 后立刻 RST（模拟 Redis 进程被 kill / 代理挂掉）
+        RedisTestSupport.BlackHole hole = new RedisTestSupport.BlackHole();
+        LettuceConnectionFactory factory = hole.factory();
         try {
             StringRedisTemplate template = new StringRedisTemplate(factory);
             template.afterPropertiesSet();
             ReplayStore store = new RedisReplayStore(template);
             ReplayStoreUnavailableException e = assertThrows(ReplayStoreUnavailableException.class,
-                    () -> store.firstUse("it-auth-" + UUID.randomUUID(), Duration.ofSeconds(60)));
+                    () -> store.firstUse("it-reset-" + UUID.randomUUID(), Duration.ofSeconds(60)));
             assertTrue(e.getMessage().contains("拒请求"), e.getMessage());
         } finally {
             factory.destroy();
+            hole.close();
         }
     }
 
