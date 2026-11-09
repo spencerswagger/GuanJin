@@ -57,6 +57,10 @@ type Record struct {
 // 键类型是 `crypto.HMACKey`（字段不导出、只能由主密钥派生）：审计包**拿不到原始密钥字节**，
 // 只能把"算法入口"当作唯一用法——这与 `internal/crypto` 的既有纪律一致（D4-B）。
 type Chain struct {
+	// afterTailRead 是**仅测试用**的注入点（生产恒为 nil）：在"读到链尾"与"插入"之间
+	// 插入可控延迟，用来证明并发防线真的有效。见 `repo.go` 的 `Append`。
+	afterTailRead func()
+
 	key crypto.HMACKey
 }
 

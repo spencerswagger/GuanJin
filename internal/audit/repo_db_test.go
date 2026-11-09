@@ -142,8 +142,20 @@ func requirePartition(t *testing.T, db *gorm.DB, month time.Time) {
 		t.Fatalf("check partition: %v", err)
 	}
 	if !exists {
-		t.Fatalf("分区 audit_logs_p%s 不存在（TestMain 应预建 %d 个月）",
-			month.Format("200601"), partitionMonthCount)
+		// **自愈**：TestMain 预建的窗口与"池推进速率"可能对不上（Gate 实测 round3 有
+		// `no partition of relation "audit_logs"` 23514）。缺了就现场补——走
+		// `EnsurePartitions`（同一事务先取链锁，不会与写入死锁），而不是让用例假红。
+		if err := EnsurePartitions(context.Background(), db, []time.Time{month}); err != nil {
+			t.Fatalf("补建分区 audit_logs_p%s 失败：%v", month.Format("200601"), err)
+		}
+		var nowExists bool
+		if err := db.Raw(`SELECT to_regclass(?) IS NOT NULL`,
+			fmt.Sprintf("public.audit_logs_p%s", month.Format("200601"))).Scan(&nowExists).Error; err != nil {
+			t.Fatalf("check partition after heal: %v", err)
+		}
+		if !nowExists {
+			t.Fatalf("分区 audit_logs_p%s 补建后仍不存在", month.Format("200601"))
+		}
 	}
 }
 

@@ -70,10 +70,21 @@ func (c *Chain) Append(ctx context.Context, db *gorm.DB, rec Record) ([]byte, er
 			OccurredAt   time.Time
 			CreatedAt    time.Time
 		}
+		// `FOR UPDATE` 是**独立于 advisory 锁的第二道防线**（Gate 要求）：
+		// advisory 锁只保证"同一时刻只有一个写者进这段代码"，一旦锁的语义被绕过
+		// （换连接池模式、事务隔离级别变化、或将来有人删掉那一行），行锁仍会挡住
+		// "两个写者同时把同一条当链尾"。锁序固定为 **先 advisory、后行锁**，避免与
+		// `EnsurePartitions` 的 "advisory → ACCESS EXCLUSIVE" 形成交叉死锁。
 		res := tx.Raw(`SELECT integrity_tag, occurred_at, created_at FROM audit_logs
-			ORDER BY created_at DESC, id DESC LIMIT 1`).Scan(&tail)
+			ORDER BY created_at DESC, id DESC LIMIT 1 FOR UPDATE`).Scan(&tail)
 		if res.Error != nil && !isNoRows(res.Error) {
 			return fmt.Errorf("audit: read chain tail: %w", res.Error)
+		}
+		// **仅测试用的注入点**：让"读链尾 → 插入"的窗口可控地张开，
+		// 用来证明防线（advisory 锁 + 行锁）真的挡住了并发分叉，而不是"跑几次没撞上"。
+		// 生产环境该字段恒为 nil，不产生任何行为。
+		if c.afterTailRead != nil {
+			c.afterTailRead()
 		}
 		if res.RowsAffected > 0 && len(tail.IntegrityTag) > 0 {
 			prev = tail.IntegrityTag
