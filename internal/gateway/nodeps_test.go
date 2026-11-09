@@ -149,6 +149,16 @@ func TestGatewayNeverStoresOrComparesJTI(t *testing.T) {
 	}
 }
 
+// guardMustScan 是守线**必须扫到**的文件（相对本包目录）。
+//
+// 维护方式：这些是网关核心与适配层里会承载"判重/存储"语义的文件；改名、移动、拆包时
+// 同步更新这里。它的作用不是"列清单免责"，而是让"扫不到"变成 Fatal——
+// 守线的价值在于**以后也红**，而不是今天这一次红。
+var guardMustScan = []string{
+	"admit.go", "inject.go", "pipeline.go", "proxy.go", "revoke.go", "route.go", "slo.go",
+	filepath.Join("adapter", "adapter.go"),
+}
+
 // guardSources 递归收集本包（含子包）的**生产代码**文件。
 //
 // 为什么递归：早先只扫 `.` 与 `./adapter` 两层，新增任何子目录（如 `internal/gateway/x/`）
@@ -175,10 +185,25 @@ func guardSources(t *testing.T) []string {
 		t.Fatalf("walk 包目录失败：%v", err)
 	}
 	if !dirs[filepath.Join(".", "adapter")] {
-		t.Fatalf("递归扫描没看到 adapter 子包（目录结构变了？）：%v", dirs)
+		t.Fatalf("递归扫描没看到 adapter 子包（WalkDir 起点写错？该子包一旦跳过，adapter 里的判重实现就漏检）：%v", dirs)
 	}
-	if len(files) < 8 {
-		t.Fatalf("扫描文件数异常（%d）：扫不到必须当失败，否则守线会静默失效（files=%v）", len(files), files)
+
+	// 逐个点名"必须扫到"的文件，而不是比一个魔数：
+	//   - 只判文件总数，会在"新增文件让数字变大"时误绿（正好掩盖漏扫）；
+	//   - 只判"大于 0"，会在 WalkDir 部分失败时误绿。
+	// 点了名的文件若被改名/移动，这里会 Fatal 并提示同步 `guardMustScan`——宁可红一次，
+	// 也不要让守线在无人察觉时失效。
+	got := make(map[string]bool, len(files))
+	for _, f := range files {
+		got[filepath.Clean(f)] = true
+	}
+	for _, want := range guardMustScan {
+		if !got[filepath.Clean(want)] {
+			t.Fatalf("递归扫描漏了 %q（文件改名/移动了？请同步 `guardMustScan`）：已扫到 %v", want, files)
+		}
+	}
+	if len(files) < len(guardMustScan) {
+		t.Fatalf("扫描文件数异常（%d < %d）：扫不到必须当失败", len(files), len(guardMustScan))
 	}
 	return files
 }
