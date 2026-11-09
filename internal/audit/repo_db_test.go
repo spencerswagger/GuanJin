@@ -12,6 +12,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -313,6 +314,9 @@ func TestAC_AUD_04_Concurrent100AppendsKeepChainIntact(t *testing.T) {
 	cleanupMonth(t, db, month)
 
 	const n = 100
+	// **按本次写入的标记过滤**，不按月份统计：全局链里可能混入其它包/其它用例的记录
+	// （Gate 实测按月份数到 55 条，形同"期望 20 实际 55"）。标记用唯一 `TargetID` 前缀。
+	marker := "ac-aud-04-" + uuid.NewString()[:8]
 	var wg sync.WaitGroup
 	errs := make(chan error, n)
 	for i := 0; i < n; i++ {
@@ -321,7 +325,7 @@ func TestAC_AUD_04_Concurrent100AppendsKeepChainIntact(t *testing.T) {
 			defer wg.Done()
 			_, err := chain.Append(context.Background(), db, Record{
 				Action: "user.disable", Result: "success", TargetType: "user",
-				TargetID: fmt.Sprintf("u-%d", i), ClientID: "s10-audit",
+				TargetID: fmt.Sprintf("%s-%d", marker, i), ClientID: "s10-audit",
 				After:      map[string]any{"i": fmt.Sprintf("%d", i)},
 				OccurredAt: month.Add(time.Duration(i) * time.Millisecond),
 			})
@@ -333,15 +337,22 @@ func TestAC_AUD_04_Concurrent100AppendsKeepChainIntact(t *testing.T) {
 	wg.Wait()
 	close(errs)
 	for err := range errs {
-		t.Fatalf("并发写入失败：%v", err)
+		t.Fatalf("并发写入失败（月份=%s）：%v", month.Format("200601"), err)
 	}
 
-	records, err := chain.Load(context.Background(), db, month, month.AddDate(0, 1, 0))
+	all, err := chain.Load(context.Background(), db, month, month.AddDate(0, 1, 0))
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
+	// 只挑本次标记的记录（同月可能还有别的用例/别的包的记录）。
+	var records []Record
+	for _, rec := range all {
+		if strings.HasPrefix(rec.TargetID, marker) {
+			records = append(records, rec)
+		}
+	}
 	if len(records) != n {
-		t.Fatalf("期望 %d 条，实际 %d（并发丢链/丢记录）", n, len(records))
+		t.Fatalf("本次写入应有 %d 条，实际 %d（本月总 %d 条，含其它标记）", n, len(records), len(all))
 	}
 	// 逐条 hash 接得上 + tag 无重复（"不重号"）。
 	seen := map[string]bool{}
@@ -355,6 +366,7 @@ func TestAC_AUD_04_Concurrent100AppendsKeepChainIntact(t *testing.T) {
 		}
 		seen[key] = true
 	}
+	// 整链复核：从本次首条的 `prev_tag` 起，沿链走到本次末条为止。
 	broken, err := chain.Verify(records, records[0].PrevTag)
 	if err != nil {
 		t.Fatalf("Verify: %v", err)

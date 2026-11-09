@@ -5,10 +5,13 @@ package audit
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 // 并发防线的**受控证据**：强制把"读链尾 → 插入"的窗口张开 2ms，仍必须 0 分叉。
@@ -69,6 +72,7 @@ func TestAppendWindowForcedOpenStillKeepsChainIntact(t *testing.T) {
 	chain = &delayed
 
 	const workers = 20
+	marker := "win-" + uuid.NewString()[:8]
 	var wg sync.WaitGroup
 	start := time.Now()
 	for i := 0; i < workers; i++ {
@@ -76,7 +80,7 @@ func TestAppendWindowForcedOpenStillKeepsChainIntact(t *testing.T) {
 		go func(i int) {
 			defer wg.Done()
 			if _, err := chain.Append(context.Background(), db, Record{
-				Action: "delay", Result: "success",
+				Action: "delay", Result: "success", TargetID: fmt.Sprintf("%s-%d", marker, i),
 				OccurredAt: month.Add(time.Duration(i) * time.Millisecond),
 			}); err != nil {
 				t.Errorf("append: %v", err)
@@ -86,12 +90,18 @@ func TestAppendWindowForcedOpenStillKeepsChainIntact(t *testing.T) {
 	wg.Wait()
 	elapsed := time.Since(start)
 
-	records, err := chain.Load(context.Background(), db, month, month.AddDate(0, 1, 0))
+	all, err := chain.Load(context.Background(), db, month, month.AddDate(0, 1, 0))
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
+	var records []Record
+	for _, rec := range all {
+		if strings.HasPrefix(rec.TargetID, marker) {
+			records = append(records, rec)
+		}
+	}
 	if len(records) != workers {
-		t.Fatalf("期望 %d 条，实际 %d", workers, len(records))
+		t.Fatalf("本次写入应有 %d 条，实际 %d（本月总 %d 条，含其它标记）", workers, len(records), len(all))
 	}
 	// **串行化被证明**：advisory 锁在 hook 之前取得，因此 hook 内并发峰值必须恒为 1。
 	// 峰值 ≥2 就说明锁没起作用（并发真的重叠了），那才是防线失效。
@@ -168,6 +178,7 @@ func runConcurrentAppends(t *testing.T, tweak func(*Chain)) (bool, []Record) {
 	tweak(&c)
 	chain := &c
 
+	marker := "bprobe-" + uuid.NewString()[:8]
 	var wg sync.WaitGroup
 	for i := 0; i < bWorkers; i++ {
 		wg.Add(1)
@@ -175,15 +186,22 @@ func runConcurrentAppends(t *testing.T, tweak func(*Chain)) (bool, []Record) {
 			defer wg.Done()
 			_, _ = chain.Append(context.Background(), db, Record{
 				Action: "b-probe", Result: "success",
+				TargetID:   fmt.Sprintf("%s-%d", marker, i),
 				OccurredAt: month.Add(time.Duration(i) * time.Millisecond),
 			})
 		}(i)
 	}
 	wg.Wait()
 
-	records, err := chain.Load(context.Background(), db, month, month.AddDate(0, 1, 0))
+	all, err := chain.Load(context.Background(), db, month, month.AddDate(0, 1, 0))
 	if err != nil {
 		t.Fatalf("Load: %v", err)
+	}
+	var records []Record
+	for _, rec := range all {
+		if strings.HasPrefix(rec.TargetID, marker) {
+			records = append(records, rec)
+		}
 	}
 	if len(records) == 0 {
 		t.Fatal("没有写入任何记录")
