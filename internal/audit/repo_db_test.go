@@ -359,6 +359,9 @@ func TestAC_AUD_11_AnchorAndVerifyMetrics(t *testing.T) {
 		t.Fatalf("anchor Get: %v", err)
 	}
 	// `records` 已在上面（写锚点前）取过，这里复用即可：同一段、同一链尾。
+	if len(records) == 0 {
+		t.Fatalf("本段应有记录，实际 0 条（月份=%s）", month.Format("200601"))
+	}
 	if len(got) == 0 || string(got) != string(records[len(records)-1].IntegrityTag) {
 		t.Fatal("锚点必须等于链尾的 integrity_tag")
 	}
@@ -479,6 +482,12 @@ func TestAC_AUD_11_JobRunsOnTickerAndSkipsEmptyMonth(t *testing.T) {
 	records, err := chain.Load(context.Background(), db, month, month.AddDate(0, 1, 0))
 	if err != nil {
 		t.Fatalf("Load: %v", err)
+	}
+	// 显式守卫：空段时给出可读失败，而不是 `index out of range [-1]` 的 panic
+	// （panic 会把整个包的后续用例一起带掉，掩盖真正的信息）。
+	if len(records) == 0 {
+		t.Fatalf("本段应有 2 条记录，实际 0 条（月份=%s，锚点 tag 长度=%d）",
+			month.Format("200601"), len(tag))
 	}
 	if len(tag) == 0 || string(tag) != string(records[len(records)-1].IntegrityTag) {
 		t.Fatal("Job 跑完后锚点应等于链尾")
