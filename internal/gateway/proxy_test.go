@@ -155,13 +155,13 @@ func TestUpstreamBasePathJoin(t *testing.T) {
 	}
 }
 
-// 无路由 → **404 `INVALID_REQUEST`**（`decisions.md:411` 定稿），且绝不裸转发（上游一次都不能被调用）。
+// 无路由 → **404 `CLIENT_NOT_FOUND`**，且绝不裸转发（上游一次都不能被调用）。
 //
 // 为什么不是 `UPSTREAM_UNAVAILABLE`：该码按 D8-C′④ / `acceptance-criteria.md` AC-DP-13
 // 只给"**已开始转发**但上游失败/超时"。未匹配路由是"这条路径没有归属的业务系统"
 // （调用方 URL 用错或部署少了路由项），既不是上游故障也不是依赖挂了——拿上游故障码回它，
 // 会让运维照着码表去查一个不存在的问题。
-func TestNoRouteIs404InvalidRequestAndNeverForwards(t *testing.T) {
+func TestNoRouteIs404ClientNotFoundAndNeverForwards(t *testing.T) {
 	up := newUpstream(t)
 	h := newHandler(t, Options{}, Route{Prefix: "/svc", ClientID: "svc", Upstream: up.url(t)})
 
@@ -180,7 +180,7 @@ func TestNoRouteIs404InvalidRequestAndNeverForwards(t *testing.T) {
 	if up.assertionHeader() != "" {
 		t.Fatalf("上游收到了断言头 %q：无路由时不得注入身份", up.assertionHeader())
 	}
-	assertErrorCode(t, rec.Body.Bytes(), httpx.CodeInvalidRequest)
+	assertErrorCode(t, rec.Body.Bytes(), httpx.CodeClientNotFound)
 
 	// 反向断言：**不得**出现 `UPSTREAM_UNAVAILABLE`（该码只属转发失败），也不得回 `Retry-After`。
 	var body struct {

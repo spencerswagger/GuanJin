@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 
 	"github.com/spencerswagger/guanjin/internal/gateway"
@@ -202,7 +203,9 @@ func TestAC_DP_08b_UpstreamReplayRejectionPassesThrough(t *testing.T) {
 
 	// 让网关**固定**签发同一个 jti（等价于"同一份断言被重放"），并预先占位，
 	// 使上游第一次就会判成重复 → 401 由验签方产生。
-	fixed := "0193f0aa-0000-7000-8000-00000000c001"
+	// 每次运行唯一：判重键在真 Redis 里有 TTL，写死常量会让同一次 CI 的
+	// 「集成测试」与「覆盖率采集」两趟互相命中（Gate 用 -count=2 复现过）。
+	fixed := uuid.NewString()
 	if err := rdb.Set(context.Background(), "sdk:replay:"+fixed, "1", time.Minute).Err(); err != nil {
 		t.Fatalf("预占位: %v", err)
 	}
@@ -252,7 +255,7 @@ func TestAC_DP_08c_ReplayWindowExpiryAllowsReuse(t *testing.T) {
 	// 判据里的 `replay-window`（SDK 配置项，默认 60s）——这里压到 1s 才跑得动。
 	up := newSDKLikeUpstream(t, rdb, keys.set, time.Second)
 
-	fixed := "0193f0aa-0000-7000-8000-00000000c002"
+	fixed := uuid.NewString() // 同上：跨运行不得复用同一个 jti
 	signer, err := gateway.NewAssertionSigner(keys.set)
 	if err != nil {
 		t.Fatalf("NewAssertionSigner: %v", err)
