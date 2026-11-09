@@ -35,6 +35,8 @@ import (
 //
 // ## 超时到底算不算"依赖不可用"（2026-11-10 评审实测收口，口径到此为止）
 //
+// **结论（照此执行，别再翻转）**：**拨号超时视为依赖不可用**（否则真故障会被伪装成 500）；
+// **仅在非 dial 的读写超时上不视为不可用**（那是慢查询/网络停顿，落 500 或调用方语义）。
 // 一句话：**"连不上"始终算，超时不等于依赖不可用。**
 //
 //   - **算**（→ 503 `DB_UNAVAILABLE`）：拨号失败/拨号超时（`*pgconn.ConnectError`，或
@@ -49,8 +51,13 @@ import (
 //   - 另外两条慢查询路径本就绕开 `net.OpError`：服务端 `statement_timeout` 走
 //     `*pgconn.PgError` **57014**、客户端 ctx deadline 走 `*pgconn.errTimeout`，都不映射。
 //
-// 用例 `TestIsUnavailableDialVsReadTimeout` 把这条口径钉死（成对：读写超时 false、
+// 用例 `TestIsUnavailablePinsTimeoutSemantics` 把这条口径钉死（成对：读写超时 false、
 // 拨号超时 + `ECONNREFUSED` + `ConnectError` true），`unavailable_db_test.go` 用真库复验。
+//
+// **裸 `syscall.ETIMEDOUT` 被判 false 是有意的、不是缺口**（评审 2026-11-10 确认可接受）：
+// pgx 的拨号错误必被 `*pgconn.ConnectError` 包住、读写错误必是 `*net.OpError`，
+// 裸 errno 到不了这个函数；真有裸 errno 进来，说明上游把错误链拆了，那是上游的缺陷，
+// 不该在这里靠"猜 errno"补救。
 //
 // ## 谁用它
 //
