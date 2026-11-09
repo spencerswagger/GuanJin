@@ -91,7 +91,7 @@ func TestGoModHasNoResilienceOrCertDeps(t *testing.T) {
 
 // TestGatewayNeverStoresOrComparesJTI 是 **AC-DP-08 归属裁定**的结构性守线（反向断言，防"好心补错"）。
 //
-// 裁定（Spec，2026-11-10；裁定稿 `notes/ac-dp-08-归属裁定-2026-11-10.md`，未入库前以本条注释为准）：
+// 裁定（Spec，2026-11-10；裁定稿 `notes/ac-dp-08-归属裁定-2026-11-10.md`，随 #52 入库于 `fd75306`）：
 //   - **S8 只判一半**：每请求现签新 `jti`、被拒时零注入；
 //   - **「同 `jti` 二次 → 401」由验签方产生并记账**（SDK / S9），依据 `数据面设计` §4.6 第 3 步
 //     「校验 `exp` 并用 `jti` 做重放检测」、`接口清单` §5.2/时序自环在 `SDK->>SDK`、

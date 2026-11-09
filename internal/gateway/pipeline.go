@@ -77,8 +77,8 @@ func (p *Pipeline) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// ② 路由
 	//
 	// 未匹配用 **404 `CLIENT_NOT_FOUND`**（`decisions.md:416` 定稿；`internal/httpx/errors.go:83`：
-	// 该码 E4/404 默认即 404，零例外），不是 `UPSTREAM_UNAVAILABLE`（后者按 D8-C′④ + AC-DP-13
-	// 只给"已开始转发但上游失败/超时"）。
+	// 该码 E4/404 默认即 404，直接走 `WriteError`、不覆盖状态码），不是 `UPSTREAM_UNAVAILABLE`
+	// （后者按 D8-C′④ + AC-DP-13 只给"已开始转发但上游失败/超时"）。
 	//
 	// **语义边界（防被当通用 404 用）**：`CLIENT_NOT_FOUND` **仅**指「路由 → client 映射缺失」
 	// （部署漂移，不是调用方参数错）；其余"找不到"用各自专码，请求本身不合法才用 `INVALID_REQUEST`。

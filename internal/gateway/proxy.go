@@ -106,8 +106,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// ② 路由
 	route, ok := h.router.Match(r.URL.Path)
 	if !ok {
-		// 404 `CLIENT_NOT_FOUND`（`decisions.md:416` 定稿；`internal/httpx/errors.go:83` 该码 E4/404 默认即 404，
-		// 无需覆盖状态码 = 零例外）。
+		// 404 `CLIENT_NOT_FOUND`（`decisions.md:416` 定稿；`internal/httpx/errors.go:83` 该码 E4/404
+		// 默认即 404，所以直接走 `WriteError`、不覆盖状态码——与已落实现一致、少改一处）。
 		//
 		// **语义边界（防被当通用 404 用）**：`CLIENT_NOT_FOUND` **仅**指「路由 → client 映射缺失」
 		// （部署漂移，打 WARN + 计数）；其余"找不到"仍用各自专码
