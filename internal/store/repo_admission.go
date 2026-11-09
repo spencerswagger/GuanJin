@@ -184,3 +184,27 @@ func (r *VisitRepo) RecordVisit(ctx context.Context, userID uuid.UUID, clientID,
 		        tier_at_visit = EXCLUDED.tier_at_visit`,
 		id, userID, clientID, tierArg, at.UTC(), at.UTC()).Error)
 }
+
+// ListClientIDs 返回该用户访问过的全部业务系统（`all_clients` 的 SLO 级联范围）。
+//
+// 为什么读这张表而不是"该用户的全部会话里出现过的 client"：`user_visited_clients` 是
+// 「这个用户用过哪些业务系统」的唯一权威（索引 §4.2-18 的静态映射只解决"路径归谁"），
+// 会话被清掉后它仍在——正是单点登出需要的那份名单。
+func (r *VisitRepo) ListClientIDs(ctx context.Context, userID uuid.UUID) ([]string, error) {
+	if r == nil || r.db == nil {
+		return nil, errors.New("store: nil visit repo")
+	}
+	if userID == uuid.Nil {
+		return nil, errors.New("store: list visits requires user_id")
+	}
+	var out []string
+	err := r.db.WithContext(ctx).Raw(
+		`SELECT client_id FROM user_visited_clients WHERE user_id = ? ORDER BY client_id`, userID).Scan(&out).Error
+	if err != nil {
+		return nil, MapError(err)
+	}
+	if out == nil {
+		out = []string{}
+	}
+	return out, nil
+}
