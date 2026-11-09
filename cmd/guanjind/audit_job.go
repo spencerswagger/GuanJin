@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"gorm.io/gorm"
 
@@ -58,4 +59,63 @@ func startAuditVerifyJob(ctx context.Context, db *gorm.DB, cfg *config.Config,
 	stop := audit.StartJob(ctx, verifier, audit.DefaultVerifyInterval, logger)
 	logger.Info("audit: chain verify job started", "interval", audit.DefaultVerifyInterval.String())
 	return stop, nil
+}
+
+// partitionAheadMonths 是审计分区**预建窗口**（当月 + 未来 5 个月）。
+//
+// 为什么不是"只建当月"：分区必须**在写入之前**存在（`audit_logs_pYYYYMM` 不存在时
+// `INSERT` 直接 23514 "no partition of relation"）。预建 6 个月给了运维足够的缓冲：
+// 即使月度任务连续几个月没跑（例如刚发布、进程停机），写入也不会立刻失败。
+const partitionAheadMonths = 6
+
+// auditPartitionMonths 返回需要保证存在的月份（当月 1 号起，连续 `partitionAheadMonths` 个月，UTC）。
+func auditPartitionMonths(now time.Time) []time.Time {
+	base := now.UTC()
+	start := time.Date(base.Year(), base.Month(), 1, 0, 0, 0, 0, time.UTC)
+	out := make([]time.Time, 0, partitionAheadMonths)
+	for i := 0; i < partitionAheadMonths; i++ {
+		out = append(out, start.AddDate(0, i, 0))
+	}
+	return out
+}
+
+// ensureAuditPartitions 保证"当月 + 未来 5 个月"的审计分区存在。
+//
+// **不在这里再包一层事务/锁**：`audit.EnsurePartitions` 自己会在**一个事务内**先取链锁
+// （与 `Chain.Append` 共用同一把 `pg_advisory_xact_lock`），外面再包一层会引入第二把锁、
+// 与写入形成新的锁序——那正是 40P01 的死锁来源。
+func ensureAuditPartitions(ctx context.Context, db *gorm.DB) error {
+	return audit.EnsurePartitions(ctx, db, auditPartitionMonths(time.Now()))
+}
+
+// startAuditPartitionJob 起进程内的分区滚动任务（返回停止函数）。
+//
+// 频率取**每日**而不是每月 1 号整点：多跑几次是幂等的（`CREATE TABLE IF NOT EXISTS`），
+// 而"恰好每月 1 号 00:00 跑一次"在进程重启/时钟漂移下很容易错过整月。
+func startAuditPartitionJob(ctx context.Context, db *gorm.DB, logger *slog.Logger) (func(), error) {
+	if db == nil {
+		return nil, errors.New("startup: audit partition job requires db")
+	}
+	jobCtx, cancel := context.WithCancel(ctx)
+	runOnce := func() {
+		if err := ensureAuditPartitions(jobCtx, db); err != nil {
+			logger.Warn("audit: ensure partitions failed", "error", err)
+		}
+	}
+	// 启动即跑一次：这是"当月分区缺失"能被立刻补上的唯一时机。
+	runOnce()
+	go func() {
+		ticker := time.NewTicker(24 * time.Hour)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-jobCtx.Done():
+				return
+			case <-ticker.C:
+				runOnce()
+			}
+		}
+	}()
+	logger.Info("audit: partition roll job started", "ahead_months", partitionAheadMonths)
+	return cancel, nil
 }
