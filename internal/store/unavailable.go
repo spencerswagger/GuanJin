@@ -30,10 +30,24 @@ import (
 // 也不认 `context.Canceled`：那是调用方主动取消（客户端断开），不是数据库挂了；
 // 把取消报成"数据库不可用"会让 `/readyz` 与告警出现假阳性。
 //
-// `context.DeadlineExceeded` **同样不认**（如实记一笔取舍）：数据库卡住（网络分区）时
-// 查询会以它失败，理论上也属"不可用"；但它同时是"这条查询超过了我们给的上限"的信号，
-// 可能是慢查询/缺索引这类缺陷。区分这两者需要一条判据（例如按 DSN 级拨号超时判定），
-// 目前没有，故**不映射**——`AC-FC-02` 的真实停库场景走的是拨号失败，已被覆盖。
+// `context.DeadlineExceeded` **不认**：它既可能是"库卡住"，也可能是"慢查询/缺索引"（那是缺陷）；
+// 而真实停库走的是拨号失败（`*pgconn.ConnectError`，分支 1），已被覆盖。
+//
+// ## 套接字层为什么整支算连接层（2026-11-10 裁定：**保留，不收窄**）
+//
+// `*net.OpError` 一律视为连接层失败：拨号超时、连接被重置、keepalive 判死——这些按语义
+// 就是"依赖不可用"，该给 503。**慢查询/查询超时不会走到这一支**，实测两条路径都绕开了它：
+//   - 服务端 `statement_timeout` → `*pgconn.PgError` **57014**（不映射 → 500）；
+//   - 客户端 ctx deadline → `*pgconn.errTimeout`（不映射 → 500）。
+//
+// 所以"慢查询被说成库挂了"在**正常路径上不成立**——这也是本轮判定"不按 timeout 收窄"的依据。
+//
+// 已知边界（如实登记，**别再用"收窄"解决**）：若有人自定义 `DialFunc` 在握手后设置 socket
+// 读写 deadline，超时链会变成 `errTimeout` 包 `net.OpError{op=read, timeout:true}`，
+// 仍会落进本分支 → 503。本轮裁定保留该行为：把 dial/read 超时一律剔除，会让
+// "库真的连不上（拨号一直超时）"降级成 500，客户端就不退避了——方向更错。
+// 要区分这两者，需要先有一条判据 + 一条真黑洞用例，**不许只改判断**；
+// `TestIsUnavailablePinsTimeoutSemantics` 把现在的口径钉住，动手前先回答用例里那句"为什么"。
 //
 // ## 谁用它
 //
@@ -70,13 +84,19 @@ func IsUnavailable(err error) bool {
 		return true
 	}
 
-	// 4) 套接字层：拨号被拒、连接被重置、写失败。
+	// 4) 套接字层：拨号失败/超时、连接被重置、写失败、连接被中止。
+	//
+	// **整支算连接层**（口径见文件头「套接字层为什么整支算连接层」）：超时在这里意味着
+	// "库连不上 / 连接被判定死掉"，按语义就是依赖不可用；慢查询与查询超时走的是
+	// `PgError 57014` 与 `pgconn.errTimeout`，**不会进这一支**（用例
+	// `TestIsUnavailablePinsTimeoutSemantics` 钉住，改之前先回答那句"为什么"）。
 	var opErr *net.OpError
 	if errors.As(err, &opErr) {
 		return true
 	}
 	if errors.Is(err, syscall.ECONNREFUSED) || errors.Is(err, syscall.ECONNRESET) ||
-		errors.Is(err, syscall.EPIPE) || errors.Is(err, syscall.ETIMEDOUT) {
+		errors.Is(err, syscall.EPIPE) || errors.Is(err, syscall.ECONNABORTED) ||
+		errors.Is(err, syscall.ETIMEDOUT) {
 		return true
 	}
 
