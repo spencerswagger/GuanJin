@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/tjfoc/gmsm/sm2"
 	"gorm.io/gorm"
 
@@ -476,7 +477,10 @@ func TestAC_DP_08_PipelineRejectsReplayedJti(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewAssertionSigner: %v", err)
 	}
-	signer.NewJTI = func() (string, error) { return "0193f0aa-0000-7000-8000-00000000beef", nil }
+	// `jti` 必须**每次运行都不同**：判重键在真 Redis 里有 60s TTL，若写死常量，
+	// 同一次 CI 里"集成测试"与"覆盖率采集"两趟会互相把对方判成重放（实测就是这么红的）。
+	fixed := uuid.NewString()
+	signer.NewJTI = func() (string, error) { return fixed, nil }
 	pipeline := newITPipelineWithSigner(t, db, keys, up.srv, signer)
 
 	token := keys.userToken(t, f.userID.String(), f.clientID, f.session.String())
