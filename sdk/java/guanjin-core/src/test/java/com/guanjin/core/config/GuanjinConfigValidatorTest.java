@@ -29,8 +29,16 @@ class GuanjinConfigValidatorTest {
         assertTrue(e.getMessage().contains("/.well-known/jwks.json"), e.getMessage());
     }
 
+    /**
+     * AC-SDK-04 的**附加用例**（不新增 AC ID，依据 Spec 裁定 2026-11-09）：
+     * `gateway.jwks-uri` 与 `platform.base-url` 不同源 → **启动失败**。
+     *
+     * <p>为什么挂 AC-SDK-04：`AC-SDK-03` 只判默认值 + 首启拉取成功、`AC-SDK-04` 只判平台地址缺失/非法，
+     * 两条都不覆盖同源；同源校验是 `sdk-contract.md:258`（§3.2 #12 安全约束列）已冻结约束的可执行化，
+     * 属加固，不进 CH。
+     */
     @Test
-    void AC_SDK_03_jwksUriMustBeSameOriginAsPlatform() {
+    void AC_SDK_04_jwksUriMustBeSameOriginAsPlatform() {
         GuanjinConfig cfg = TestConfigs.minimal();
         cfg.getGateway().setJwksUri("https://evil.example.com/.well-known/jwks.json");
         GuanjinConfigException e = assertThrows(GuanjinConfigException.class,

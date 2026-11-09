@@ -21,7 +21,7 @@ Java 8 双门禁（契约 §5.1.1）：JDK 9+ 构建走 `release=8`（挡 API �
 | `AC-SDK-01` | 无 `mode`/`direct` 键；出现即启动失败 | `GuanjinConfigKeysTest.AC_SDK_01_*`、`GuanjinConfigLoaderTest.AC_SDK_01_*`、`GuanjinAutoConfigurationTest.AC_SDK_01_modeKeyFailsStartup` |
 | `AC-SDK-02` | `enabled`/`authz.enabled=false` 仅 `local\|test`，其它 profile **启动失败** | `GuanjinConfigValidatorTest.AC_SDK_02_*`、`GuanjinAutoConfigurationTest.AC_SDK_02_*` |
 | `AC-SDK-03` | `jwks-uri` 默认 = `${platform.base-url}/.well-known/jwks.json`，**首启 404 即失败** | `GuanjinConfigValidatorTest.AC_SDK_03_*`、`JwksClientTest.AC_SDK_03_404IsFailureNotWarning`、`GuanjinAutoConfigurationTest.AC_SDK_03_*` |
-| `AC-SDK-04` | 平台地址缺失/非法 → 启动失败（不退化为匿名、不先跑起来） | `GuanjinConfigValidatorTest.AC_SDK_04_*`、`GuanjinAutoConfigurationTest.AC_SDK_04_*` |
+| `AC-SDK-04` | 平台地址缺失/非法 → 启动失败（不退化为匿名、不先跑起来）；**附加用例**：`gateway.jwks-uri` 与 `base-url` 不同源 → 启动失败（§3.2 #12 安全约束的可执行化，加固、不进 CH） | `GuanjinConfigValidatorTest.AC_SDK_04_*`、`GuanjinAutoConfigurationTest.AC_SDK_04_*` |
 | `AC-SDK-06` | `jti` 存储不可用 → **拒请求**（503 `REDIS_UNAVAILABLE`） | `ReplayGuardTest.AC_SDK_06_*`、`RedisReplayStoreIT.AC_SDK_06_*`、`RedisReplayFilterIT.AC_SDK_06_redisOutageYields503RedisUnavailable` |
 | `AC-SDK-07` | 29 项逐项一致（键名/类型/默认值，反射比对契约表） | `GuanjinPropertiesReflectionTest.AC_SDK_07_reflectionMatchesContractTableRowByRow` |
 | `AC-SDK-08`（剥离/注入半边） | D10 六步：读头→验签(SPI)→claim→重放→注入→**替换请求视图** | `GuanjinAssertionFilterTest.AC_SDK_08_*` |
