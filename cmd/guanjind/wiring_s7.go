@@ -10,8 +10,10 @@ import (
 
 	"github.com/spencerswagger/guanjin/internal/admin"
 	"github.com/spencerswagger/guanjin/internal/config"
+	"github.com/spencerswagger/guanjin/internal/gateway"
 	"github.com/spencerswagger/guanjin/internal/session"
 	"github.com/spencerswagger/guanjin/internal/store"
+	"github.com/spencerswagger/guanjin/internal/store/model"
 )
 
 // 本文件是 **S7 的装配点**（会话自助面 + 管理面 sessions 段）。
@@ -46,7 +48,20 @@ func newSessionWiring(ctx context.Context, db *gorm.DB, cfg *config.Config, logg
 	flowRepo := store.NewFlowRepo(db)
 	events := store.NewAuthEventRepo(db)
 
-	mgr, err := session.NewManager(ops, flowRepo, events, session.Options{Logger: logger})
+	// S10：撤销后的单点登出通知（`AC-DP-12`）。
+	//
+	// 装配口径（如实登记，别当成"已送达"）：
+	//   - 广播器默认用 `gateway.NoNotifier`（**什么都不发**）——R12 的 wire 实现
+	//     （`gateway.HTTPNotifier`，见 S10 的 `internal/gateway/slo_http.go`）落地后，
+	//     只需把这里的 `gateway.NoNotifier{}` 换掉，页面与撤销路径都不用动；
+	//   - 撤销路径**不因通知失败而回滚**（判据原文）：接缝无返回值、投递异步，
+	//     失败/panic/超时都只留日志与计数（`SloBroadcaster.Failures()`）。
+	slo := gateway.NewSloBroadcaster(gateway.NoNotifier{}, gateway.DefaultSloTimeout, logger)
+
+	mgr, err := session.NewManager(ops, flowRepo, events, session.Options{
+		Logger:   logger,
+		Notifier: sloNotifier{broadcaster: slo},
+	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("startup: session manager: %w", err)
 	}
@@ -59,4 +74,39 @@ func newSessionWiring(ctx context.Context, db *gorm.DB, cfg *config.Config, logg
 		return nil, nil, fmt.Errorf("startup: admin sessions http: %w", err)
 	}
 	return sessionHandler, adminSessions, nil
+}
+
+// sloNotifier 是 `session.RevokeNotifier` → `gateway.SloBroadcaster` 的**唯一**适配点。
+//
+// 为什么适配放在装配层（`cmd/guanjind`）而不是 `internal/session`：
+//   - 会话生命周期不该 import 数据面的 wire 类型（S7 反向依赖 S8，R12 再改一次就渗进来）；
+//   - 适配只做"字段搬运"：`session.RevokeNotice.Subject` 是被撤销的会话行，
+//     `gateway.RevocationNotice` 要的是 `client_id` 列表（投递端按路由表查 `upstream`）。
+//
+// 会话行的 `client_id` 就是"这台设备登出前在用的业务系统"；`sso_logout_scope=all_clients`
+// 时级联会**逐会话**各发一条，客户端集合由投递端按 `session_id` 去重（幂等是 `Notifier` 的契约）。
+type sloNotifier struct{ broadcaster *gateway.SloBroadcaster }
+
+func (n sloNotifier) NotifyRevoked(ctx context.Context, notice session.RevokeNotice) {
+	clients := revokeNoticeClients(notice.Subject)
+	if len(clients) == 0 {
+		// 拿不到 client 就没法查路由：**明确不发**，而不是发到"默认上游"（那等于猜目标）。
+		return
+	}
+	n.broadcaster.NotifyRevoked(ctx, gateway.RevocationNotice{
+		UserID:    notice.UserID,
+		SessionID: notice.SessionID,
+		ClientIDs: clients,
+		Reason:    notice.Reason,
+		At:        notice.At,
+	})
+}
+
+// revokeNoticeClients 从"被撤销的那一行"里取业务系统 id（当前只可能是本会话的 client）。
+func revokeNoticeClients(subject any) []string {
+	s, ok := subject.(*model.Session)
+	if !ok || s == nil || s.ClientID == "" {
+		return nil
+	}
+	return []string{s.ClientID}
 }
