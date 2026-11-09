@@ -72,7 +72,11 @@ func (c *Chain) Append(ctx context.Context, db *gorm.DB, rec Record) ([]byte, er
 			OccurredAt   time.Time
 			CreatedAt    time.Time
 		}
-		// `FOR UPDATE` 是**独立于 advisory 锁的第二道防线**（Gate 要求）：
+		// **防分叉的唯一保证是上面那把 advisory 锁**（实测：只摘掉它、保留 `FOR UPDATE`
+		// 仍会出分叉 `dup_prev_tag=5/4`、`broken=true`——行锁挡不住"两个写者同时把同一条
+		// 当链尾"，因为行锁只在同一条被并发锁住时生效，读到的可能都是同一条已提交链尾）。
+		// `FOR UPDATE` 只是**冗余保险**：防"将来有人删掉 advisory 锁"或连接池/隔离级别变化。
+		// `FOR UPDATE` 说明（冗余保险，不是保证）：
 		// advisory 锁只保证"同一时刻只有一个写者进这段代码"，一旦锁的语义被绕过
 		// （换连接池模式、事务隔离级别变化、或将来有人删掉那一行），行锁仍会挡住
 		// "两个写者同时把同一条当链尾"。锁序固定为 **先 advisory、后行锁**，避免与

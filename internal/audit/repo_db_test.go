@@ -135,6 +135,43 @@ func cleanMonth(t *testing.T) time.Time {
 	return base.AddDate(0, int(n), 0)
 }
 
+// freshMonth 返回一个**保证可写**的月份：`max(链尾月份 + 1, 2040-01)`，并现场建好该月分区。
+//
+// 为什么不再用"预建池 + 顺序分配"：`-p 8` 下别的包/别的用例会把全局链尾推高，
+// 池里分配的月份可能已经**早于链尾**（撞下界守卫）或分区被别人 `DROP`（撞 23514）。
+// 每次现取链尾 → +1 个月 → `EnsurePartitions`（同事务取链锁，不与其他写者死锁）→
+// **断言分区真的存在**，把这类错误在"拿到月份那一刻"就炸掉，而不是等 INSERT 抛 23514。
+func freshMonth(t *testing.T, db *gorm.DB) time.Time {
+	t.Helper()
+	for i := 0; i < 5; i++ {
+		var tail sql.NullTime
+		if err := db.Raw(`SELECT max(occurred_at) FROM audit_logs`).Scan(&tail).Error; err != nil {
+			t.Fatalf("read tail: %v", err)
+		}
+		base := time.Date(2040, 1, 1, 0, 0, 0, 0, time.UTC)
+		if tail.Valid && !tail.Time.IsZero() {
+			tm := time.Date(tail.Time.UTC().Year(), tail.Time.UTC().Month(), 1, 0, 0, 0, 0, time.UTC).AddDate(0, 1, 0)
+			if tm.After(base) {
+				base = tm
+			}
+		}
+		if err := EnsurePartitions(context.Background(), db, []time.Time{base}); err != nil {
+			t.Fatalf("EnsurePartitions(%s): %v", base.Format("200601"), err)
+		}
+		var exists bool
+		name := fmt.Sprintf("audit_logs_p%s", base.Format("200601"))
+		if err := db.Raw(`SELECT to_regclass(?) IS NOT NULL`, name).Scan(&exists).Error; err != nil {
+			t.Fatalf("check %s: %v", name, err)
+		}
+		if !exists {
+			t.Fatalf("分区 %s 建完仍不存在", name)
+		}
+		return base
+	}
+	t.Fatal("freshMonth: 重试 5 次仍拿不到可用月份")
+	return time.Time{}
+}
+
 // requirePartition 保证"该月分区存在"且**该月晚于全局链尾月份**，返回实际可用的月份。
 //
 // 为什么返回月份：`Append` 有下界守卫（`occurred_at` 早于链尾所在分区月初即拒），
@@ -227,8 +264,7 @@ func cleanupMonth(t *testing.T, db *gorm.DB, month time.Time) {
 func TestAC_AUD_03_DeletedMiddleRecordIsDetected(t *testing.T) {
 	db := openAuditTestDB(t)
 	chain := auditTestChain(t)
-	month := cleanMonth(t)
-	month = requirePartition(t, db, month)
+	month := freshMonth(t, db)
 	cleanupMonth(t, db, month)
 	appendN(t, chain, db, month, 5)
 	// `Append` 是按值传参，生成的 id 拿不回来；先读一遍拿到**真实 id**再按 id 删。
@@ -272,8 +308,7 @@ func TestAC_AUD_03_DeletedMiddleRecordIsDetected(t *testing.T) {
 func TestAC_AUD_05_TamperedRecordIsDetectedAndMetricIncrements(t *testing.T) {
 	db := openAuditTestDB(t)
 	chain := auditTestChain(t)
-	month := cleanMonth(t)
-	month = requirePartition(t, db, month)
+	month := freshMonth(t, db)
 	cleanupMonth(t, db, month)
 	appendN(t, chain, db, month, 4)
 
@@ -309,8 +344,7 @@ func TestAC_AUD_05_TamperedRecordIsDetectedAndMetricIncrements(t *testing.T) {
 func TestAC_AUD_04_Concurrent100AppendsKeepChainIntact(t *testing.T) {
 	db := openAuditTestDB(t)
 	chain := auditTestChain(t)
-	month := cleanMonth(t)
-	month = requirePartition(t, db, month)
+	month := freshMonth(t, db)
 	cleanupMonth(t, db, month)
 
 	const n = 100
@@ -380,8 +414,7 @@ func TestAC_AUD_04_Concurrent100AppendsKeepChainIntact(t *testing.T) {
 func TestAC_AUD_11_AnchorAndVerifyMetrics(t *testing.T) {
 	db := openAuditTestDB(t)
 	chain := auditTestChain(t)
-	month := cleanMonth(t)
-	month = requirePartition(t, db, month)
+	month := freshMonth(t, db)
 	cleanupMonth(t, db, month)
 	appendN(t, chain, db, month, 3)
 
@@ -443,8 +476,7 @@ func TestAC_AUD_11_AnchorAndVerifyMetrics(t *testing.T) {
 func TestAnchorMismatchBreaksAtFirstRecord(t *testing.T) {
 	db := openAuditTestDB(t)
 	chain := auditTestChain(t)
-	month := cleanMonth(t)
-	month = requirePartition(t, db, month)
+	month := freshMonth(t, db)
 	cleanupMonth(t, db, month)
 	appendN(t, chain, db, month, 3)
 
@@ -498,8 +530,7 @@ func encodeAnchorForTest(tag []byte) string {
 func TestAC_AUD_11_JobRunsOnTickerAndSkipsEmptyMonth(t *testing.T) {
 	db := openAuditTestDB(t)
 	chain := auditTestChain(t)
-	month := cleanMonth(t)
-	month = requirePartition(t, db, month)
+	month := freshMonth(t, db)
 	cleanupMonth(t, db, month)
 
 	anchors := NewAnchorStore(db)
@@ -573,8 +604,7 @@ func TestAC_AUD_11_JobRunsOnTickerAndSkipsEmptyMonth(t *testing.T) {
 func TestAppendHandlesOptionalColumns(t *testing.T) {
 	db := openAuditTestDB(t)
 	chain := auditTestChain(t)
-	month := cleanMonth(t)
-	month = requirePartition(t, db, month)
+	month := freshMonth(t, db)
 	cleanupMonth(t, db, month)
 
 	actor, err := uuid.NewV7()
@@ -641,8 +671,7 @@ func mustID(t *testing.T) uuid.UUID {
 func TestOccurredAtIsPreservedAndHashed(t *testing.T) {
 	db := openAuditTestDB(t)
 	chain := auditTestChain(t)
-	month := cleanMonth(t)
-	month = requirePartition(t, db, month)
+	month := freshMonth(t, db)
 	cleanupMonth(t, db, month)
 
 	want := month.Add(3 * time.Second).Truncate(time.Microsecond)
@@ -700,8 +729,7 @@ func TestOccurredAtIsPreservedAndHashed(t *testing.T) {
 func TestOccurredAtBeforeTailMonthIsRejected(t *testing.T) {
 	db := openAuditTestDB(t)
 	chain := auditTestChain(t)
-	month := cleanMonth(t)
-	month = requirePartition(t, db, month)
+	month := freshMonth(t, db)
 	cleanupMonth(t, db, month)
 
 	if _, err := chain.Append(context.Background(), db, Record{
@@ -724,8 +752,7 @@ func TestOccurredAtBeforeTailMonthIsRejected(t *testing.T) {
 func TestLoadEmptyRangeAndAnchorOverwrite(t *testing.T) {
 	db := openAuditTestDB(t)
 	chain := auditTestChain(t)
-	month := cleanMonth(t)
-	month = requirePartition(t, db, month)
+	month := freshMonth(t, db)
 	cleanupMonth(t, db, month)
 
 	// ① 空区间：已预建分区但没有行。
@@ -807,8 +834,7 @@ func TestEnsureAndDropPartitionsRoundTrip(t *testing.T) {
 func TestSameMonthMicrosecondRollbackIsAccepted(t *testing.T) {
 	db := openAuditTestDB(t)
 	chain := auditTestChain(t)
-	month := cleanMonth(t)
-	month = requirePartition(t, db, month)
+	month := freshMonth(t, db)
 	cleanupMonth(t, db, month)
 
 	first := month.Add(10 * time.Second)
@@ -848,8 +874,7 @@ func TestSameMonthMicrosecondRollbackIsAccepted(t *testing.T) {
 func TestChainRealPathsForCoverage(t *testing.T) {
 	db := openAuditTestDB(t)
 	chain := auditTestChain(t)
-	month := cleanMonth(t)
-	month = requirePartition(t, db, month)
+	month := freshMonth(t, db)
 	cleanupMonth(t, db, month)
 
 	anchors := NewAnchorStore(db)

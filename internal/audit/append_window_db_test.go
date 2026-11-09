@@ -26,8 +26,7 @@ import (
 func TestAppendWindowForcedOpenStillKeepsChainIntact(t *testing.T) {
 	db := openAuditTestDB(t)
 	chain := auditTestChain(t)
-	month := cleanMonth(t)
-	month = requirePartition(t, db, month)
+	month := freshMonth(t, db)
 	cleanupMonth(t, db, month)
 
 	// **本用例自己建分区**：不依赖 `TestMain` 预建窗口（Gate 实测该用例 3/3 红在
@@ -170,8 +169,7 @@ func runConcurrentAppends(t *testing.T, tweak func(*Chain)) (bool, []Record) {
 	t.Helper()
 	db := openAuditTestDB(t)
 	base := auditTestChain(t)
-	month := cleanMonth(t)
-	month = requirePartition(t, db, month)
+	month := freshMonth(t, db)
 	cleanupMonth(t, db, month)
 
 	c := *base
