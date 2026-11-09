@@ -74,42 +74,71 @@ func auditTestChain(t *testing.T) *Chain {
 	return chain
 }
 
-// cleanMonth 选一个"干净月份"（远离真实数据的月份），让用例的链段只含自己写的记录。
+// 测试月的"分区池"：由 `TestMain` **一次性**建好，运行期**不做任何 DDL**。
 //
-// 为什么不能直接用当月：`guanjin_test` 里可能已有别人写的审计行，混进来会让
-// "删一条/改一条"的断言互相干扰。用未来月份的日期写入是合法的（`occurred_at` 无上限约束）。
-func cleanMonth(t *testing.T) time.Time {
-	t.Helper()
-	// **每个用例一个唯一月份**：早先用随机月份（24 个候选）会撞月——两条用例共用一个月分区，
-	// 后一条的链尾接着前一条，`Verify(nil anchor)` 就会在 index 0 报 prev_tag_mismatch（假红）。
-	// 用进程内计数器 + 纳秒低位做偏移，保证同一次运行内不重复、跨运行也几乎不重复。
-	n := monthSeq.Add(1)
-	base := time.Date(2060, 1, 1, 0, 0, 0, 0, time.UTC)
-	// 抖动取纳秒的**高位**（每次运行几乎必然不同），避免跨运行复用到同一个月：
-	// 复用会让"空月份不写锚""干净链不该断"这类断言读到上一轮的残留（实测踩过两次）。
-	jitter := int(time.Now().UnixNano() % 100000)
-	return base.AddDate(0, int(n)+jitter, 0)
+// 为什么改成预建：早先每个用例自己 `CREATE TABLE ... PARTITION OF`，在 `-p 8`（多包并行）
+// 下与并发写入撞出 **40P01 死锁**（Gate 复现：`create partition audit_logs_pXXXXXX`）。
+// 运行期 DDL 在并发测试里必然不稳；生产也不这么做（分区由月度任务建，见 000011 注释）。
+const (
+	partitionStartYear  = 2035
+	partitionMonthCount = 36
+)
+
+// partitionMonths 是预建分区覆盖的固定月份窗口（跨运行可复用、幂等）。
+func partitionMonths() []time.Time {
+	out := make([]time.Time, 0, partitionMonthCount)
+	base := time.Date(partitionStartYear, 1, 1, 0, 0, 0, 0, time.UTC)
+	for i := 0; i < partitionMonthCount; i++ {
+		out = append(out, base.AddDate(0, i, 0))
+	}
+	return out
 }
 
-// monthSeq 给每个用例分配唯一的"未来月份"，避免撞月（见 `cleanMonth`）。
+// monthSeq 给每个用例分配**池内**的唯一个月（不建表、不撞月）。
 var monthSeq atomic.Int64
 
-// ensurePartition 给测试月份建一个月分区（生产由 `cmd/guanjind` 的月度任务做，见 000011 注释）。
-//
-// 为什么测试要自己建：`audit_logs` 是 RANGE 分区表，迁移只 seed 了「上月/当月/下月」，
-// 用"未来月份"隔离数据就必须自己补一个分区；用完 `DROP TABLE` 掉，不留垃圾。
-func ensurePartition(t *testing.T, db *gorm.DB, month time.Time) {
+// cleanMonth 从预建池里取一个月（唯一、不撞月、零 DDL）。
+func cleanMonth(t *testing.T) time.Time {
 	t.Helper()
-	name := fmt.Sprintf("audit_logs_p%s", month.Format("200601"))
-	from := month.Format("2006-01-02")
-	to := month.AddDate(0, 1, 0).Format("2006-01-02")
-	if err := db.Exec(fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s PARTITION OF audit_logs
-		FOR VALUES FROM ('%s') TO ('%s')`, name, from, to)).Error; err != nil {
-		t.Fatalf("create partition %s: %v", name, err)
+	months := partitionMonths()
+	n := monthSeq.Add(1) - 1
+	if int(n) >= len(months) {
+		t.Fatalf("分区池不够用（用例数 %d > %d），调大 partitionMonthCount", n+1, len(months))
 	}
-	t.Cleanup(func() {
-		_ = db.Exec(fmt.Sprintf(`DROP TABLE IF EXISTS %s`, name)).Error
-	})
+	return months[n]
+}
+
+// requirePartition 断言该月分区**已由 TestMain 预建**（运行期不建表，防 40P01 死锁）。
+func requirePartition(t *testing.T, db *gorm.DB, month time.Time) {
+	t.Helper()
+	var exists bool
+	if err := db.Raw(`SELECT to_regclass(?) IS NOT NULL`,
+		fmt.Sprintf("public.audit_logs_p%s", month.Format("200601"))).Scan(&exists).Error; err != nil {
+		t.Fatalf("check partition: %v", err)
+	}
+	if !exists {
+		t.Fatalf("分区 audit_logs_p%s 不存在（TestMain 应预建 %d 个月）",
+			month.Format("200601"), partitionMonthCount)
+	}
+}
+
+// seedSegmentAnchor 把"本段锚点"写成现存首条的 `prev_tag`。
+//
+// 测试月份只是**全局链**里的一段（`Append` 读的是全局链尾），所以复核该段时的锚点
+// 必须是"段首那条的 `prev_tag`"，不是 nil。写进 `runtime_config` 是为了让 `Verifier`
+// （它从锚点表读）能按生产路径校验。
+func seedSegmentAnchor(t *testing.T, chain *Chain, db *gorm.DB, anchors *AnchorStore, month time.Time) {
+	t.Helper()
+	records, err := chain.Load(context.Background(), db, month, month.AddDate(0, 1, 0))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(records) == 0 {
+		return
+	}
+	if err := anchors.Put(context.Background(), month, records[0].PrevTag); err != nil {
+		t.Fatalf("seed segment anchor: %v", err)
+	}
 }
 
 func appendN(t *testing.T, chain *Chain, db *gorm.DB, month time.Time, n int) []Record {
@@ -148,7 +177,7 @@ func TestAC_AUD_03_DeletedMiddleRecordIsDetected(t *testing.T) {
 	db := openAuditTestDB(t)
 	chain := auditTestChain(t)
 	month := cleanMonth(t)
-	ensurePartition(t, db, month)
+	requirePartition(t, db, month)
 	cleanupMonth(t, db, month)
 	appendN(t, chain, db, month, 5)
 
@@ -183,7 +212,7 @@ func TestAC_AUD_05_TamperedRecordIsDetectedAndMetricIncrements(t *testing.T) {
 	db := openAuditTestDB(t)
 	chain := auditTestChain(t)
 	month := cleanMonth(t)
-	ensurePartition(t, db, month)
+	requirePartition(t, db, month)
 	cleanupMonth(t, db, month)
 	appendN(t, chain, db, month, 4)
 
@@ -194,10 +223,13 @@ func TestAC_AUD_05_TamperedRecordIsDetectedAndMetricIncrements(t *testing.T) {
 		t.Fatalf("tamper: %v", err)
 	}
 
-	verifier, err := NewVerifier(chain, db, NewAnchorStore(db), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	anchors := NewAnchorStore(db)
+	verifier, err := NewVerifier(chain, db, anchors, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatalf("NewVerifier: %v", err)
 	}
+	// 篡改前先把"本段锚点"写好（篡改的是内容，不是段首的 prev_tag）。
+	seedSegmentAnchor(t, chain, db, anchors, month)
 	res, err := verifier.RunRange(context.Background(), month, month.AddDate(0, 1, 0))
 	if err != nil {
 		t.Fatalf("RunRange: %v", err)
@@ -217,7 +249,7 @@ func TestAC_AUD_04_Concurrent100AppendsKeepChainIntact(t *testing.T) {
 	db := openAuditTestDB(t)
 	chain := auditTestChain(t)
 	month := cleanMonth(t)
-	ensurePartition(t, db, month)
+	requirePartition(t, db, month)
 	cleanupMonth(t, db, month)
 
 	const n = 100
@@ -277,7 +309,7 @@ func TestAC_AUD_11_AnchorAndVerifyMetrics(t *testing.T) {
 	db := openAuditTestDB(t)
 	chain := auditTestChain(t)
 	month := cleanMonth(t)
-	ensurePartition(t, db, month)
+	requirePartition(t, db, month)
 	cleanupMonth(t, db, month)
 	appendN(t, chain, db, month, 3)
 
@@ -337,7 +369,7 @@ func TestAnchorMismatchBreaksAtFirstRecord(t *testing.T) {
 	db := openAuditTestDB(t)
 	chain := auditTestChain(t)
 	month := cleanMonth(t)
-	ensurePartition(t, db, month)
+	requirePartition(t, db, month)
 	cleanupMonth(t, db, month)
 	appendN(t, chain, db, month, 3)
 
@@ -392,7 +424,7 @@ func TestAC_AUD_11_JobRunsOnTickerAndSkipsEmptyMonth(t *testing.T) {
 	db := openAuditTestDB(t)
 	chain := auditTestChain(t)
 	month := cleanMonth(t)
-	ensurePartition(t, db, month)
+	requirePartition(t, db, month)
 	cleanupMonth(t, db, month)
 
 	anchors := NewAnchorStore(db)
@@ -423,6 +455,7 @@ func TestAC_AUD_11_JobRunsOnTickerAndSkipsEmptyMonth(t *testing.T) {
 
 	// 有数据 + 真 Job 跑一拍：覆盖 ticker → RunOnce → AnchorCurrentMonth 的整条路径。
 	appendN(t, chain, db, month, 2)
+	seedSegmentAnchor(t, chain, db, anchors, month)
 	ResetMetricsForTest()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -459,7 +492,7 @@ func TestAppendHandlesOptionalColumns(t *testing.T) {
 	db := openAuditTestDB(t)
 	chain := auditTestChain(t)
 	month := cleanMonth(t)
-	ensurePartition(t, db, month)
+	requirePartition(t, db, month)
 	cleanupMonth(t, db, month)
 
 	actor, err := uuid.NewV7()
@@ -506,7 +539,7 @@ func TestAppendHandlesOptionalColumns(t *testing.T) {
 	if records[1].ActorUserID != nil || records[1].Before != nil {
 		t.Fatalf("最小记录的 actor/before 应为空：%+v", records[1])
 	}
-	if broken, err := chain.Verify(records, nil); err != nil || broken != nil {
+	if broken, err := chain.Verify(records, records[0].PrevTag); err != nil || broken != nil {
 		t.Fatalf("两种形态都应验过，实际 broken=%+v err=%v", broken, err)
 	}
 }
@@ -527,7 +560,7 @@ func TestOccurredAtIsPreservedAndHashed(t *testing.T) {
 	db := openAuditTestDB(t)
 	chain := auditTestChain(t)
 	month := cleanMonth(t)
-	ensurePartition(t, db, month)
+	requirePartition(t, db, month)
 	cleanupMonth(t, db, month)
 
 	want := month.Add(3 * time.Second).Truncate(time.Microsecond)
@@ -586,7 +619,7 @@ func TestOccurredAtBeforeTailMonthIsRejected(t *testing.T) {
 	db := openAuditTestDB(t)
 	chain := auditTestChain(t)
 	month := cleanMonth(t)
-	ensurePartition(t, db, month)
+	requirePartition(t, db, month)
 	cleanupMonth(t, db, month)
 
 	if _, err := chain.Append(context.Background(), db, Record{
@@ -600,5 +633,51 @@ func TestOccurredAtBeforeTailMonthIsRejected(t *testing.T) {
 	})
 	if !errors.Is(err, ErrOccurredAtTooOld) {
 		t.Fatalf("期望 ErrOccurredAtTooOld，实际 %v", err)
+	}
+}
+
+// 覆盖率兜底用的两条真用例（Gate 要求 audit ≥92%，贴线一次 abort 就会双红）：
+//  1. `Load` 空区间返回空切片（不是 nil、不报错）；
+//  2. `AnchorStore.Put` 幂等覆盖（同月写两次，读回后写的那个）。
+func TestLoadEmptyRangeAndAnchorOverwrite(t *testing.T) {
+	db := openAuditTestDB(t)
+	chain := auditTestChain(t)
+	month := cleanMonth(t)
+	requirePartition(t, db, month)
+	cleanupMonth(t, db, month)
+
+	// ① 空区间：已预建分区但没有行。
+	records, err := chain.Load(context.Background(), db, month, month.AddDate(0, 1, 0))
+	if err != nil {
+		t.Fatalf("Load(empty): %v", err)
+	}
+	if len(records) != 0 {
+		t.Fatalf("空区间应 0 条，实际 %d", len(records))
+	}
+	// 空段复核通过（没有记录就没有断点）。
+	if broken, err := chain.Verify(records, nil); err != nil || broken != nil {
+		t.Fatalf("空段应通过，实际 broken=%+v err=%v", broken, err)
+	}
+
+	// ② 锚点覆盖写：同月写两次，读回后写的。
+	anchors := NewAnchorStore(db)
+	first := make([]byte, 32)
+	second := make([]byte, 32)
+	for i := range first {
+		first[i] = 0x11
+		second[i] = 0x22
+	}
+	if err := anchors.Put(context.Background(), month, first); err != nil {
+		t.Fatalf("Put(first): %v", err)
+	}
+	if err := anchors.Put(context.Background(), month, second); err != nil {
+		t.Fatalf("Put(second): %v", err)
+	}
+	got, err := anchors.Get(context.Background(), month)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if string(got) != string(second) {
+		t.Fatalf("锚点应被覆盖成后写的值，实际 %x", got)
 	}
 }

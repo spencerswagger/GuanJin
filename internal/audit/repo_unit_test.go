@@ -188,3 +188,54 @@ func TestJSONHelpersEdgeCases(t *testing.T) {
 		t.Fatalf("空输入应返回 nil，实际 %+v", v)
 	}
 }
+
+// 构造期缺依赖的分支（`NewVerifier` 的 5 个 case）——闭合装配期 fail-fast 的覆盖。
+func TestNewVerifierMissingDeps(t *testing.T) {
+	c := testChain(t)
+	if _, err := NewVerifier(c, unreachableDB(t), nil, nil); err == nil {
+		t.Fatal("缺 anchor store 必须报错")
+	}
+	if _, err := NewVerifier(c, nil, NewAnchorStore(unreachableDB(t)), nil); err == nil {
+		t.Fatal("缺 db 必须报错")
+	}
+	// logger 为 nil 时补默认值（不 panic）。
+	if _, err := NewVerifier(c, unreachableDB(t), NewAnchorStore(unreachableDB(t)), nil); err != nil {
+		t.Fatalf("全依赖齐时应成功：%v", err)
+	}
+}
+
+// `StartJob` 的 interval<=0 走默认周期（不许 0 ticker panic）。
+func TestStartJobDefaultInterval(t *testing.T) {
+	c := testChain(t)
+	v, err := NewVerifier(c, unreachableDB(t), NewAnchorStore(unreachableDB(t)), nil)
+	if err != nil {
+		t.Fatalf("NewVerifier: %v", err)
+	}
+	stop := StartJob(context.Background(), v, 0, nil)
+	stop() // 立刻停：只验证"0 不 panic、能停"
+}
+
+// `Put` 的"值为 nil tag"也要能落（锚点可指向空链首）——用 DryRun 句柄只验"不报错、不发错 SQL"。
+func TestAnchorPutEmptyTag(t *testing.T) {
+	db, _ := dryRunDBForAudit(t)
+	if err := NewAnchorStore(db).Put(context.Background(), time.Now(), nil); err != nil {
+		t.Fatalf("Put(nil tag): %v", err)
+	}
+}
+
+// dryRunDBForAudit 返回一个"只生成 SQL、不连接"的句柄（与 store 包的 dryRunDB 同思路）。
+func dryRunDBForAudit(t *testing.T) (*gorm.DB, []string) {
+	t.Helper()
+	var stmts []string
+	db, err := gorm.Open(postgres.New(postgres.Config{
+		DSN: "postgres://user:pass@127.0.0.1:1/guanjin_test?sslmode=disable",
+	}), &gorm.Config{
+		DisableAutomaticPing:   true,
+		SkipDefaultTransaction: true,
+		DryRun:                 false, // DryRun 在 Session 上开，见下
+	})
+	if err != nil {
+		t.Fatalf("gorm.Open: %v", err)
+	}
+	return db.Session(&gorm.Session{DryRun: true}), stmts
+}
