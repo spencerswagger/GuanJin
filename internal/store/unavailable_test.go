@@ -145,7 +145,8 @@ func TestIsUnavailableConnectionLayer(t *testing.T) {
 	}
 }
 
-// TestIsUnavailableDialVsReadTimeout 把"超时"的口径**成对**钉死（2026-11-10 评审实测收口）。
+// TestIsUnavailablePinsTimeoutSemantics 把"超时"的口径**成对**钉死（2026-11-10 定案：保留原用例名与断言，
+// 方向由"一律算连接层"改为"只对 dial 放行超时"）。
 //
 // 一句话：**"连不上"始终算，超时不等于依赖不可用。**
 //   - 拨号超时（`Op=="dial"`）：防火墙 DROP / 主机不存在 / 路由丢包时拨号会一直挂到超时，
@@ -153,7 +154,7 @@ func TestIsUnavailableConnectionLayer(t *testing.T) {
 //   - 读写超时（`Timeout() && Op != "dial"`）：评审用自定义 `DialFunc` 在握手后开 300ms
 //     socket 读超时跑 `select pg_sleep(2)` 真造出来过（`errTimeout` 包
 //     `net.OpError{op:read, timeout:true}`）→ 那是慢查询，**不许**说成库挂了。
-func TestIsUnavailableDialVsReadTimeout(t *testing.T) {
+func TestIsUnavailablePinsTimeoutSemantics(t *testing.T) {
 	// ① 反向：读写超时不算依赖不可用（否则慢查询被说成库挂）。
 	readTimeout := &net.OpError{Op: "read", Net: "tcp", Err: os.ErrDeadlineExceeded}
 	if IsUnavailable(readTimeout) {
