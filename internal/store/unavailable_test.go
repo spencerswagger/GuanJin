@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"net"
+	"os"
 	"syscall"
 	"testing"
 	"time"
@@ -81,6 +82,8 @@ func TestIsUnavailableSQLStates(t *testing.T) {
 		{"23503 foreign_key_violation", "23503", false},
 		{"42P01 undefined_table（schema 漂移 = 缺陷）", "42P01", false},
 		{"40001 serialization_failure（可重试，但不是不可用）", "40001", false},
+		// 慢查询被服务端取消：`statement_timeout` 就长这样，**不是**依赖不可用。
+		{"57014 query_canceled（statement_timeout）", "57014", false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -122,6 +125,11 @@ func TestIsUnavailableConnectionLayer(t *testing.T) {
 		{"io.EOF（进程被 kill 时很常见）", io.EOF, true},
 		{"io.ErrUnexpectedEOF", io.ErrUnexpectedEOF, true},
 		{"ECONNRESET", syscall.ECONNRESET, true},
+		{"EPIPE", syscall.EPIPE, true},
+		{"ECONNABORTED", syscall.ECONNABORTED, true},
+		// 拨号超时 = 库连不上（防火墙 DROP / 主机不存在 / 路由丢包）→ **仍算**依赖不可用。
+		{"net.OpError(dial/ETIMEDOUT) = 库连不上", &net.OpError{Op: "dial", Net: "tcp", Err: os.ErrDeadlineExceeded}, true},
+		{"裸 syscall.ETIMEDOUT（无 net.OpError 包装）", syscall.ETIMEDOUT, false},
 		// 调用方主动取消不是"数据库不可用"（否则告警会被客户端断开刷屏）。
 		{"context.Canceled", context.Canceled, false},
 		{"context.DeadlineExceeded（取舍见 unavailable.go 文件头）", context.DeadlineExceeded, false},
@@ -134,6 +142,53 @@ func TestIsUnavailableConnectionLayer(t *testing.T) {
 				t.Fatalf("IsUnavailable(%v) = %v, want %v", tc.err, got, tc.want)
 			}
 		})
+	}
+}
+
+// TestIsUnavailableDialVsReadTimeout 把"超时"的口径**成对**钉死（2026-11-10 评审实测收口）。
+//
+// 一句话：**"连不上"始终算，超时不等于依赖不可用。**
+//   - 拨号超时（`Op=="dial"`）：防火墙 DROP / 主机不存在 / 路由丢包时拨号会一直挂到超时，
+//     那就是"库连不上" → **必须 503**；降级成 500 会让客户端不退避、把真故障伪装成应用 bug。
+//   - 读写超时（`Timeout() && Op != "dial"`）：评审用自定义 `DialFunc` 在握手后开 300ms
+//     socket 读超时跑 `select pg_sleep(2)` 真造出来过（`errTimeout` 包
+//     `net.OpError{op:read, timeout:true}`）→ 那是慢查询，**不许**说成库挂了。
+func TestIsUnavailableDialVsReadTimeout(t *testing.T) {
+	// ① 反向：读写超时不算依赖不可用（否则慢查询被说成库挂）。
+	readTimeout := &net.OpError{Op: "read", Net: "tcp", Err: os.ErrDeadlineExceeded}
+	if IsUnavailable(readTimeout) {
+		t.Fatal("socket 读超时（慢查询）不得算依赖不可用：会给客户端错误的重试信号")
+	}
+	writeTimeout := &net.OpError{Op: "write", Net: "tcp", Err: os.ErrDeadlineExceeded}
+	if IsUnavailable(writeTimeout) {
+		t.Fatal("socket 写超时同样不得算依赖不可用")
+	}
+	// 慢查询的两条真实路径：57014 与裸 deadline，都不映射。
+	if IsUnavailable(&pgconn.PgError{Code: "57014"}) {
+		t.Fatal("57014（statement_timeout）不得算依赖不可用")
+	}
+	if IsUnavailable(context.DeadlineExceeded) {
+		t.Fatal("裸 context.DeadlineExceeded 不得算依赖不可用")
+	}
+
+	// ② 正控：**拨号超时仍算**（库连不上）——这条谁都不许砍。
+	dialTimeout := &net.OpError{Op: "dial", Net: "tcp", Err: os.ErrDeadlineExceeded}
+	if !IsUnavailable(dialTimeout) {
+		t.Fatal("拨号超时是「库连不上」，必须算依赖不可用（否则客户端不退回重试）")
+	}
+	// ③ 正控：真停库（拨号被拒）与连接被重置/中止。
+	if !IsUnavailable(&net.OpError{Op: "dial", Net: "tcp", Err: syscall.ECONNREFUSED}) {
+		t.Fatal("ECONNREFUSED 必须算依赖不可用")
+	}
+	if !IsUnavailable(&net.OpError{Op: "read", Net: "tcp", Err: syscall.ECONNRESET}) {
+		t.Fatal("ECONNRESET 必须算依赖不可用")
+	}
+	if !IsUnavailable(syscall.EPIPE) || !IsUnavailable(syscall.ECONNABORTED) {
+		t.Fatal("EPIPE/ECONNABORTED 必须算依赖不可用")
+	}
+	// ④ 正控：`*pgconn.ConnectError`（真拨号失败）——本包最核心的一条。
+	if !IsUnavailable(&pgconn.ConnectError{}) {
+		t.Fatal("*pgconn.ConnectError 必须算依赖不可用")
 	}
 }
 

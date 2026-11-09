@@ -30,10 +30,27 @@ import (
 // 也不认 `context.Canceled`：那是调用方主动取消（客户端断开），不是数据库挂了；
 // 把取消报成"数据库不可用"会让 `/readyz` 与告警出现假阳性。
 //
-// `context.DeadlineExceeded` **同样不认**（如实记一笔取舍）：数据库卡住（网络分区）时
-// 查询会以它失败，理论上也属"不可用"；但它同时是"这条查询超过了我们给的上限"的信号，
-// 可能是慢查询/缺索引这类缺陷。区分这两者需要一条判据（例如按 DSN 级拨号超时判定），
-// 目前没有，故**不映射**——`AC-FC-02` 的真实停库场景走的是拨号失败，已被覆盖。
+// `context.DeadlineExceeded` **不认**：它既可能是"库卡住"，也可能是"慢查询/缺索引"（那是缺陷）；
+// 真实停库走的是拨号失败（`*pgconn.ConnectError`，分支 1），已被覆盖。
+//
+// ## 超时到底算不算"依赖不可用"（2026-11-10 评审实测收口，口径到此为止）
+//
+// 一句话：**"连不上"始终算，超时不等于依赖不可用。**
+//
+//   - **算**（→ 503 `DB_UNAVAILABLE`）：拨号失败/拨号超时（`*pgconn.ConnectError`，或
+//     `*net.OpError{Op:"dial"}` 带 `Timeout()`）、`ECONNREFUSED`/`ECONNRESET`/`EPIPE`/
+//     `ECONNABORTED`、连接中途断开（`io.EOF`）、驱动判坏（`ErrBadConn`/`ErrConnDone`）。
+//     拨号超时之所以仍要算：防火墙 DROP / 主机不存在 / 路由丢包时拨号会一直挂到超时，
+//     那就是"库连不上"，落 500 会让客户端不退避、把真故障伪装成应用 bug。
+//   - **不算**（→ 未映射，500）：**读写超时**（`net.OpError.Timeout() && Op != "dial"`）。
+//     评审实测造出过真实场景：自定义 `DialFunc` 在握手后开 300ms socket 读超时再跑
+//     `select pg_sleep(2)` → `*pgconn.errTimeout` 包 `*net.OpError{op=read, timeout:true}`
+//     → 那是**慢查询**被说成"库挂了"，属判据级误判（`AC-FC-01/02` 不能靠误判达标）。
+//   - 另外两条慢查询路径本就绕开 `net.OpError`：服务端 `statement_timeout` 走
+//     `*pgconn.PgError` **57014**、客户端 ctx deadline 走 `*pgconn.errTimeout`，都不映射。
+//
+// 用例 `TestIsUnavailableDialVsReadTimeout` 把这条口径钉死（成对：读写超时 false、
+// 拨号超时 + `ECONNREFUSED` + `ConnectError` true），`unavailable_db_test.go` 用真库复验。
 //
 // ## 谁用它
 //
@@ -70,13 +87,26 @@ func IsUnavailable(err error) bool {
 		return true
 	}
 
-	// 4) 套接字层：拨号被拒、连接被重置、写失败。
+	// 4) 套接字层：**只有"连不上"算依赖不可用**。
+	//
+	// 判据（2026-11-10 评审实测收口，别再翻转）：
+	//   - **拨号超时仍算不可用**（`Op == "dial"`）：防火墙 DROP / 主机不存在 / 路由丢包时，
+	//     拨号会一直挂着直到超时，那就是"库连不上"，必须给 503 让客户端退避——把它降级成 500
+	//     等于把真故障伪装成应用 bug；
+	//   - **读写超时不算**（`Timeout()==true && Op != "dial"`）：评审用自定义 `DialFunc` 在
+	//     握手后开 300ms socket 读超时跑 `select pg_sleep(2)`，错误链是 `*pgconn.errTimeout`
+	//     包 `*net.OpError{op=read, timeout:true}` —— 那是**慢查询**，不是库挂了。
 	var opErr *net.OpError
 	if errors.As(err, &opErr) {
+		if opErr.Timeout() && opErr.Op != "dial" {
+			return false
+		}
 		return true
 	}
+	// 只留"连接被拒/被断/写失败/被中止"这几个硬 errno；**`ETIMEDOUT` 已移除**（超时类，
+	// 语义见上：读写超时不算不可用；拨号超时由上面的 `Op == "dial"` 分支兜住）。
 	if errors.Is(err, syscall.ECONNREFUSED) || errors.Is(err, syscall.ECONNRESET) ||
-		errors.Is(err, syscall.EPIPE) || errors.Is(err, syscall.ETIMEDOUT) {
+		errors.Is(err, syscall.EPIPE) || errors.Is(err, syscall.ECONNABORTED) {
 		return true
 	}
 
