@@ -196,7 +196,13 @@ class GuanjinAutoConfigurationTest {
     void authzEnabledWithoutModelRefusesToStart() {
         // authz.enabled=true（默认）但宿主没声明 AuthzModel → 没有策略依据，拒绝启动（不得"没配就全放行"）
         Throwable e = assertThrows(Throwable.class, () -> start(baseProps()));
-        assertTrue(messages(e).contains("AuthzModel"), messages(e));
+        String msg = messages(e);
+        assertTrue(msg.contains("AuthzModel"), msg);
+        // 报错必须**自解释**（Spec 裁定 2026-11-10）：点名「声明 AuthzModel bean」与
+        // 「仅 local|test 可置 authz.enabled=false」两条修法，接入方看日志就知道怎么改
+        assertTrue(msg.contains("声明 AuthzModel bean"), msg);
+        assertTrue(msg.contains("local|test"), msg);
+        assertTrue(msg.contains("guanjin.authz.enabled=false"), msg);
     }
 
     // ---- helpers ----

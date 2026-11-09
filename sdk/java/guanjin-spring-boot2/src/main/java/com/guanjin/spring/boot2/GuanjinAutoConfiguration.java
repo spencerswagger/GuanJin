@@ -197,9 +197,14 @@ public class GuanjinAutoConfiguration {
                                                  ObjectProvider<AuthzModel> models) {
         AuthzModel model = models.getIfAvailable();
         if (model == null) {
+            // 失败必须发生在启动期且能自解释（Spec 裁定 2026-11-10）：报错点名两条修法，
+            // 接入方看日志就知道怎么改，不需要回来翻文档。
             throw new GuanjinConfigException(GuanjinConfigKeys.AUTHZ_ENABLED,
-                    "=true 但容器里没有 AuthzModel bean：拒绝在没有策略依据的情况下运行"
-                            + "（GJ-CAP-13：请声明 AuthzModel.builder()…build()）");
+                    "=true（默认）但容器里没有 AuthzModel bean：拒绝在没有策略依据的情况下运行。"
+                            + "两条修法任选其一：① 声明 AuthzModel bean"
+                            + "（AuthzModel.builder()…build()，见 docs/sdk-contract.md §5 接入步骤）；"
+                            + "② 仅 local|test profile 可置 guanjin.authz.enabled=false"
+                            + "（=不注册判定，绝不是「全部放行」；非 local|test 置 false 同样启动失败）");
         }
         Authz.init(model, properties.getAuthz().getModelConf());
         return new GuanjinAuthzHolder(model, properties.getAuthz().getModelConf());
