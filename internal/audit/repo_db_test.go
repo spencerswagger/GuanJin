@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -517,4 +518,87 @@ func mustID(t *testing.T) uuid.UUID {
 		t.Fatalf("uuid: %v", err)
 	}
 	return id
+}
+
+// Spec 裁定（2026-11-10）的两条都要钉住：
+//  1. `occurred_at` **原样入库**（不许被抬高——它是取证时间、分区键，且不可改）；
+//  2. `occurred_at` **参与 `integrity_tag`**（哈希覆盖原值，改它 tag 必变）。
+func TestOccurredAtIsPreservedAndHashed(t *testing.T) {
+	db := openAuditTestDB(t)
+	chain := auditTestChain(t)
+	month := cleanMonth(t)
+	ensurePartition(t, db, month)
+	cleanupMonth(t, db, month)
+
+	want := month.Add(3 * time.Second).Truncate(time.Microsecond)
+	first := Record{Action: "user.disable", Result: "success", TargetID: "same", OccurredAt: want}
+	if _, err := chain.Append(context.Background(), db, first); err != nil {
+		t.Fatalf("Append: %v", err)
+	}
+	// 同一秒内再来一条（**调用方时间不比链尾晚**）：`occurred_at` 必须原样保留，
+	// 由 `created_at` 保证链序（这正是裁定的要点）。
+	second := Record{Action: "user.disable", Result: "success", TargetID: "same", OccurredAt: want}
+	if _, err := chain.Append(context.Background(), db, second); err != nil {
+		t.Fatalf("Append(second): %v", err)
+	}
+
+	records, err := chain.Load(context.Background(), db, month, month.AddDate(0, 1, 0))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(records) != 2 {
+		t.Fatalf("期望 2 条，实际 %d", len(records))
+	}
+	for i, rec := range records {
+		if !rec.OccurredAt.Equal(want) {
+			t.Fatalf("第 %d 条 occurred_at 被改写了：期望 %s，实际 %s（取证时间不许动）",
+				i+1, want, rec.OccurredAt)
+		}
+	}
+	// 内容完全相同、只有 id 不同 → tag 必不同（否则"改内容不改 tag"就检不出来）。
+	if string(records[0].IntegrityTag) == string(records[1].IntegrityTag) {
+		t.Fatal("两条记录 tag 相同 → 说明 id/内容没进哈希")
+	}
+	// `occurred_at` 进哈希：同一条内容、只改 occurred_at → tag 必须不同。
+	c := testChain(t)
+	base := Record{Action: "a", Result: "success", OccurredAt: want}
+	other := base
+	other.OccurredAt = want.Add(time.Second)
+	tagA, err := c.Tag(nil, base)
+	if err != nil {
+		t.Fatalf("Tag: %v", err)
+	}
+	tagB, err := c.Tag(nil, other)
+	if err != nil {
+		t.Fatalf("Tag: %v", err)
+	}
+	if string(tagA) == string(tagB) {
+		t.Fatal("改 occurred_at 后 tag 没变 → occurred_at 没进哈希（证据就不是原样了）")
+	}
+	// 链仍完整（created_at 排序把两条串起来）。
+	if broken, err := chain.Verify(records, records[0].PrevTag); err != nil || broken != nil {
+		t.Fatalf("链应完整，实际 broken=%+v err=%v", broken, err)
+	}
+}
+
+// 下界守卫：`occurred_at` 早于链尾分区月初 → 拒绝（否则会插进上月分区、破跨分区链接）。
+func TestOccurredAtBeforeTailMonthIsRejected(t *testing.T) {
+	db := openAuditTestDB(t)
+	chain := auditTestChain(t)
+	month := cleanMonth(t)
+	ensurePartition(t, db, month)
+	cleanupMonth(t, db, month)
+
+	if _, err := chain.Append(context.Background(), db, Record{
+		Action: "a", Result: "success", OccurredAt: month.Add(time.Second),
+	}); err != nil {
+		t.Fatalf("Append: %v", err)
+	}
+	// 比链尾早一个月：必须拒绝并归到哨兵。
+	_, err := chain.Append(context.Background(), db, Record{
+		Action: "b", Result: "success", OccurredAt: month.AddDate(0, -1, 1),
+	})
+	if !errors.Is(err, ErrOccurredAtTooOld) {
+		t.Fatalf("期望 ErrOccurredAtTooOld，实际 %v", err)
+	}
 }

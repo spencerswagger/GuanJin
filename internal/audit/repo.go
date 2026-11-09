@@ -26,6 +26,9 @@ import (
 // 换它等于让新旧进程用两把锁，是**静默断链**级别的错误，故写成常量并加注释）。
 const chainLockKey int64 = 2026111001
 
+// ErrOccurredAtTooOld 表示 `occurred_at` 早于链尾所在分区月初（会插进上个月分区、破链）。
+var ErrOccurredAtTooOld = errors.New("audit: occurred_at predates the tail partition month")
+
 // ErrEmptyRecord 表示待写记录缺必填字段。
 var ErrEmptyRecord = errors.New("audit: record requires action, result and occurred_at")
 
@@ -65,9 +68,10 @@ func (c *Chain) Append(ctx context.Context, db *gorm.DB, rec Record) ([]byte, er
 		var tail struct {
 			IntegrityTag []byte
 			OccurredAt   time.Time
+			CreatedAt    time.Time
 		}
-		res := tx.Raw(`SELECT integrity_tag, occurred_at FROM audit_logs
-			ORDER BY occurred_at DESC, id DESC LIMIT 1`).Scan(&tail)
+		res := tx.Raw(`SELECT integrity_tag, occurred_at, created_at FROM audit_logs
+			ORDER BY created_at DESC, id DESC LIMIT 1`).Scan(&tail)
 		if res.Error != nil && !isNoRows(res.Error) {
 			return fmt.Errorf("audit: read chain tail: %w", res.Error)
 		}
@@ -77,14 +81,25 @@ func (c *Chain) Append(ctx context.Context, db *gorm.DB, rec Record) ([]byte, er
 			tailTime = &at
 		}
 
-		// ②′ **保证链序 = 插入序**：链的"下一条"必须排在链尾之后，否则并发的两条会落成
-		// 「互为兄弟」（各自 `prev_tag` 都指向同一个链尾）——链从那一刻起就断了，而且
-		// **不会报错，只能靠整链复核事后发现**。
+		// ②′ **链序 = 平台写入序，用 `created_at`**（Spec 裁定，2026-11-10）：
+		// `occurred_at` 是**取证时间**——它是分区键、进主键、四个取证索引全按它降序，
+		// 而且 `audit_logs_append_only` 触发器让写入后**永不可改**。抬高它等于永久改错
+		// 取证时间、事后连原值都补不回来；而"并发下每条必须排在链尾之后"只需要一个
+		// **平台自己的**单调量，`created_at` 正是（同表已有列，零 schema 变更）。
 		//
-		// 做法：把 `occurred_at` 抬到"链尾 + 1µs"（仅当调用方给的时间不比链尾晚）。
-		// 这一微秒的偏差只影响"同一微秒内并发多条"的极端情形，换来的是并发下的可校验性。
-		if tailTime != nil && !rec.OccurredAt.After(*tailTime) {
-			rec.OccurredAt = tailTime.Add(time.Microsecond)
+		// 因此：`created_at` 抬到"链尾 + 1µs"，`occurred_at` **原样入库并参与 `integrity_tag`**
+		// （哈希覆盖原值，才是"证据原样"）。
+		if tailTime != nil {
+			// ②″ 下界守卫：`occurred_at` 早于链尾所在分区月初 → 拒绝并留痕。
+			// 否则今天的写入会插进上个月的分区，跨分区的 `prev_tag` 链接（AC-AUD-06）就断了。
+			if floor := monthOf(*tailTime); rec.OccurredAt.Before(floor) {
+				return fmt.Errorf("%w: occurred_at %s is before the tail partition month %s",
+					ErrOccurredAtTooOld, rec.OccurredAt.UTC().Format(time.RFC3339), floor.Format("2006-01"))
+			}
+		}
+		createdAt := time.Now().UTC()
+		if tailTime != nil && !createdAt.After(tail.CreatedAt) {
+			createdAt = tail.CreatedAt.Add(time.Microsecond)
 		}
 		// ③ 算 tag。
 		computed, err := c.Tag(prev, rec)
@@ -102,12 +117,12 @@ func (c *Chain) Append(ctx context.Context, db *gorm.DB, rec Record) ([]byte, er
 		}
 		if err := tx.Exec(`INSERT INTO audit_logs
 			(id, actor_user_id, actor_role, action, target_type, target_id, client_id,
-			 before, after, result, integrity_tag, prev_tag, signature, ip, trace_id, occurred_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			 before, after, result, integrity_tag, prev_tag, signature, ip, trace_id, occurred_at, created_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			rec.ID, nullUUID(rec.ActorUserID), nullStr(rec.ActorRole), rec.Action,
 			nullStr(rec.TargetType), nullStr(rec.TargetID), nullStr(rec.ClientID),
 			before, after, rec.Result, computed, prev, rec.Signature,
-			nullStr(rec.IP), nullStr(rec.TraceID), rec.OccurredAt.UTC()).Error; err != nil {
+			nullStr(rec.IP), nullStr(rec.TraceID), rec.OccurredAt.UTC(), createdAt).Error; err != nil {
 			return fmt.Errorf("audit: insert record: %w", err)
 		}
 		tag = computed
@@ -147,7 +162,7 @@ func (c *Chain) Load(ctx context.Context, db *gorm.DB, from, to time.Time) ([]Re
 	err := db.WithContext(ctx).Raw(`SELECT id, actor_user_id, actor_role, action, target_type, target_id,
 			client_id, before, after, result, integrity_tag, prev_tag, signature, ip, trace_id, occurred_at
 		FROM audit_logs WHERE occurred_at >= ? AND occurred_at < ?
-		ORDER BY occurred_at ASC, id ASC`, from.UTC(), to.UTC()).Scan(&rows).Error
+		ORDER BY created_at ASC, id ASC`, from.UTC(), to.UTC()).Scan(&rows).Error
 	if err != nil {
 		return nil, fmt.Errorf("audit: load chain: %w", err)
 	}
