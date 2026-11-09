@@ -233,7 +233,7 @@ func TestSignerFailureIsKeyUnavailableAndNotForwarded(t *testing.T) {
 	}
 	// 空密钥集 = 签不出来（模拟启动后密钥行被删/解封失败的最坏情况）。
 	signer := &AssertionSigner{Keys: newTestKeys(t), NewJTI: func() (string, error) { return "", io.ErrUnexpectedEOF }}
-	p, err := NewPipeline(forward, tg.guard, signer, tg.replay, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	p, err := NewPipeline(forward, tg.guard, signer, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatalf("NewPipeline: %v", err)
 	}
@@ -271,7 +271,7 @@ func TestAC_DP_10_AccessLogCarriesNoTokenOrAssertion(t *testing.T) {
 	}
 	guard := tg.guard
 	guard.Logger = logger
-	p, err := NewPipeline(forward, guard, signer, tg.replay, logger)
+	p, err := NewPipeline(forward, guard, signer, logger)
 	if err != nil {
 		t.Fatalf("NewPipeline: %v", err)
 	}
@@ -318,7 +318,7 @@ func TestAC_DP_13_UpstreamUnavailableKeepsSemantics(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewAssertionSigner: %v", err)
 	}
-	p, err := NewPipeline(forward, tg.guard, signer, tg.replay, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	p, err := NewPipeline(forward, tg.guard, signer, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatalf("NewPipeline: %v", err)
 	}

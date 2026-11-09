@@ -88,3 +88,102 @@ func TestGoModHasNoResilienceOrCertDeps(t *testing.T) {
 		}
 	}
 }
+
+// TestGatewayNeverStoresOrComparesJTI 是 **AC-DP-08 归属裁定**的结构性守线（反向断言，防"好心补错"）。
+//
+// 裁定（Spec，2026-11-10；裁定稿 `notes/ac-dp-08-归属裁定-2026-11-10.md`，未入库前以本条注释为准）：
+//   - **S8 只判一半**：每请求现签新 `jti`、被拒时零注入；
+//   - **「同 `jti` 二次 → 401」由验签方产生并记账**（SDK / S9），依据 `数据面设计` §4.6 第 3 步
+//     「校验 `exp` 并用 `jti` 做重放检测」、`接口清单` §5.2/时序自环在 `SDK->>SDK`、
+//     `SDK契约` 能力 7 与 §7「`jti` 重放 → 401」、`m1-slices` S9 行「无（SDK 侧本地 `jti` 落 Redis，不碰平台库）」、
+//     `数据模型规格` 全文 `jti` 零命中。
+//
+// 因此：`internal/gateway`（含 `adapter`）一旦出现 **`jti` 的存储或比对** 即判红。
+// 允许的只有"生成"（`uuid.NewV7()`）与"放进 claim"。这条判据值得一条机器守线，因为
+// 平台侧判重看起来"更安全"，但会（1）让数据面多一条每请求写路径、（2）与 SDK 侧判重形成两套口径、
+// （3）把 401 的归属从验签方搬到转发方，`AC-DP-08` 的账目就再也说不清在哪一半。
+func TestGatewayNeverStoresOrComparesJTI(t *testing.T) {
+	// 正控（自检）：这些片段就是"平台侧偷偷判重"的典型写法，必须命中——
+	// 否则守线会因为在改模式串时手滑而静默失效（等于没有这条闸）。
+	for _, snippet := range []string{
+		`ok, err := g.rdb.SetNX(ctx, "jti:"+jti, 1, window).Result()`,
+		`INSERT INTO jti_replay (jti, expires_at) VALUES (?, ?)`,
+		`if seenJTI[jti] { return false }`,
+		`if a.JTI == lastJTI {`,
+		`SELECT 1 FROM jti_seen WHERE jti = ?`,
+	} {
+		if len(jtiForbiddenHits(snippet)) == 0 {
+			t.Fatalf("守线自检失败：%q 应被判红（说明模式串被改坏了）", snippet)
+		}
+	}
+	// 反控：正常的"生成 + 放进 claim"不得误伤。
+	for _, snippet := range []string{
+		`jti, err := newJTI()`,
+		`claims["jti"] = jti`,
+		`if jti == "" { return Assertion{}, errors.New("empty jti") }`,
+		`seen := make(map[string]bool)` + `\n` + `seen[prefix] = true`,
+	} {
+		if hits := jtiForbiddenHits(snippet); len(hits) != 0 {
+			t.Fatalf("误伤：%q 命中 %v（生成/空值校验不是「存储或比对」）", snippet, hits)
+		}
+	}
+
+	var files []string
+	for _, root := range []string{".", filepath.Join(".", "adapter")} {
+		entries, err := os.ReadDir(root)
+		if err != nil {
+			t.Fatalf("read dir %s: %v", root, err)
+		}
+		for _, e := range entries {
+			name := e.Name()
+			if e.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+				continue
+			}
+			files = append(files, filepath.Join(root, name))
+		}
+	}
+	if len(files) < 8 {
+		t.Fatalf("扫描文件数异常（%d），检查路径（扫不到必须当失败，否则这条守线会静默失效）", len(files))
+	}
+
+	for _, file := range files {
+		raw, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatalf("read %s: %v", file, err)
+		}
+		for i, line := range strings.Split(string(raw), "\n") {
+			trimmed := strings.TrimSpace(line)
+			if strings.HasPrefix(trimmed, "//") {
+				continue // 注释里写"不判重"是正常的（本包多处注释解释了裁定）
+			}
+			for _, pattern := range jtiForbiddenHits(line) {
+				t.Errorf("%s:%d 出现 %q —— AC-DP-08 的平台侧只允许「生成 jti + 放进 claim」；"+
+					"「同 jti 二次 → 401」归验签方（SDK/S9），裁定见 notes/ac-dp-08-归属裁定-2026-11-10.md",
+					file, i+1, pattern)
+			}
+		}
+	}
+}
+
+// jtiForbiddenHits 返回该行命中的"平台侧判重"模式（存储或比对），空 = 干净。
+//
+// 模式刻意收窄：**只命中"落存储/查存储/比两个 jti"**，不误伤 `jti == ""`（空值校验）
+// 与 `seen[...]`（路由去重、amr 并集等与 jti 无关的 map）。收窄的代价是覆盖不到
+// 更绕的写法，但那类写法在评审里也藏不住；宁可精确，不要一条满屏误报最后被人关掉。
+func jtiForbiddenHits(line string) []string {
+	patterns := []string{
+		"SetNX", "setnx", // 首次占位语义 = 判重存储
+		"redis.", // 数据面不碰 Redis
+		"INSERT INTO", "DELETE FROM", "UPDATE sessions", "SELECT 1 FROM jti",
+		"jtiSeen", "seenJTI", "jtiStore", "storeJTI", "saveJTI", "claimJTI", "jtiReplay",
+		".JTI ==", "== .JTI", "JTI !=", "!= .JTI",
+		"EqualFold(jti", "EqualFold(a.JTI",
+	}
+	var hits []string
+	for _, p := range patterns {
+		if strings.Contains(line, p) {
+			hits = append(hits, p)
+		}
+	}
+	return hits
+}

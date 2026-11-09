@@ -357,12 +357,3 @@ func TestDBSessionStatusAdapter(t *testing.T) {
 		t.Fatalf("不存在期望 protocol.ErrSessionGone，实际 %v", err)
 	}
 }
-
-// deadRedisClient 建一个**指向不可达地址**的客户端（用于"存储挂了"的 fail-closed 断言）。
-// 用 127.0.0.1:1（必然 refused），不依赖任何外部状态。
-func deadRedisClient(t *testing.T) *redis.Client {
-	t.Helper()
-	client := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1", MaxRetries: -1, DialTimeout: 200 * time.Millisecond})
-	t.Cleanup(func() { _ = client.Close() })
-	return client
-}

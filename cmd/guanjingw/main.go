@@ -24,8 +24,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/redis/go-redis/v9"
-
 	"github.com/spencerswagger/guanjin/internal/config"
 	"github.com/spencerswagger/guanjin/internal/gateway"
 	"github.com/spencerswagger/guanjin/internal/httpx"
@@ -91,12 +89,10 @@ func main() {
 		os.Exit(2)
 	}
 
-	// 判重存储（AC-DP-08）用 Redis：**启动期不 ping**（Redis 挂了进程要活着、业务全拒，
-	// 与 D5-₂ 同一口径）；连接在进程退出时统一关闭。
-	rdb := redis.NewClient(&redis.Options{Addr: cfg.RedisAddr, Password: cfg.RedisPassword})
-	defer func() { _ = rdb.Close() }()
-
-	dataPlane, err := newDataPlane(ctx, db, rdb, cfg, router, gateway.Options{
+	// 本进程**不建 Redis 连接**：数据面不判 `jti` 重放（裁定：由 SDK/S9 产生并记账），
+	// 也不缓存会话状态（撤销零缓存窗口，AC-SESS-01）。`GUANJIN_REDIS_ADDR` 仍由共享
+	// `config.Load` 要求（三个进程同一份 fail-closed 口径），但数据面不消费它。
+	dataPlane, err := newDataPlane(ctx, db, cfg, router, gateway.Options{
 		UpstreamTimeout: upstreamTimeout,
 		DialTimeout:     dialTimeout,
 	}, skew, logger)

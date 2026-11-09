@@ -16,7 +16,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/tjfoc/gmsm/sm2"
 	"gorm.io/gorm"
 
@@ -172,10 +171,8 @@ func newITPipelineWithSigner(t *testing.T, db *gorm.DB, keys *itKeys, upstream *
 	if err != nil {
 		t.Fatalf("NewGuard: %v", err)
 	}
-	// 判重用**真 Redis**（AC-DP-08 的判据就是"集成·真实 Redis"）：连不上直接判红，
-	// 不静默降级成"不判重"。
-	pipeline, err := gateway.NewPipeline(forward, guard, signer,
-		NewRedisReplayGuard(testRedisClient(t)), logger)
+	// 注意：数据面**不判 `jti` 重放**（裁定：由验签方 SDK/S9 产生并记账），故这里不接判重存储。
+	pipeline, err := gateway.NewPipeline(forward, guard, signer, logger)
 	if err != nil {
 		t.Fatalf("NewPipeline: %v", err)
 	}
@@ -460,41 +457,23 @@ func verifyWithJWKS(t *testing.T, set *signing.Set, token string) map[string]any
 
 var _ = context.Background
 
-// AC-DP-08（真 Redis + 真库 + 真验签）：同一 `jti` 的第二次请求 → 401 且不转发；
-// 正常请求（每请求新 jti）不受影响。
-//
-// 用确定性 jti 模拟"同一份断言被重放"——真实实现每请求新建 UUIDv7，重复只可能来自重放/缺陷。
-func TestAC_DP_08_PipelineRejectsReplayedJti(t *testing.T) {
-	db := openTestDB(t)
-	f := newFixture(t, db, "L2")
-	itCurrentClient = f.clientID
-	t.Cleanup(func() { itCurrentClient = "" })
-
-	keys := newITKeys(t)
-	up := newITUpstream(t)
-	// 用**确定性 jti** 的签名器：等价于"同一个 jti 被用两次"。
-	signer, err := gateway.NewAssertionSigner(keys.set)
-	if err != nil {
-		t.Fatalf("NewAssertionSigner: %v", err)
+// jwkPublic 用 JWKS 里的公钥点还原 `*sm2.PublicKey`（与业务系统 SDK 的取法一致）。
+func jwkPublic(t *testing.T, set *signing.Set, kid string) *sm2.PublicKey {
+	t.Helper()
+	for _, jwk := range set.JWKS() {
+		if jwk.Kid != kid {
+			continue
+		}
+		x, err := base64.RawURLEncoding.DecodeString(jwk.X)
+		if err != nil {
+			t.Fatalf("decode jwk.x: %v", err)
+		}
+		y, err := base64.RawURLEncoding.DecodeString(jwk.Y)
+		if err != nil {
+			t.Fatalf("decode jwk.y: %v", err)
+		}
+		return &sm2.PublicKey{Curve: sm2.P256Sm2(), X: new(big.Int).SetBytes(x), Y: new(big.Int).SetBytes(y)}
 	}
-	// `jti` 必须**每次运行都不同**：判重键在真 Redis 里有 60s TTL，若写死常量，
-	// 同一次 CI 里"集成测试"与"覆盖率采集"两趟会互相把对方判成重放（实测就是这么红的）。
-	fixed := uuid.NewString()
-	signer.NewJTI = func() (string, error) { return fixed, nil }
-	pipeline := newITPipelineWithSigner(t, db, keys, up.srv, signer)
-
-	token := keys.userToken(t, f.userID.String(), f.clientID, f.session.String())
-	if rec := itRequest(pipeline, "/api/orders", token); rec.Code != http.StatusOK {
-		t.Fatalf("首次请求期望 200，实际 %d（body=%s）", rec.Code, rec.Body.String())
-	}
-	rec := itRequest(pipeline, "/api/orders", token)
-	if rec.Code != http.StatusUnauthorized {
-		t.Fatalf("同 jti 二次期望 401，实际 %d（body=%s）", rec.Code, rec.Body.String())
-	}
-	if code := itCode(t, rec); code != httpx.CodeTokenInvalid {
-		t.Fatalf("错误码期望 TOKEN_INVALID，实际 %s", code)
-	}
-	if up.hits != 1 {
-		t.Fatalf("重放请求不该转发（上游命中 %d，期望 1）", up.hits)
-	}
+	t.Fatalf("JWKS 里没有 kid=%q", kid)
+	return nil
 }

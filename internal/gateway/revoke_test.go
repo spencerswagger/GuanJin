@@ -106,7 +106,7 @@ func TestGatewayDoesNotWriteSessions(t *testing.T) {
 //     而撤销一旦有缓存窗口就不再是"撤销后首个请求即 403"；
 //   - 核心逻辑没法用假实现做纯单测（本目录所有判据用例都是无网络跑的）。
 func TestGatewayCoreHasNoRedisClient(t *testing.T) {
-	files := []string{"admit.go", "revoke.go", "pipeline.go", "inject.go", "replay.go", "slo.go", "proxy.go", "route.go"}
+	files := []string{"admit.go", "revoke.go", "pipeline.go", "inject.go", "slo.go", "proxy.go", "route.go"}
 	for _, f := range files {
 		src := readSource(t, f)
 		for _, banned := range []string{"redis.Client", "go-redis", "redis.NewClient", "redis.Get"} {
