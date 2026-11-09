@@ -28,6 +28,20 @@
       <artifactId>jackson-databind</artifactId>
     </dependency>
 
+    <!-- 国密：bcprov-jdk18on = JDK 1.8 or later（不是 JDK 18，契约 §5.1.1 C-3）；版本锁 1.78.1 -->
+    <dependency>
+      <groupId>org.bouncycastle</groupId>
+      <artifactId>bcprov-jdk18on</artifactId>
+      <version>${bcprov.version}</version>
+    </dependency>
+
+    <!-- 本地授权判定（GJ-CAP-12）：一个 model.conf 逐层生效；版本锁 1.55.0 -->
+    <dependency>
+      <groupId>org.casbin</groupId>
+      <artifactId>jcasbin</artifactId>
+      <version>${jcasbin.version}</version>
+    </dependency>
+
     <dependency>
       <groupId>org.junit.jupiter</groupId>
       <artifactId>junit-jupiter</artifactId>

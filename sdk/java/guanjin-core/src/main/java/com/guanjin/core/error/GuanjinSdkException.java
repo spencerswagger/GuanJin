@@ -52,4 +52,9 @@ public class GuanjinSdkException extends RuntimeException {
     public static GuanjinSdkException redisUnavailable(String message, Throwable cause) {
         return new GuanjinSdkException(ErrorCodes.REDIS_UNAVAILABLE, 503, message, cause);
     }
+
+    /** 403 {@code INSUFFICIENT_ROLE}（本地判定未通过 / 模型完整性校验失败）。 */
+    public static GuanjinSdkException insufficientRole(String message) {
+        return new GuanjinSdkException(ErrorCodes.INSUFFICIENT_ROLE, 403, message, null);
+    }
 }

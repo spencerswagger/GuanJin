@@ -181,9 +181,22 @@ class GuanjinAutoConfigurationTest {
     }
 
     @Test
-    void missingVerifierBeanRefusesToStart() {
+    void defaultVerifierIsRealSm2AndCannotBeAbsent() {
+        // GJ-CAP-01 无跳过开关：验签器由自动配置**默认提供**，不存在"没有验签器"的形态
+        ConfigurableApplicationContext ctx = start(baseProps(), StubConfig.class);
+        try {
+            assertTrue(ctx.getBean(AssertionVerifier.class) instanceof com.guanjin.core.assertion.Sm2AssertionVerifier,
+                    "默认验签器必须是 SM2 真验签实现，实际=" + ctx.getBean(AssertionVerifier.class).getClass());
+        } finally {
+            ctx.close();
+        }
+    }
+
+    @Test
+    void authzEnabledWithoutModelRefusesToStart() {
+        // authz.enabled=true（默认）但宿主没声明 AuthzModel → 没有策略依据，拒绝启动（不得"没配就全放行"）
         Throwable e = assertThrows(Throwable.class, () -> start(baseProps()));
-        assertTrue(messages(e).contains("AssertionVerifier"), messages(e));
+        assertTrue(messages(e).contains("AuthzModel"), messages(e));
     }
 
     // ---- helpers ----
@@ -223,12 +236,15 @@ class GuanjinAutoConfigurationTest {
         return sb.toString();
     }
 
-    /** 测试专用：提供一个验签器 bean（SM2 验签在后续切片）。 */
+    /** 测试专用：业务方声明授权模型（GJ-CAP-13）；验签器由自动配置默认提供（SM2）。 */
     @Configuration(proxyBeanMethods = false)
     static class StubConfig {
         @Bean
-        AssertionVerifier assertionVerifier(com.guanjin.spring.boot2.GuanjinProperties properties) {
-            return new StubVerifier(properties.getGateway().getIssuer(), properties.resolvedAud());
+        com.guanjin.core.authz.AuthzModel authzModel() {
+            return com.guanjin.core.authz.AuthzModel.builder()
+                    .role("order_viewer").can("orders", "read")
+                    .defaultRole("user").can("profile", "read")
+                    .build();
         }
     }
 }

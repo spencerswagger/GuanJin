@@ -3,6 +3,9 @@ package com.guanjin.spring.boot2;
 import com.guanjin.core.agent.PolicyPuller;
 import com.guanjin.core.agent.PullRequestSigner;
 import com.guanjin.core.assertion.AssertionVerifier;
+import com.guanjin.core.assertion.Sm2AssertionVerifier;
+import com.guanjin.core.authz.Authz;
+import com.guanjin.core.authz.AuthzModel;
 import com.guanjin.core.config.GuanjinConfigException;
 import com.guanjin.core.config.GuanjinConfigKeys;
 import com.guanjin.core.config.GuanjinEnvironment;
@@ -68,6 +71,18 @@ public class GuanjinAutoConfiguration {
                 properties.getGateway().isJwksUnknownKidForceRefresh());
     }
 
+    /**
+     * 断言验签（GJ-CAP-01）：**默认就是 SM2 真验签**（{@code SM3withSM2} + {@code kid} 选键 + 不协商算法）。
+     *
+     * <p>宿主可覆盖（{@code @ConditionalOnMissingBean}），但**不能关掉**：没有验签器的形态不存在，
+     * 因为这里总会提供一个。
+     */
+    @Bean
+    @ConditionalOnMissingBean(AssertionVerifier.class)
+    public AssertionVerifier guanjinSm2AssertionVerifier(JwksClient jwksClient) {
+        return new Sm2AssertionVerifier(jwksClient);
+    }
+
     /** 放行清单（GJ-CAP-19）。 */
     @Bean
     @ConditionalOnMissingBean(PathMatcher.class)
@@ -102,7 +117,7 @@ public class GuanjinAutoConfiguration {
     @Bean
     public GuanjinStartupReport guanjinStartupReport(GuanjinProperties properties, Environment springEnv,
                                                      JwksClient jwksClient,
-                                                     ObjectProvider<AssertionVerifier> verifiers) {
+                                                     AssertionVerifier verifier) {
         GuanjinEnvironment env = GuanjinEnvironment.of(Arrays.asList(springEnv.getActiveProfiles()));
         if (!properties.isEnabled()) {
             // 能走到这里说明 profile 门控已通过（local|test）；生产置 false 会在 validate 里直接失败
@@ -113,12 +128,10 @@ public class GuanjinAutoConfiguration {
                     java.util.Collections.<String>emptyList(), java.util.Collections.<String>emptyList(),
                     java.util.Collections.<String>emptyList()));
         }
-        AssertionVerifier verifier = verifiers.getIfAvailable();
         if (verifier == null) {
-            // 本切片只交付"验签之后"的链路；没有验签器就不许进入"看起来在保护"的状态
+            // 防御性兜底：默认 bean 一定在；宿主若用 @Primary/@Conditional 把它弄没了，这里拒绝启动
             throw new GuanjinConfigException(GuanjinConfigKeys.ENABLED,
-                    "=true 但容器里没有 AssertionVerifier bean：拒绝在未验签状态下运行"
-                            + "（GJ-CAP-01 无跳过开关；验签实现见后续切片的 Sm2AssertionVerifier）");
+                    "=true 但容器里没有 AssertionVerifier bean：拒绝在未验签状态下运行（GJ-CAP-01 无跳过开关）");
         }
         StartupReport report = GuanjinStartupChecker.check(properties, env, jwksClient);
         if (properties.getStartup().isPrintPublicPaths()) {
@@ -171,6 +184,27 @@ public class GuanjinAutoConfiguration {
         return puller;
     }
 
+    /**
+     * 授权判定装配（GJ-CAP-12）：装载 {@code guanjin.authz.model-conf} + 业务声明的 {@link AuthzModel}。
+     *
+     * <p>fail-closed：{@code authz.enabled=true} 而容器里没有 {@code AuthzModel} bean → **启动失败**
+     * （没有策略就没有判定依据，不能"没配就全放行"）。
+     */
+    @Bean
+    @ConditionalOnProperty(prefix = "guanjin.authz", name = "enabled", havingValue = "true",
+            matchIfMissing = true)
+    public GuanjinAuthzHolder guanjinAuthzHolder(GuanjinProperties properties,
+                                                 ObjectProvider<AuthzModel> models) {
+        AuthzModel model = models.getIfAvailable();
+        if (model == null) {
+            throw new GuanjinConfigException(GuanjinConfigKeys.AUTHZ_ENABLED,
+                    "=true 但容器里没有 AuthzModel bean：拒绝在没有策略依据的情况下运行"
+                            + "（GJ-CAP-13：请声明 AuthzModel.builder()…build()）");
+        }
+        Authz.init(model, properties.getAuthz().getModelConf());
+        return new GuanjinAuthzHolder(model, properties.getAuthz().getModelConf());
+    }
+
     /** memory 实现：仅 {@code replay-store=memory}（profile 门控已在 validate 里挡）。 */
     @Bean
     @ConditionalOnMissingBean(ReplayStore.class)
@@ -200,6 +234,48 @@ public class GuanjinAutoConfiguration {
                                 + "SDK 不自己读 Redis 地址、也不降级到 memory");
             }
             return new RedisReplayStore(template);
+        }
+    }
+
+    /** 授权判定的装配结果（GJ-CAP-12/13）：便于宿主/运维确认"用的是哪份 model.conf、哪些策略"。 */
+    public static final class GuanjinAuthzHolder {
+
+        private final AuthzModel model;
+        private final String modelConfLocation;
+
+        GuanjinAuthzHolder(AuthzModel model, String modelConfLocation) {
+            this.model = model;
+            this.modelConfLocation = modelConfLocation;
+        }
+
+        public AuthzModel model() {
+            return model;
+        }
+
+        public String modelConfLocation() {
+            return modelConfLocation;
+        }
+    }
+
+    /**
+     * {@code @RequirePermission} 的执行点注册（GJ-CAP-14）：只在 Spring MVC 在 classpath 时生效
+     * （{@code spring-webmvc} 是 optional 依赖，宿主没引入就不注册拦截器，不影响验签与身份注入）。
+     */
+    @Configuration(proxyBeanMethods = false)
+    @ConditionalOnClass(name = "org.springframework.web.servlet.HandlerInterceptor")
+    static class AuthorizationWebConfiguration {
+
+        @Bean
+        @ConditionalOnProperty(prefix = "guanjin.authz", name = "enabled", havingValue = "true",
+                matchIfMissing = true)
+        public org.springframework.web.servlet.config.annotation.WebMvcConfigurer guanjinAuthzWebMvcConfigurer() {
+            return new org.springframework.web.servlet.config.annotation.WebMvcConfigurer() {
+                @Override
+                public void addInterceptors(
+                        org.springframework.web.servlet.config.annotation.InterceptorRegistry registry) {
+                    registry.addInterceptor(new GuanjinAuthorizationInterceptor());
+                }
+            };
         }
     }
 }
