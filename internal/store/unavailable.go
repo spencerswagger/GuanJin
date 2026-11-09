@@ -31,23 +31,26 @@ import (
 // 把取消报成"数据库不可用"会让 `/readyz` 与告警出现假阳性。
 //
 // `context.DeadlineExceeded` **不认**：它既可能是"库卡住"，也可能是"慢查询/缺索引"（那是缺陷）；
-// 而真实停库走的是拨号失败（`*pgconn.ConnectError`，分支 1），已被覆盖。
+// 真实停库走的是拨号失败（`*pgconn.ConnectError`，分支 1），已被覆盖。
 //
-// ## 套接字层为什么整支算连接层（2026-11-10 裁定：**保留，不收窄**）
+// ## 超时到底算不算"依赖不可用"（2026-11-10 评审实测收口，口径到此为止）
 //
-// `*net.OpError` 一律视为连接层失败：拨号超时、连接被重置、keepalive 判死——这些按语义
-// 就是"依赖不可用"，该给 503。**慢查询/查询超时不会走到这一支**，实测两条路径都绕开了它：
-//   - 服务端 `statement_timeout` → `*pgconn.PgError` **57014**（不映射 → 500）；
-//   - 客户端 ctx deadline → `*pgconn.errTimeout`（不映射 → 500）。
+// 一句话：**"连不上"始终算，超时不等于依赖不可用。**
 //
-// 所以"慢查询被说成库挂了"在**正常路径上不成立**——这也是本轮判定"不按 timeout 收窄"的依据。
+//   - **算**（→ 503 `DB_UNAVAILABLE`）：拨号失败/拨号超时（`*pgconn.ConnectError`，或
+//     `*net.OpError{Op:"dial"}` 带 `Timeout()`）、`ECONNREFUSED`/`ECONNRESET`/`EPIPE`/
+//     `ECONNABORTED`、连接中途断开（`io.EOF`）、驱动判坏（`ErrBadConn`/`ErrConnDone`）。
+//     拨号超时之所以仍要算：防火墙 DROP / 主机不存在 / 路由丢包时拨号会一直挂到超时，
+//     那就是"库连不上"，落 500 会让客户端不退避、把真故障伪装成应用 bug。
+//   - **不算**（→ 未映射，500）：**读写超时**（`net.OpError.Timeout() && Op != "dial"`）。
+//     评审实测造出过真实场景：自定义 `DialFunc` 在握手后开 300ms socket 读超时再跑
+//     `select pg_sleep(2)` → `*pgconn.errTimeout` 包 `*net.OpError{op=read, timeout:true}`
+//     → 那是**慢查询**被说成"库挂了"，属判据级误判（`AC-FC-01/02` 不能靠误判达标）。
+//   - 另外两条慢查询路径本就绕开 `net.OpError`：服务端 `statement_timeout` 走
+//     `*pgconn.PgError` **57014**、客户端 ctx deadline 走 `*pgconn.errTimeout`，都不映射。
 //
-// 已知边界（如实登记，**别再用"收窄"解决**）：若有人自定义 `DialFunc` 在握手后设置 socket
-// 读写 deadline，超时链会变成 `errTimeout` 包 `net.OpError{op=read, timeout:true}`，
-// 仍会落进本分支 → 503。本轮裁定保留该行为：把 dial/read 超时一律剔除，会让
-// "库真的连不上（拨号一直超时）"降级成 500，客户端就不退避了——方向更错。
-// 要区分这两者，需要先有一条判据 + 一条真黑洞用例，**不许只改判断**；
-// `TestIsUnavailablePinsTimeoutSemantics` 把现在的口径钉住，动手前先回答用例里那句"为什么"。
+// 用例 `TestIsUnavailableDialVsReadTimeout` 把这条口径钉死（成对：读写超时 false、
+// 拨号超时 + `ECONNREFUSED` + `ConnectError` true），`unavailable_db_test.go` 用真库复验。
 //
 // ## 谁用它
 //
@@ -84,19 +87,26 @@ func IsUnavailable(err error) bool {
 		return true
 	}
 
-	// 4) 套接字层：拨号失败/超时、连接被重置、写失败、连接被中止。
+	// 4) 套接字层：**只有"连不上"算依赖不可用**。
 	//
-	// **整支算连接层**（口径见文件头「套接字层为什么整支算连接层」）：超时在这里意味着
-	// "库连不上 / 连接被判定死掉"，按语义就是依赖不可用；慢查询与查询超时走的是
-	// `PgError 57014` 与 `pgconn.errTimeout`，**不会进这一支**（用例
-	// `TestIsUnavailablePinsTimeoutSemantics` 钉住，改之前先回答那句"为什么"）。
+	// 判据（2026-11-10 评审实测收口，别再翻转）：
+	//   - **拨号超时仍算不可用**（`Op == "dial"`）：防火墙 DROP / 主机不存在 / 路由丢包时，
+	//     拨号会一直挂着直到超时，那就是"库连不上"，必须给 503 让客户端退避——把它降级成 500
+	//     等于把真故障伪装成应用 bug；
+	//   - **读写超时不算**（`Timeout()==true && Op != "dial"`）：评审用自定义 `DialFunc` 在
+	//     握手后开 300ms socket 读超时跑 `select pg_sleep(2)`，错误链是 `*pgconn.errTimeout`
+	//     包 `*net.OpError{op=read, timeout:true}` —— 那是**慢查询**，不是库挂了。
 	var opErr *net.OpError
 	if errors.As(err, &opErr) {
+		if opErr.Timeout() && opErr.Op != "dial" {
+			return false
+		}
 		return true
 	}
+	// 只留"连接被拒/被断/写失败/被中止"这几个硬 errno；**`ETIMEDOUT` 已移除**（超时类，
+	// 语义见上：读写超时不算不可用；拨号超时由上面的 `Op == "dial"` 分支兜住）。
 	if errors.Is(err, syscall.ECONNREFUSED) || errors.Is(err, syscall.ECONNRESET) ||
-		errors.Is(err, syscall.EPIPE) || errors.Is(err, syscall.ECONNABORTED) ||
-		errors.Is(err, syscall.ETIMEDOUT) {
+		errors.Is(err, syscall.EPIPE) || errors.Is(err, syscall.ECONNABORTED) {
 		return true
 	}
 

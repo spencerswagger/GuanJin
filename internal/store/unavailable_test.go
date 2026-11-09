@@ -82,8 +82,7 @@ func TestIsUnavailableSQLStates(t *testing.T) {
 		{"23503 foreign_key_violation", "23503", false},
 		{"42P01 undefined_table（schema 漂移 = 缺陷）", "42P01", false},
 		{"40001 serialization_failure（可重试，但不是不可用）", "40001", false},
-		// 慢查询被服务端取消：`statement_timeout` 就长这样。它**不进** `net.OpError` 分支，
-		// 所以"慢查询被说成库挂了"在正常路径上不成立（口径见下方 Pins 用例）。
+		// 慢查询被服务端取消：`statement_timeout` 就长这样，**不是**依赖不可用。
 		{"57014 query_canceled（statement_timeout）", "57014", false},
 	}
 	for _, tc := range cases {
@@ -128,10 +127,9 @@ func TestIsUnavailableConnectionLayer(t *testing.T) {
 		{"ECONNRESET", syscall.ECONNRESET, true},
 		{"EPIPE", syscall.EPIPE, true},
 		{"ECONNABORTED", syscall.ECONNABORTED, true},
-		// 套接字层的超时**算连接层**（本轮裁定：不收窄）——dial 超时意味着"库连不上"，
-		// 必须仍给 503，否则客户端不退回重试。慢查询走的是 57014 / errTimeout，不在这里。
-		{"net.OpError(dial/ETIMEDOUT) = 库连不上", &net.OpError{Op: "dial", Net: "tcp", Err: syscall.ETIMEDOUT}, true},
-		{"net.OpError(read/os.ErrDeadlineExceeded) = socket 读超时", &net.OpError{Op: "read", Net: "tcp", Err: os.ErrDeadlineExceeded}, true},
+		// 拨号超时 = 库连不上（防火墙 DROP / 主机不存在 / 路由丢包）→ **仍算**依赖不可用。
+		{"net.OpError(dial/ETIMEDOUT) = 库连不上", &net.OpError{Op: "dial", Net: "tcp", Err: os.ErrDeadlineExceeded}, true},
+		{"裸 syscall.ETIMEDOUT（无 net.OpError 包装）", syscall.ETIMEDOUT, false},
 		// 调用方主动取消不是"数据库不可用"（否则告警会被客户端断开刷屏）。
 		{"context.Canceled", context.Canceled, false},
 		{"context.DeadlineExceeded（取舍见 unavailable.go 文件头）", context.DeadlineExceeded, false},
@@ -147,36 +145,50 @@ func TestIsUnavailableConnectionLayer(t *testing.T) {
 	}
 }
 
-// TestIsUnavailablePinsTimeoutSemantics 把"超时"在本包的口径**钉住**（2026-11-10 裁定：不收窄）。
+// TestIsUnavailableDialVsReadTimeout 把"超时"的口径**成对**钉死（2026-11-10 评审实测收口）。
 //
-// 为什么要有这条：评审曾按"慢查询被说成库挂了"提出收窄（`opErr.Timeout()` 一律不算连接层），
-// 后来又用真实慢查询推翻——服务端 `statement_timeout` 走 `PgError 57014`、客户端 ctx deadline
-// 走 `pgconn.errTimeout`，**两条都不进 `net.OpError` 分支**；而能进那一支的只剩拨号超时 /
-// 连接被重置 / keepalive 判死，这些按语义就是"依赖不可用"，该给 503。
-//
-// 所以：谁想再收窄，先在这里回答"那拨号一直超时（库真连不上）该怎么办"——
-// 收窄的代价是把它降级成 500，客户端就不退避重试了。
-func TestIsUnavailablePinsTimeoutSemantics(t *testing.T) {
-	// ① 慢查询 / 查询超时：**不是**依赖不可用（否则 503 会淹没真实原因）。
+// 一句话：**"连不上"始终算，超时不等于依赖不可用。**
+//   - 拨号超时（`Op=="dial"`）：防火墙 DROP / 主机不存在 / 路由丢包时拨号会一直挂到超时，
+//     那就是"库连不上" → **必须 503**；降级成 500 会让客户端不退避、把真故障伪装成应用 bug。
+//   - 读写超时（`Timeout() && Op != "dial"`）：评审用自定义 `DialFunc` 在握手后开 300ms
+//     socket 读超时跑 `select pg_sleep(2)` 真造出来过（`errTimeout` 包
+//     `net.OpError{op:read, timeout:true}`）→ 那是慢查询，**不许**说成库挂了。
+func TestIsUnavailableDialVsReadTimeout(t *testing.T) {
+	// ① 反向：读写超时不算依赖不可用（否则慢查询被说成库挂）。
+	readTimeout := &net.OpError{Op: "read", Net: "tcp", Err: os.ErrDeadlineExceeded}
+	if IsUnavailable(readTimeout) {
+		t.Fatal("socket 读超时（慢查询）不得算依赖不可用：会给客户端错误的重试信号")
+	}
+	writeTimeout := &net.OpError{Op: "write", Net: "tcp", Err: os.ErrDeadlineExceeded}
+	if IsUnavailable(writeTimeout) {
+		t.Fatal("socket 写超时同样不得算依赖不可用")
+	}
+	// 慢查询的两条真实路径：57014 与裸 deadline，都不映射。
 	if IsUnavailable(&pgconn.PgError{Code: "57014"}) {
-		t.Fatal("57014（statement_timeout）不得算依赖不可用：那是慢查询，不是库挂了")
+		t.Fatal("57014（statement_timeout）不得算依赖不可用")
 	}
 	if IsUnavailable(context.DeadlineExceeded) {
 		t.Fatal("裸 context.DeadlineExceeded 不得算依赖不可用")
 	}
-	// 真 pgx 的 `*pgconn.errTimeout` 由 integration 用例（`unavailable_db_test.go`）用真库跑，
-	// 它同样不进 `net.OpError` 分支。
-	// ② 正控：套接字层超时 = 连接层（拨号超时/连接被判死），必须仍算依赖不可用。
+
+	// ② 正控：**拨号超时仍算**（库连不上）——这条谁都不许砍。
 	dialTimeout := &net.OpError{Op: "dial", Net: "tcp", Err: os.ErrDeadlineExceeded}
 	if !IsUnavailable(dialTimeout) {
-		t.Fatal("拨号超时是「库真连不上」，必须算依赖不可用（否则客户端不退回重试）")
+		t.Fatal("拨号超时是「库连不上」，必须算依赖不可用（否则客户端不退回重试）")
 	}
-	// ③ 正控：真停库（拨号被拒）与连接被重置同样必须 true。
+	// ③ 正控：真停库（拨号被拒）与连接被重置/中止。
 	if !IsUnavailable(&net.OpError{Op: "dial", Net: "tcp", Err: syscall.ECONNREFUSED}) {
 		t.Fatal("ECONNREFUSED 必须算依赖不可用")
 	}
 	if !IsUnavailable(&net.OpError{Op: "read", Net: "tcp", Err: syscall.ECONNRESET}) {
 		t.Fatal("ECONNRESET 必须算依赖不可用")
+	}
+	if !IsUnavailable(syscall.EPIPE) || !IsUnavailable(syscall.ECONNABORTED) {
+		t.Fatal("EPIPE/ECONNABORTED 必须算依赖不可用")
+	}
+	// ④ 正控：`*pgconn.ConnectError`（真拨号失败）——本包最核心的一条。
+	if !IsUnavailable(&pgconn.ConnectError{}) {
+		t.Fatal("*pgconn.ConnectError 必须算依赖不可用")
 	}
 }
 
