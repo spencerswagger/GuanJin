@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 	"testing"
-	"time"
 
 	"gorm.io/gorm"
 
@@ -46,25 +45,15 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-// preparePartitions 幂等建好固定窗口的月分区。
+// preparePartitions 走 `EnsurePartitions`：**同一事务内先取链锁再建表**。
+//
+// 这一层是 Gate 复现 40P01 的根因修复：DDL 与 `Chain.Append` 抢同一张父表，
+// 不共用一把 advisory 锁就会在多包并行（`-p 8`）下死锁。
 func preparePartitions(db *gorm.DB) error {
-	for _, month := range partitionMonths() {
-		name := fmt.Sprintf("audit_logs_p%s", month.Format("200601"))
-		from := month.Format("2006-01-02")
-		to := month.AddDate(0, 1, 0).Format("2006-01-02")
-		if err := db.Exec(fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s PARTITION OF audit_logs
-			FOR VALUES FROM ('%s') TO ('%s')`, name, from, to)).Error; err != nil {
-			return fmt.Errorf("create %s: %w", name, err)
-		}
-	}
-	return nil
+	return EnsurePartitions(context.Background(), db, partitionMonths())
 }
 
-// dropPartitions 清掉本包建的分区（单线程，跑完用例之后）。
+// dropPartitions 清掉本包建的分区（单线程、跑完用例之后；同样先取链锁）。
 func dropPartitions(db *gorm.DB) {
-	for _, month := range partitionMonths() {
-		name := fmt.Sprintf("audit_logs_p%s", month.Format("200601"))
-		_ = db.Exec(fmt.Sprintf(`DROP TABLE IF EXISTS %s`, name)).Error
-	}
-	_ = time.Now() // 保留 time 导入（preparePartitions 的类型依赖）
+	_ = DropPartitions(context.Background(), db, partitionMonths())
 }

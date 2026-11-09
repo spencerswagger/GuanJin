@@ -239,3 +239,77 @@ func dryRunDBForAudit(t *testing.T) (*gorm.DB, []string) {
 	}
 	return db.Session(&gorm.Session{DryRun: true}), stmts
 }
+
+// 分区维护的入参分支（生产月度任务用同一对函数）。
+func TestPartitionHelpersValidation(t *testing.T) {
+	ctx := context.Background()
+	if err := EnsurePartitions(ctx, nil, []time.Time{time.Now()}); err == nil {
+		t.Fatal("nil db 必须报错")
+	}
+	if err := DropPartitions(ctx, nil, []time.Time{time.Now()}); err == nil {
+		t.Fatal("nil db 必须报错")
+	}
+	if err := EnsurePartitions(ctx, unreachableDB(t), nil); err != nil {
+		t.Fatalf("空月份应直接返回 nil，实际 %v", err)
+	}
+}
+
+// `isNoRows`：空结果判定的两个来源（gorm 哨兵 + database/sql 原文），以及"非空结果不算空"。
+func TestIsNoRows(t *testing.T) {
+	if !isNoRows(gorm.ErrRecordNotFound) {
+		t.Fatal("gorm.ErrRecordNotFound 应判为 no rows")
+	}
+	if !isNoRows(errors.New("sql: no rows in result set")) {
+		t.Fatal("database/sql 的原文应判为 no rows")
+	}
+	if isNoRows(nil) || isNoRows(errors.New("connection refused")) {
+		t.Fatal("其它错误/ nil 不算 no rows")
+	}
+}
+
+// `Append` 的库错误分支：句柄连不上 → 报错（不许静默"写成功"）。
+func TestAppendSurfacesDBError(t *testing.T) {
+	c := testChain(t)
+	if _, err := c.Append(context.Background(), unreachableDB(t), Record{
+		Action: "a", Result: "success", OccurredAt: time.Now(),
+	}); err == nil {
+		t.Fatal("库不可达时 Append 必须报错")
+	}
+}
+
+// `Put` 的库错误分支：句柄连不上 → 报错。
+func TestAnchorPutSurfacesDBError(t *testing.T) {
+	s := NewAnchorStore(unreachableDB(t))
+	if err := s.Put(context.Background(), time.Now(), []byte("x")); err == nil {
+		t.Fatal("库不可达时 Put 必须报错")
+	}
+}
+
+// `RunRange` 在扫表失败时报错（不许把"扫不出来"当成"整链通过"）。
+func TestRunRangeSurfacesLoadError(t *testing.T) {
+	c := testChain(t)
+	v, err := NewVerifier(c, unreachableDB(t), NewAnchorStore(unreachableDB(t)), nil)
+	if err != nil {
+		t.Fatalf("NewVerifier: %v", err)
+	}
+	if _, err := v.RunRange(context.Background(), time.Now(), time.Now().Add(time.Hour)); err == nil {
+		t.Fatal("读锚点/扫表失败必须报错")
+	}
+}
+
+// 错误分支收口：不可序列化内容 → `Tag` 报错；分区维护在库不可达时报错。
+func TestErrorBranchesReach(t *testing.T) {
+	c := testChain(t)
+	if _, err := c.Tag(nil, Record{
+		Action: "a", Result: "success", OccurredAt: time.Now(),
+		Before: map[string]any{"bad": func() {}},
+	}); err == nil {
+		t.Fatal("不可序列化内容必须让 Tag 报错（否则会静默丢字段、链覆盖不全）")
+	}
+	if err := EnsurePartitions(context.Background(), unreachableDB(t), []time.Time{time.Now()}); err == nil {
+		t.Fatal("库不可达时 EnsurePartitions 必须报错")
+	}
+	if err := DropPartitions(context.Background(), unreachableDB(t), []time.Time{time.Now()}); err == nil {
+		t.Fatal("库不可达时 DropPartitions 必须报错")
+	}
+}

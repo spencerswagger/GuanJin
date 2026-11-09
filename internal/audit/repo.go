@@ -272,3 +272,54 @@ func decodeJSON(raw []byte) map[string]any {
 func isNoRows(err error) bool {
 	return err != nil && (errors.Is(err, gorm.ErrRecordNotFound) || err.Error() == "sql: no rows in result set")
 }
+
+// EnsurePartitions 幂等建好给定月份的分区（生产月度任务与集成测试共用）。
+//
+// **必须在同一事务内先取链锁**（`pg_advisory_xact_lock(chainLockKey)`）：
+// `CREATE TABLE ... PARTITION OF` 要对父表取 ACCESS EXCLUSIVE，而任何写入
+// （`Chain.Append`）都持有 ROW EXCLUSIVE 并先取同一把 advisory 锁——
+// 不取锁就建分区，会在多包并行（`-p 8`）下与写入撞出 **40P01 死锁**
+// （实测：`create audit_logs_p203606: ERROR: deadlock detected`）。
+// 取了同一把锁，DDL 与写入就严格串行，且建表是幂等的（`IF NOT EXISTS`）。
+func EnsurePartitions(ctx context.Context, db *gorm.DB, months []time.Time) error {
+	if db == nil {
+		return errors.New("audit: nil db")
+	}
+	if len(months) == 0 {
+		return nil
+	}
+	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Exec(`SELECT pg_advisory_xact_lock(?)`, chainLockKey).Error; err != nil {
+			return fmt.Errorf("audit: partition lock: %w", err)
+		}
+		for _, month := range months {
+			name := fmt.Sprintf("audit_logs_p%s", month.UTC().Format("200601"))
+			from := month.UTC().Format("2006-01-02")
+			to := month.UTC().AddDate(0, 1, 0).Format("2006-01-02")
+			if err := tx.Exec(fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s PARTITION OF audit_logs
+				FOR VALUES FROM ('%s') TO ('%s')`, name, from, to)).Error; err != nil {
+				return fmt.Errorf("audit: create partition %s: %w", name, err)
+			}
+		}
+		return nil
+	})
+}
+
+// DropPartitions 幂等删除给定月份的分区（同样先取链锁，理由同上）。
+func DropPartitions(ctx context.Context, db *gorm.DB, months []time.Time) error {
+	if db == nil {
+		return errors.New("audit: nil db")
+	}
+	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Exec(`SELECT pg_advisory_xact_lock(?)`, chainLockKey).Error; err != nil {
+			return fmt.Errorf("audit: partition lock: %w", err)
+		}
+		for _, month := range months {
+			name := fmt.Sprintf("audit_logs_p%s", month.UTC().Format("200601"))
+			if err := tx.Exec(fmt.Sprintf(`DROP TABLE IF EXISTS %s`, name)).Error; err != nil {
+				return fmt.Errorf("audit: drop partition %s: %w", name, err)
+			}
+		}
+		return nil
+	})
+}

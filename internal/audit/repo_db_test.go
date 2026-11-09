@@ -681,3 +681,148 @@ func TestLoadEmptyRangeAndAnchorOverwrite(t *testing.T) {
 		t.Fatalf("锚点应被覆盖成后写的值，实际 %x", got)
 	}
 }
+
+// `EnsurePartitions` / `DropPartitions` 的**真库**路径（生产月度任务用的就是这对函数）：
+// 建 → 存在 → 删 → 不存在；重复调用幂等；且与链锁共用同一把 advisory 锁（不与写入死锁）。
+func TestEnsureAndDropPartitionsRoundTrip(t *testing.T) {
+	db := openAuditTestDB(t)
+	month := time.Date(2071, 3, 1, 0, 0, 0, 0, time.UTC) // 故意用池外的月份，独立验证
+	ctx := context.Background()
+
+	// 先确保干净（可能上次跑挂了）。
+	_ = DropPartitions(ctx, db, []time.Time{month})
+	t.Cleanup(func() { _ = DropPartitions(ctx, db, []time.Time{month}) })
+
+	if err := EnsurePartitions(ctx, db, []time.Time{month}); err != nil {
+		t.Fatalf("EnsurePartitions: %v", err)
+	}
+	// 幂等：再建一次不报错。
+	if err := EnsurePartitions(ctx, db, []time.Time{month}); err != nil {
+		t.Fatalf("EnsurePartitions(again): %v", err)
+	}
+	var exists bool
+	if err := db.Raw(`SELECT to_regclass(?) IS NOT NULL`,
+		fmt.Sprintf("public.audit_logs_p%s", month.Format("200601"))).Scan(&exists).Error; err != nil {
+		t.Fatalf("check: %v", err)
+	}
+	if !exists {
+		t.Fatal("分区应已创建")
+	}
+	if err := DropPartitions(ctx, db, []time.Time{month}); err != nil {
+		t.Fatalf("DropPartitions: %v", err)
+	}
+	if err := db.Raw(`SELECT to_regclass(?) IS NOT NULL`,
+		fmt.Sprintf("public.audit_logs_p%s", month.Format("200601"))).Scan(&exists).Error; err != nil {
+		t.Fatalf("check after drop: %v", err)
+	}
+	if exists {
+		t.Fatal("分区应已删除")
+	}
+}
+
+// 链序真用例（Gate 要求：92% 必须来自真路径）：**同月内 `occurred_at` 微秒级回退**必须被接受，
+// 且链仍按 `created_at` 串起来（这正是"抬 created_at 而不是 occurred_at"要证明的行为）。
+func TestSameMonthMicrosecondRollbackIsAccepted(t *testing.T) {
+	db := openAuditTestDB(t)
+	chain := auditTestChain(t)
+	month := cleanMonth(t)
+	requirePartition(t, db, month)
+	cleanupMonth(t, db, month)
+
+	first := month.Add(10 * time.Second)
+	second := first.Add(-time.Microsecond) // 微秒级回退，仍在本月内
+	if _, err := chain.Append(context.Background(), db, Record{
+		Action: "a", Result: "success", OccurredAt: first,
+	}); err != nil {
+		t.Fatalf("Append(first): %v", err)
+	}
+	if _, err := chain.Append(context.Background(), db, Record{
+		Action: "b", Result: "success", OccurredAt: second,
+	}); err != nil {
+		t.Fatalf("同月内微秒级回退应被接受，实际 %v", err)
+	}
+
+	records, err := chain.Load(context.Background(), db, month, month.AddDate(0, 1, 0))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(records) != 2 {
+		t.Fatalf("期望 2 条，实际 %d", len(records))
+	}
+	// 两条 `occurred_at` 都原样保留（第二条更早，没被改写）。
+	if !records[0].OccurredAt.Equal(first) || !records[1].OccurredAt.Equal(second) {
+		t.Fatalf("occurred_at 被改写：%s / %s（期望 %s / %s）",
+			records[0].OccurredAt, records[1].OccurredAt, first, second)
+	}
+	// 链按 `created_at` 序仍然完整。
+	if broken, err := chain.Verify(records, records[0].PrevTag); err != nil || broken != nil {
+		t.Fatalf("链应完整，实际 broken=%+v err=%v", broken, err)
+	}
+}
+
+// 两条**真路径**补口（Gate 要求 92% 来自真路径，不是灌水）：
+//  1. `RunRange` 扫一个"分区存在但无行"的区间：0 条、通过、且不写锚（`AnchorCurrentMonth` 的早退分支）；
+//  2. `Append` 在**同一事务内连续两条**（`prev` 从库里读到刚写的那条，链自接）。
+func TestChainRealPathsForCoverage(t *testing.T) {
+	db := openAuditTestDB(t)
+	chain := auditTestChain(t)
+	month := cleanMonth(t)
+	requirePartition(t, db, month)
+	cleanupMonth(t, db, month)
+
+	anchors := NewAnchorStore(db)
+	verifier, err := NewVerifier(chain, db, anchors, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatalf("NewVerifier: %v", err)
+	}
+	verifier.now = func() time.Time { return month }
+
+	// ① 空区间复核 + 空月份不写锚。
+	res, err := verifier.RunOnce(context.Background())
+	if err != nil {
+		t.Fatalf("RunOnce(empty): %v", err)
+	}
+	if res.Checked != 0 {
+		t.Fatalf("空区间应 0 条，实际 %d", res.Checked)
+	}
+	if err := verifier.AnchorCurrentMonth(context.Background()); err != nil {
+		t.Fatalf("AnchorCurrentMonth(empty): %v", err)
+	}
+	if tag, err := anchors.Get(context.Background(), month); err != nil || len(tag) != 0 {
+		t.Fatalf("空月份不该写锚，实际 %v / %v", tag, err)
+	}
+
+	// ② 同一事务内连续两条：第二条的 `prev_tag` 必须是第一条的 `integrity_tag`。
+	tx := db.Begin()
+	if tx.Error != nil {
+		t.Fatalf("begin: %v", tx.Error)
+	}
+	if _, err := chain.Append(context.Background(), tx, Record{
+		Action: "tx-1", Result: "success", OccurredAt: month.Add(time.Second),
+	}); err != nil {
+		_ = tx.Rollback()
+		t.Fatalf("Append(tx-1): %v", err)
+	}
+	if _, err := chain.Append(context.Background(), tx, Record{
+		Action: "tx-2", Result: "success", OccurredAt: month.Add(2 * time.Second),
+	}); err != nil {
+		_ = tx.Rollback()
+		t.Fatalf("Append(tx-2): %v", err)
+	}
+	if err := tx.Commit().Error; err != nil {
+		t.Fatalf("commit: %v", err)
+	}
+	records, err := chain.Load(context.Background(), db, month, month.AddDate(0, 1, 0))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(records) != 2 {
+		t.Fatalf("期望 2 条，实际 %d", len(records))
+	}
+	if string(records[1].PrevTag) != string(records[0].IntegrityTag) {
+		t.Fatal("第二条的 prev_tag 应等于第一条的 integrity_tag（同事务内链自接）")
+	}
+	if broken, err := chain.Verify(records, records[0].PrevTag); err != nil || broken != nil {
+		t.Fatalf("链应完整，实际 broken=%+v err=%v", broken, err)
+	}
+}
