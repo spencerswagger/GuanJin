@@ -5,9 +5,14 @@ name: ci
 #   - 迁移不在此跑 —— 项目未上线，schema 由本地/发布 Job 手动 `migrate up`（decisions.md P1）；
 #   - **判定类 job 一律只读**：gofmt 只用 `-l` 列出、绝不 `-w`（否则一键把红改绿，闸失效）；
 #   - **-race 不进主闸**：`-race` 需要 cgo，与项目 `CGO_ENABLED=0` 口径冲突，单列 `race` job。
-#   - **integration 真跑真库**（Gate 口径「SKIP = 未验证 = 红」）：`integration` job 用 `postgres:16`
-#     service → `golang-migrate up`（手动式，decisions.md P1 明确**不做**应用内自动迁移）→ schema 断言
-#     → `go test -tags=integration`；**不许 `t.Skip`、不许条件跳过**。
+#   - **integration 真跑真依赖**（Gate 口径「SKIP = 未验证 = 红」）：`integration` job 用 `postgres:16`
+#     + `redis:7` 两个 service → `golang-migrate up`（手动式，decisions.md P1 明确**不做**应用内自动迁移）
+#     → schema 断言 → `go test -tags=integration`；**不许 `t.Skip`、不许条件跳过**。
+#   - Redis 不能只是「service 起来了」：账号级失败计数（D3-D）/ 实时撤销 / jti 防重放都落在真 Redis 上。
+#     故 integration job 在测试后必须看到 **AC-LOGIN-03（直接读 D3-D 冻结键）的 PASS 行**，
+#     并比对 `INFO stats.total_commands_processed` 的增量；任一不满足即判红（真 Redis 未被使用 = 未验证 = 红）。
+#   - migrate CLI 版本**单一来源** = Makefile 的 `MIGRATE_VERSION`（v4.19.1）：job 里跑 `make migrate-tool`
+#     装到 `./bin`，迁移命令走 `make migrate-up`，顺带把「PATH 找不到 migrate → 回退 ./bin/migrate」这条回退路径在 CI 里验到。
 #   - **合并门禁包含 integration**：`go` / `race` / `web` / `integration` 四个 job 全绿才许合入 main。
 
 on:
@@ -97,22 +102,28 @@ jobs:
         with:
           go-version-file: go.mod
           cache: false
-      - name: 等库就绪（healthcheck 之外再确认一次）
+      - name: 等依赖就绪（PG + Redis；healthcheck 之外再确认一次）
         run: |
-          sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends postgresql-client
+          sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends postgresql-client redis-tools
           for i in $(seq 1 30); do
-            if pg_isready -h localhost -p 5432 -U guanjin -d guanjin_test; then echo "[OK] postgres ready"; exit 0; fi
+            if pg_isready -h localhost -p 5432 -U guanjin -d guanjin_test; then echo "[OK] postgres ready"; break; fi
             echo "waiting postgres ($i/30)"; sleep 2
           done
-          echo "[FAIL] postgres 未就绪"; exit 1
-      - name: 安装 golang-migrate（手动式迁移，不做应用内迁移）
+          pg_isready -h localhost -p 5432 -U guanjin -d guanjin_test || { echo "[FAIL] postgres 未就绪"; exit 1; }
+          for i in $(seq 1 30); do
+            if [ "$(redis-cli -h 127.0.0.1 -p 6379 ping 2>/dev/null)" = "PONG" ]; then echo "[OK] redis ready"; break; fi
+            echo "waiting redis ($i/30)"; sleep 2
+          done
+          [ "$(redis-cli -h 127.0.0.1 -p 6379 ping 2>/dev/null)" = "PONG" ] || { echo "[FAIL] redis 未就绪"; exit 1; }
+      - name: 安装 golang-migrate（版本单一来源 = Makefile 的 v4.19.1；装到 ./bin，不回 PATH）
         run: |
-          go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@v4.19.1
-          echo "$HOME/go/bin" >> "$GITHUB_PATH"
+          # 刻意**不**把 ./bin 加进 PATH：迁移命令走 `make migrate-*`，由 Makefile 回退到 ./bin/migrate。
+          # 版本证据看二进制 build info 的 mod 行（`migrate -version` 不带 ldflags 只会打印 dev）。
+          make migrate-tool
       - name: migrate up（P1：手动执行；失败即红）
         run: |
-          migrate -path ./migrations -database "$GUANJIN_TEST_DSN" up
-          migrate -path ./migrations -database "$GUANJIN_TEST_DSN" version
+          make migrate-up DATABASE_URL="$GUANJIN_TEST_DSN"
+          make migrate-version DATABASE_URL="$GUANJIN_TEST_DSN"
       - name: schema 断言（15 张表 / flows 13 列 / 5 具名索引 / I-F1 CHECK / ttl seed）
         env:
           PGPASSWORD: guanjin
@@ -148,6 +159,15 @@ jobs:
           echo "challenge_max_attempts_seed=$cmax"; [ "$cmax" = "5" ] || { echo "[FAIL] challenge.max_attempts seed 期望 5，实际 $cmax"; exit 1; }
           cdef=$(q "SELECT coalesce(column_default,'<NULL>') FROM information_schema.columns WHERE table_schema='public' AND table_name='challenges' AND column_name='max_attempts';")
           echo "challenges_max_attempts_default=$cdef"; [ "$cdef" = "<NULL>" ] || { echo "[FAIL] challenges.max_attempts 不得有 DB 默认值（D14①），实际 $cdef"; exit 1; }
+      - name: Redis 真连接基线（记录命令计数，供测试后比对增量）
+        run: |
+          set -euo pipefail
+          pong=$(redis-cli -h 127.0.0.1 -p 6379 ping)
+          echo "redis_ping=$pong"; [ "$pong" = "PONG" ] || { echo "[FAIL] Redis 不可达"; exit 1; }
+          n=$(redis-cli -h 127.0.0.1 -p 6379 info stats | tr -d '\r' | sed -n 's/^total_commands_processed://p')
+          [ -n "$n" ] || { echo "[FAIL] 读不到 INFO stats.total_commands_processed"; exit 1; }
+          echo "$n" > "$RUNNER_TEMP/redis-cmd-baseline"
+          echo "redis_commands_before=$n"
       - name: 集成测试（-tags=integration；无集成用例 = 红、有 SKIP = 红、有例即真跑）
         run: |
           set -euo pipefail
@@ -165,6 +185,23 @@ jobs:
           # ③ 真跑并留证据；SKIP/失败/缓存/空跑一律由 test-summary.sh 判红
           go test -tags=integration ./... -count=1 -v | tee integration-test.log
           ./scripts/test-summary.sh integration-test.log | tee integration-summary.txt
+      - name: Redis 真连接断言（integration 期间必须真读过 Redis，否则判红）
+        run: |
+          set -euo pipefail
+          # ① 语义证明（主判据）：AC-LOGIN-03 用例在跑完后用真 Redis 连接读 D3-D 的两个冻结键，
+          #    Redis 不可达时它会 t.Fatalf("读 Redis 状态…") → 这里必须看到它的 PASS 行。
+          if ! grep -Eq '^--- PASS: TestE2E_AC_LOGIN_03_Lockout' integration-test.log; then
+            echo "[FAIL] 集成日志里没有 AC-LOGIN-03 的 PASS 行 → 真 Redis 未被读到 = 未验证 = 红"; exit 1
+          fi
+          grep -E '^--- PASS: TestE2E_AC_LOGIN_03_Lockout' integration-test.log
+          # ② 环境证明（辅判据）：命令数增量。基线在测试前采集；本步骤自身会贡献 2 条命令
+          #    （INFO + DBSIZE），故阈值取 3——低于它就说明测试期间几乎没和 Redis 打过交道。
+          before=$(cat "$RUNNER_TEMP/redis-cmd-baseline")
+          after=$(redis-cli -h 127.0.0.1 -p 6379 info stats | tr -d '\r' | sed -n 's/^total_commands_processed://p')
+          delta=$((after - before))
+          dbsize=$(redis-cli -h 127.0.0.1 -p 6379 dbsize)
+          echo "redis_commands_before=$before after=$after delta=$delta dbsize_after=$dbsize"
+          [ "$delta" -ge 3 ] || { echo "[FAIL] integration 期间 Redis 命令数几乎无增长（delta=$delta）→ 真 Redis 未被使用 = 未验证 = 红"; exit 1; }
       - name: 集成覆盖率采集（integration profile；供 flowstore 85% 判定）
         run: |
           set -euo pipefail

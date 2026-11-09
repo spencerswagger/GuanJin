@@ -77,6 +77,8 @@ docs/                       # 设计基线（只读）+ 裁定台账 + M1 切片
 #    Makefile **故意不内置默认口令** —— 猜一个默认值只会让新人第一次就跑出
 #    「password authentication failed」。没注入时 make 会直接报错并给出可照抄的示例。
 # 2) 迁移（手动，**不随应用启动**；缺 DATABASE_URL 会当场失败，不会静默连错库）
+#    migrate CLI 不在 PATH？先 `make migrate-tool` 装到 ./bin/migrate（版本 v4.19.1，与 CI 同源），
+#    Makefile 会自动回退到它；两者都没有时报错并给安装指引（不再是一句 `migrate: not found`）。
 make migrate-up     DATABASE_URL="$GUANJIN_DEV_DSN"
 make migrate-down   DATABASE_URL="$GUANJIN_DEV_DSN"
 # 3) 三闸（**只读判定**：gofmt 只列不改，红就是红）

@@ -2,6 +2,7 @@
 #
 # 约定（口径见 docs/decisions.md，本文件只是命令入口）：
 #   - schema 唯一权威 = migrations/（golang-migrate 纯 SQL，**手动**执行）
+#   - golang-migrate CLI：PATH 上没有时回退到 ./bin/migrate（`make migrate-tool` 装，版本 v4.19.1 与 CI 同一版本）
 #   - 应用启动任何情况都不得自动迁移（P1）；无 AutoMigrate、无 GORM 软删除
 #   - 本地依赖只有 PostgreSQL 17（三库）+ Redis 7；纯软国密，不接密码机
 #   - 三闸必须绿：go vet / go test / vue-tsc
@@ -15,13 +16,18 @@ MIGRATIONS_DIR ?= migrations
 # 刻意不给默认 DSN：猜一个默认口令只会让新人第一次就撞「password authentication failed」。
 # 必须显式注入（本地三库 DSN 见环境变量 GUANJIN_DEV_DSN / GUANJIN_TEST_DSN / GUANJIN_STAGING_DSN）。
 DATABASE_URL   ?=
-MIGRATE        ?= migrate
+# golang-migrate CLI 的位置与版本：**版本单一来源**（Makefile 与 CI 用同一个 v4.19.1，不许漂）。
+# 解析顺序：PATH 上的 `migrate` → 仓库内 `./bin/migrate`（`make migrate-tool` 装，bin/ 已在 .gitignore）。
+# 两者都没有时由 `require-migrate` 给出可照抄的安装指引并以 2 退出，
+# 而不是让 `$(MIGRATE) -path …` 抛一句 `migrate: not found`（那是环境问题，却被当成迁移失败）。
+MIGRATE_VERSION ?= v4.19.1
+MIGRATE        ?= $(shell command -v migrate 2>/dev/null || { [ -x bin/migrate ] && echo bin/migrate; } || true)
 COVERAGE_MIN   ?= 60
 # 证据目录（不入库，见 .gitignore 的 artifacts/）
 TEST_LOG_DIR   ?= artifacts/local/gate
 
-.PHONY: help require-db-url migrate-up migrate-down migrate-version test test-race vet \
-        fmt-check fmt-write gates coverage lint web-install web-check ci
+.PHONY: help require-db-url require-migrate migrate-tool migrate-up migrate-down migrate-version \
+        test test-race vet fmt-check fmt-write gates coverage lint web-install web-check ci
 
 help: ## 显示可用目标
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | sort | \
@@ -39,13 +45,30 @@ require-db-url: ## 校验 DATABASE_URL 已显式注入（缺则给出可照抄�
 	  exit 2; \
 	fi
 
-migrate-up: require-db-url ## 执行全部迁移（手动、非应用启动触发）
+migrate-tool: ## 安装 golang-migrate CLI 到 ./bin（版本固定 = MIGRATE_VERSION，与 CI 同源）
+	@mkdir -p bin
+	@GOBIN=$(CURDIR)/bin go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@$(MIGRATE_VERSION)
+	@# `migrate -version` 不带 ldflags 时只吐一个 "dev"，证明不了版本；模块版本记在二进制的 build info 里。
+	@go version -m ./bin/migrate | grep -E '^[[:space:]]*mod[[:space:]]+github.com/golang-migrate/migrate/v4[[:space:]]' \
+	  || { echo "[FAIL] ./bin/migrate 不是 golang-migrate 模块产物"; exit 1; }
+	@echo "[OK] 已装 $(CURDIR)/bin/migrate（请求 $(MIGRATE_VERSION)，实际模块版本见上一条 mod 记录）"
+
+require-migrate: ## 校验 migrate CLI 可用（PATH 或 ./bin/migrate），缺则给安装指引后失败
+	@if [ -z "$(MIGRATE)" ]; then \
+	  echo "[FAIL] 找不到 golang-migrate CLI（PATH 与 ./bin 都没有）；迁移是手动式（decisions.md P1），必须有它。"; \
+	  echo "        一步装好（版本与 CI 一致）： make migrate-tool"; \
+	  echo "        或手动： GOBIN=\"\$$PWD/bin\" go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@$(MIGRATE_VERSION)"; \
+	  exit 2; \
+	fi
+	@echo "[OK] migrate=$(MIGRATE)（请求版本 $(MIGRATE_VERSION)）"
+
+migrate-up: require-db-url require-migrate ## 执行全部迁移（手动、非应用启动触发）
 	$(MIGRATE) -path $(MIGRATIONS_DIR) -database "$(DATABASE_URL)" up
 
-migrate-down: require-db-url ## 回滚一步（验证 down 可回滚）
+migrate-down: require-db-url require-migrate ## 回滚一步（验证 down 可回滚）
 	$(MIGRATE) -path $(MIGRATIONS_DIR) -database "$(DATABASE_URL)" down 1
 
-migrate-version: require-db-url ## 查看当前迁移版本
+migrate-version: require-db-url require-migrate ## 查看当前迁移版本
 	$(MIGRATE) -path $(MIGRATIONS_DIR) -database "$(DATABASE_URL)" version
 
 # ---------- Go 侧 ----------
