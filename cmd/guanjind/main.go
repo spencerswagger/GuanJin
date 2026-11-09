@@ -39,6 +39,8 @@ import (
 type app struct {
 	srv *http.Server
 	db  *gorm.DB
+	// stopAuditJob 停止进程内的审计链整链复核任务（S10；close 时调用）。
+	stopAuditJob func()
 }
 
 // startup 完成装配期的全部 fail-fast，成功后返回可用的进程句柄。
@@ -136,12 +138,25 @@ func startup(ctx context.Context, getenv func(string) string, logger *slog.Logge
 		"challenge_ttl_seconds", int64(startupCfg.ChallengeTTL.Seconds()),
 		"challenge_max_attempts", startupCfg.ChallengeMaxAttempts,
 	)
-	return &app{srv: srv, db: db}, nil
+	// S10：审计链整链复核 Job（**本进程内**，非新二进制；指标由 internal/audit 暴露）。
+	stopAuditJob, err := startAuditVerifyJob(ctx, db, cfg, logger)
+	if err != nil {
+		_ = store.Close(db)
+		return nil, err
+	}
+	app := &app{srv: srv, db: db, stopAuditJob: stopAuditJob}
+	return app, nil
 }
 
-// close 释放装配期建立的资源（目前只有数据库连接池）。
+// close 释放装配期建立的资源（数据库连接池 + 审计校验 Job）。
 func (a *app) close() error {
-	if a == nil || a.db == nil {
+	if a == nil {
+		return nil
+	}
+	if a.stopAuditJob != nil {
+		a.stopAuditJob()
+	}
+	if a.db == nil {
 		return nil
 	}
 	return store.Close(a.db)
