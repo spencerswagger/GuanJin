@@ -104,16 +104,32 @@ func (v *Verifier) RunOnce(ctx context.Context) (VerifyResult, error) {
 }
 
 // RunRange 复核 `[from, to)` 区间。
+//
+// ## 锚点语义（Owl II P0 修复后的**唯一口径**）
+//
+// **`anchor[M]` = 第 M 月最后一条已复核记录的 `integrity_tag`（"该月的封条"）。**
+//   - 写：`AnchorCurrentMonth` 在整链通过后写入（就是本月链尾的 tag）。
+//   - 读：复核第 M 月时，段首期望的 `prev_tag` 来自 **`anchor[M-1]`**（**不是** `anchor[M]`）；
+//     段尾必须等于 `anchor[M]`（若已存在）——尾部被整段删除时链内仍自洽，只有锚点对不上。
+//
+// 缺锚点（同一 P0 的另一面）：
+//   - `anchor[M-1]` 不存在 → 段首 `prev_tag` 是**未知**，不判（`VerifyFrom(..., checkFirst=false)`）；
+//   - 但若第 M 月是链的**首段**（该月之前没有任何记录），段首必须为 nil —— 仍然判。
 func (v *Verifier) RunRange(ctx context.Context, from, to time.Time) (VerifyResult, error) {
 	res := VerifyResult{From: from.UTC(), To: to.UTC()}
+	month := monthOf(from)
 
-	anchor, err := v.anchors.Get(ctx, monthOf(from))
+	// ① 段首期望值 = **上个月**的锚点（P0 根因：旧实现误用了本月锚点）。
+	prevAnchor, err := v.anchors.Get(ctx, month.AddDate(0, -1, 0))
 	if err != nil {
-		// 读不到锚点 = 无法确认分段起点，**不许**退化成 nil 继续校验（那会把"锚点丢了"
-		// 伪装成"首段正常"）。
+		return res, fmt.Errorf("audit: load prev-month anchor: %w", err)
+	}
+	// ② 本月锚点（若已封锚）用于段尾一致性校验。
+	selfAnchor, err := v.anchors.Get(ctx, month)
+	if err != nil {
 		return res, fmt.Errorf("audit: load anchor: %w", err)
 	}
-	res.AnchorUsed = anchor
+	res.AnchorUsed = selfAnchor
 
 	records, err := v.chain.Load(ctx, v.db, from, to)
 	if err != nil {
@@ -121,9 +137,27 @@ func (v *Verifier) RunRange(ctx context.Context, from, to time.Time) (VerifyResu
 	}
 	res.Checked = len(records)
 
-	broken, err := v.chain.Verify(records, anchor)
+	// ③ 段首是否可判：有上月锚点 → 可判；否则只有"该月是首段"才可判（应为 nil）。
+	checkFirst := len(prevAnchor) > 0
+	if !checkFirst && len(records) > 0 {
+		var before int64
+		if err := v.db.WithContext(ctx).Raw(
+			`SELECT count(*) FROM audit_logs WHERE occurred_at < ?`, from.UTC()).Scan(&before).Error; err != nil {
+			return res, fmt.Errorf("audit: count before: %w", err)
+		}
+		checkFirst = before == 0
+	}
+
+	broken, err := v.chain.VerifyFrom(records, prevAnchor, checkFirst)
 	if err != nil {
 		return res, err
+	}
+	// ④ 段尾必须等于本月封条（若已封锚）。
+	if broken == nil && len(selfAnchor) > 0 && len(records) > 0 {
+		last := records[len(records)-1]
+		if !bytesEqual(last.IntegrityTag, selfAnchor) {
+			broken = &BrokenPoint{Index: len(records) - 1, RecordID: last.ID, Reason: ReasonTagMismatch}
+		}
 	}
 	res.Broken = broken
 

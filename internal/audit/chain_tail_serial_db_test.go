@@ -98,7 +98,7 @@ func TestAC_AUD_05_TamperedRecordIsDetectedAndMetricIncrements(t *testing.T) {
 		t.Fatalf("NewVerifier: %v", err)
 	}
 	// 篡改前先把"本段锚点"写好（篡改的是内容，不是段首的 prev_tag）。
-	seedSegmentAnchor(t, chain, db, anchors, month)
+	seedAnchorForMonth(t, chain, db, anchors, month)
 	res, err := verifier.RunRange(context.Background(), month, month.AddDate(0, 1, 0))
 	if err != nil {
 		t.Fatalf("RunRange: %v", err)
@@ -132,7 +132,8 @@ func TestAC_AUD_11_AnchorAndVerifyMetrics(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if err := anchors.Put(context.Background(), month, records[0].PrevTag); err != nil {
+	// 锚点语义：`anchor[M]` = 该月链尾的 integrity_tag（P0 修复后的唯一口径）。
+	if err := anchors.Put(context.Background(), month, records[len(records)-1].IntegrityTag); err != nil {
 		t.Fatalf("seed segment anchor: %v", err)
 	}
 
@@ -210,7 +211,7 @@ func TestAC_AUD_11_JobRunsOnTickerAndSkipsEmptyMonth(t *testing.T) {
 	_, _ = appendN(t, chain, db, month, 2)
 	// **必须清零"最近成功复核时刻"**（包级指标，前面用例已设过），否则等待循环会读到旧值。
 	ResetMetricsForTest()
-	seedSegmentAnchor(t, chain, db, anchors, month)
+	seedAnchorForMonth(t, chain, db, anchors, month)
 
 	records, err := chain.Load(context.Background(), db, month, month.AddDate(0, 1, 0))
 	if err != nil {
@@ -551,7 +552,9 @@ func TestAnchorMismatchBreaksAtFirstRecord(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RunRange: %v", err)
 	}
-	if res.Broken == nil || res.Broken.Index != 0 {
-		t.Fatalf("错锚点应在首条即断，实际 %+v", res.Broken)
+	// 锚点语义（P0 修复后）：`anchor[M]` 是本月的**封条**（链尾 tag），所以错锚在**段尾**暴露，
+	// 而不是首条——首条只看 `anchor[M-1]`（上月封条），与本用例无关。
+	if res.Broken == nil || res.Broken.Index != 2 || res.Broken.Reason != ReasonTagMismatch {
+		t.Fatalf("错锚点应在段尾（index=2, integrity_tag_mismatch）暴露，实际 %+v", res.Broken)
 	}
 }

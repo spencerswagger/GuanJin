@@ -26,6 +26,7 @@ package audit
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -95,18 +96,6 @@ func TestAnchorContinuitySameMonth(t *testing.T) {
 	}
 }
 
-// TestOccurredAtUpperBoundGuard_TODO —— Owl II P2 ①：`occurred_at` 缺**上界守卫**。
-//
-// 现状：`Append` 只拒"早于链尾所在月"的写入（下界），不拒"晚于当月"的写入（上界）。
-// 后果：往**未来月**写入会让当月封锚的段出现"空洞"（跨月分段时该段不连续），
-// 且锚点对不上——与 P0 叠加时更难定位。
-//
-// TODO(实现方)：补上界守卫（`occurred_at` 不得晚于当前自然月 + 允许的时钟偏移），
-// 并在此用例里断言"未来月写入被拒 + 错误可识别（错误码/前缀稳定）"。
-func TestOccurredAtUpperBoundGuard_TODO(t *testing.T) {
-	t.Skip("TODO(Owl II P2 ①)：occurred_at 上界守卫尚未实现；实现后按注释补断言")
-}
-
 // TestCanonicalEncodingUnified_TODO —— Owl II P2 ②：`canonical` 数字编码三套口径不统一。
 //
 // 现状：哈希用的 canonical 序列化在多处各自实现（审计链 / 描述符 / 签名侧），
@@ -115,6 +104,36 @@ func TestOccurredAtUpperBoundGuard_TODO(t *testing.T) {
 //
 // TODO(实现方)：抽出唯一的 canonical 编码函数（或被 Spec 指定的单一实现），
 // 三处调用点全部改为调用它；本用例断言"同一逻辑值的多种数字类型编码结果相同"。
-func TestCanonicalEncodingUnified_TODO(t *testing.T) {
-	t.Skip("TODO(Owl II P2 ②)：canonical 数字编码待统一；实现后按注释补三处一致性断言")
+func TestCanonicalEncodingUnified(t *testing.T) {
+	// 同一逻辑数值的不同 Go 类型必须编出**同一个** canonical 字节串，
+	// 否则"同值不同写法"会算出不同 integrity_tag → 接首个生产写入方时链自断（P2 ②）。
+	c := testChain(t)
+	base := Record{Action: "canon", Result: "success", OccurredAt: time.Unix(0, 0).UTC()}
+	variants := []any{1, int64(1), float64(1), json.Number("1"), json.Number("1.0"), json.Number("1.00")}
+	var first []byte
+	for i, v := range variants {
+		rec := base
+		rec.Before = map[string]any{"n": v}
+		got, err := c.Tag(nil, rec)
+		if err != nil {
+			t.Fatalf("variant %d: %v", i, err)
+		}
+		if i == 0 {
+			first = got
+			continue
+		}
+		if !bytesEqual(first, got) {
+			t.Fatalf("数字 %#v 与 1 的 canonical 不一致（同值不同写法，链会自断）", v)
+		}
+	}
+	// 不同数值必须编出不同结果（不能把 1 和 2 归一成同一个）。
+	other := base
+	other.Before = map[string]any{"n": 2}
+	got2, err := c.Tag(nil, other)
+	if err != nil {
+		t.Fatalf("tag n=2: %v", err)
+	}
+	if bytesEqual(first, got2) {
+		t.Fatal("1 与 2 的 canonical 相同 —— 归一化过头，链失去区分力")
+	}
 }
