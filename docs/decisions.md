@@ -465,6 +465,8 @@
   3. **接口文档**：只有 `接口清单:211`（+ `页面规格:533` 同一处注释）的措辞需更正；`数据模型` 正文不动。
 
 - **平台级 ≠ 本条（顺手纠正一处转述）**：`AC-FLOW-05` 里的「平台级开关」**不在** `login_policies`——基线把它落在 **`runtime_config`**（`数据模型:1071`：`factors.<type>.enabled=true`），与 client 级禁用**互不覆盖、效果取并集**；`login_policies` 只承载 **client 级**（含 `tier_default` 回落）。此前群聊里「平台级开关 = `login_policies`」的转述应更正为「**平台级 = `runtime_config`，client 级 = `login_policies`**」。附事实：`/api/v1/factors/{type}` 端点当前 main **未实现**（`cmd/guanjind/main.go` 未挂 `/api/v1/factors`），`AC-FLOW-05` 的实现侧仍依赖该端点与 `factors.<type>.enabled` 键；**本条不改变它的账目状态**。
+- **有效禁用集 = 两个物理来源的并集（后来者只需记这一句）**：`effective_disabled = 平台级(runtime_config) ∪ client/tier 级(login_policies.disabled_factors)`；**两侧互不覆盖、互不改写**，任一侧新增禁用只会让有效集变大（方向恒为"只能增加禁用"，预设档位 §三 E 组）。`AC-FLOW-05` 的「两级不互相覆盖」正是这个并集语义——**它与本条争论的物理落点无关**（落点只决定 client 级那一半存在哪张表）。举例：client 级禁 `otp` + 平台级停 `sms` ⇒ 有效集 `{otp, sms}`，两者都不进 `available_factors`、都不计入 `current_acr`。
+- **平台级那一半的键形态（诚实标注，别自造）**：基线只给了**示例**——`factors.<type>.enabled=true`（`数据模型:1071`，逐因子一键、写在 `runtime_config`），**没有**冻结"禁用集数组"式的键名（如 `factors.disabled: [...]` 不存在于任何基线文本）。因此：实现平台级启停时按"**逐因子一个 `enabled` 键**"落地，键名形如 `factors.<type>.enabled`；若将来要改成集合键，属新增键形态 → 走本文裁定 + `runtime_config` 迁移，**不得在代码里先造一个再用**。
 
 - **已知行为（只登记，不改）**：现实现是**整行胜出**——`client_override` 存在即整份取它的 `disabled_factors`，**不与 `tier_default` 合并**。当前 `000017` 三档 seed 都是 `{}`，故今日无差异；一旦某档 `tier_default` 设了非空禁用集，`client_override` 会遮蔽它。要不要改成并集属**行为变更**，另开裁定（不在本条）。
 
@@ -629,7 +631,7 @@
 | `D14①②③④⑤` | §**D14** | 挑战 TTL/次数只从 `runtime_config` 读（`000018`）、`register_token` = HMAC-SM3 签名串、邀请码非空一律 400、`attempts_left` 两处口径、跨模块代落登记表 |
 | `D4-C(5)` | D4 裁定 C 的第 (5) 条 | 链序 = `created_at`；`occurred_at` 原样并**参与 `integrity_tag`**；二者不同不算缺陷；下界守卫防跨月破链（完整裁定 `notes/audit-chain-order-2026-11-10.md`） |
 | `D17` | §**D17** | 能力矩阵与 AC 账目的计数单位：`GJ-CAP-17/20/21` **无 AC 条目**、能力矩阵记 `DEFERRED(M5)`/`N/A(M2)`、与 `AC-AGENT-01~03` **不得双计**、22 能力与 90 判据**不得换算**；`90 = 83/0/0/6/0/1` 不受影响 |
-| `D19` | §**D19** | `disabled_factors` 的物理落点 = `login_policies`（client 级 `client_override`、回落 `tier_default`），`clients` 无此列；`接口清单:211`/`页面规格:533` 的"来自 clients"是笔误、只改措辞不进 CH；平台级开关在 `runtime_config` |
+| `D19` | §**D19** | `disabled_factors` 的物理落点 = `login_policies`（client 级 `client_override`、回落 `tier_default`），`clients` 无此列；`接口清单:211`/`页面规格:533` 的"来自 clients"是笔误、只改措辞不进 CH；**有效禁用集 = 平台级 `runtime_config`（`factors.<type>.enabled`，逐因子一键）∪ client 级，互不覆盖** |
 | `D21` | §**D21** | `AC-REG-04` 的耗时阈值 = `runtime_config.register.timing.max_diff_ms`（int，默认 **50**，迁移 `000019`）；口径 = `register/start` 两条路径耗时中位数之差的**绝对值**上界，时钟源 = 进程单调钟；**超阈值 = 红**；键是**判据参数、服务不读、不进 `StartupKeys()`**、零代码改动 |
 | `D20` | §**D20** | `audit_logs` 加 `audit_logs_created_id_idx (created_at, id)`（迁移 **`000020`**，父表建、自动套用新分区、零代码改动）；不加 DESC/`occurred_at` 前缀/`CONCURRENTLY`/partial；否决"链尾 tag 落 `runtime_config`"缓存方案；不进 CH、判据不动 |
 | `D16①②③④⑤` | §**D16** | 数据面 S8 收口：断言 claim 逐项来源（`aud`=路由命中 client、`roles`=活跃 `role_bindings`、`exp=iat+60`、`jti`=UUIDv7）、准入基准=`login_policies.min_acr`、路由规则冻结（R11①）、SLO 通知与 `details.flow` 字段集登记 R12/R13 |
