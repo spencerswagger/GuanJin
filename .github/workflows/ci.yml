@@ -173,8 +173,8 @@ jobs:
         # 断言四条：up 到最新版本；down -all 后零残留（表/列/索引/触发器/约束/函数/序列全清）；
         #   再 up 的结构快照与第一次逐字节相同；再 down -all 仍零残留。任一不满足即 [FAIL] + exit 1。
         env:
-          ROUNDTRIP_ADMIN_DSN: postgres://guanjin:guanjin@localhost:5432/postgres
-          ROUNDTRIP_DSN: postgres://guanjin:guanjin@localhost:5432/guanjin_miground
+          ROUNDTRIP_ADMIN_DSN: postgres://guanjin:guanjin@localhost:5432/postgres?sslmode=disable
+          ROUNDTRIP_DSN: postgres://guanjin:guanjin@localhost:5432/guanjin_miground?sslmode=disable
         run: bash scripts/verify-migrate-roundtrip.sh
       - name: Redis 真连接基线（记录命令计数，供测试后比对增量）
         run: |

@@ -15,8 +15,8 @@
 # DROP/CREATE 一个专用库（`ROUNDTRIP_DSN` 指向它），跑完再删。
 #
 # 用法（CI 里就是 integration job 的一步；本地有 PG 时同款命令）：
-#   ROUNDTRIP_ADMIN_DSN='postgres://u:p@host:5432/postgres' \
-#   ROUNDTRIP_DSN='postgres://u:p@host:5432/guanjin_miground' \
+#   ROUNDTRIP_ADMIN_DSN='postgres://u:p@host:5432/postgres?sslmode=disable' \
+#   ROUNDTRIP_DSN='postgres://u:p@host:5432/guanjin_miground?sslmode=disable' \
 #   ./scripts/verify-migrate-roundtrip.sh
 #
 # 纪律：
@@ -49,14 +49,17 @@ run_migrate() {
   out="$("$MIGRATE" -path "$MIGRATIONS_DIR" -database "$ROUNDTRIP_DSN" "$@" 2>&1)"
   rc=$?
   set -e
-  printf '%s\n' "$out"
   if [ "$rc" -ne 0 ]; then
     if [ "$mode" = "allow-nochange" ] && printf '%s' "$out" | grep -qi 'no change'; then
+      echo "[INFO] migrate $* → no change（幂等语义，视为成功）"
       return 0
     fi
-    echo "[FAIL] migrate $* 失败（rc=$rc）"
+    # 失败时必须把 migrate 的原始输出打出来（别 > /dev/null 把现场吞掉）
+    echo "[FAIL] migrate $* 失败（rc=$rc）；原始输出："
+    printf '%s\n' "$out" | sed 's/^/    /'
     return "$rc"
   fi
+  echo "[INFO] migrate $* → ok"
   return 0
 }
 
@@ -136,7 +139,7 @@ EXPECTED="$(expected_version)"
 echo "[INFO] expected_version=$EXPECTED"
 
 # ---------- 第 1 轮 up ----------
-run_migrate "" up >/dev/null
+run_migrate "" up
 v="$(version_of)"
 echo "roundtrip_up1_version=$v"
 [ "$v" = "$EXPECTED" ] || { echo "[FAIL] 第 1 轮 up 后期望版本 $EXPECTED，实际 $v"; exit 1; }
@@ -153,7 +156,7 @@ echo "roundtrip_logical_tables=$tables"
 [ "$tables" = "15" ] || { echo "[FAIL] up 后逻辑表期望 15，实际 $tables"; exit 1; }
 
 # ---------- 第 1 轮 down -all ----------
-run_migrate allow-nochange down -all > /dev/null
+run_migrate allow-nochange down -all
 v="$(version_of)"
 echo "roundtrip_down1_version=$v"
 [ "$v" = "nil" ] || { echo "[FAIL] down -all 后版本应为 nil，实际 $v"; exit 1; }
@@ -168,13 +171,13 @@ if [ "$r" -ne 0 ]; then
 fi
 
 # ---------- down 可重复（幂等） ----------
-run_migrate allow-nochange down -all > /dev/null
+run_migrate allow-nochange down -all
 v="$(version_of)"
 echo "roundtrip_down1_again_version=$v"
 [ "$v" = "nil" ] || { echo "[FAIL] 重复 down 后版本应为 nil，实际 $v"; exit 1; }
 
 # ---------- 第 2 轮 up（往返无损） ----------
-run_migrate "" up >/dev/null
+run_migrate "" up
 v="$(version_of)"
 echo "roundtrip_up2_version=$v"
 [ "$v" = "$EXPECTED" ] || { echo "[FAIL] 第 2 轮 up 后期望版本 $EXPECTED，实际 $v"; exit 1; }
@@ -190,7 +193,7 @@ fi
 echo "roundtrip_schema_diff_lines=0"
 
 # ---------- 第 2 轮 down（再验零残留） ----------
-run_migrate allow-nochange down -all > /dev/null
+run_migrate allow-nochange down -all
 v="$(version_of)"
 echo "roundtrip_down2_version=$v"
 [ "$v" = "nil" ] || { echo "[FAIL] 第 2 轮 down -all 后版本应为 nil，实际 $v"; exit 1; }
