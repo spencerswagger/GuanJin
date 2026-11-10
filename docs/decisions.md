@@ -448,6 +448,32 @@
 
 ---
 
+## D19 概念名 vs 物理列：`disabled_factors` 的权威落点 = `login_policies`（2026-11-11，实现与判据不变，只登记措辞）
+
+> **触发**：Spec 实读基线时发现**既有文本冲突**——`接口清单:211`（`GET /authorize/flow` 响应要点）写「`disabled_factors` 来自 `clients` 的"禁用因子"」，而数据模型的 DDL 把该列放在 `login_policies`（`数据模型:770`）。**本条只登记权威判定与影响面：不改基线正文、不改代码、不动判据、不动账目。**（编号说明：**D18** 由 draft PR #72「无 client 上下文时 `ACR_INSUFFICIENT` 不带 `details.flow`」占用、待 spencer 拍板，本条顺延为 **D19**，不重排、不占 D18。）
+
+- **一句话结论：不是设计变更，是接口文档的措辞滞后（笔误）；物理落点 = `login_policies.disabled_factors`，实现与判据均以它为准，不改判。** 依据全在基线内，且直指这一条：
+  1. **索引 §2-16（`设计基线索引:130`，本文裁定权威顺序的第 ① 层）**：「门槛项的存储位置 = 门槛项落 `login_policies`；`clients` 只存 `tier`」。
+  2. **数据模型 §3.9（`数据模型:734`/`:739`）**：`login_policies` 的职责原文是「把预设档位清单第三节 A~E 的门槛项落成数据」；`disabled_factors` 就在该表（`:770`），语义注（`:805`）同节。**`clients` DDL（`:684`）没有任何 `disabled_factors` 列** → 接口那句在数据契约里无落点。
+  3. **数据模型 §4 的 I9（`:1042`）**：「门槛一律查 `login_policies`」——同一条纪律的另一种写法。
+  - **实现已一致**：`migrations/000012_create_login_policies.up.sql:36`；读取 `internal/store/repo_admission.go`（`client_override` 优先 → 同档 `tier_default` 回落 → 两侧都无即配置缺陷）；Descriptor 字段注释 `internal/flow/descriptor.go:129`、`internal/flow/orchestrator.go:147`。
+  - **接口那句的正确读法**：`clients` 是**概念归属**（"按业务系统配置"），`login_policies` 是**物理落点**（`scope='client_override'` 行；缺行回落同档 `tier_default`）。管理面 `GET/POST /api/v1/clients` 的 `disabled_factors` 字段外形（`接口清单:449`/`:455`）**不算冲突**：那是 client 资源的投影，后端由 `login_policies` 供数，对外形状零变化。
+
+- **影响面（三处，结论都是"不变"）**
+  1. **前端**：Flow Descriptor 的 `disabled_factors[]` 由平台计算下发，`页面规格 §4.1` 的 TS 类型与 `web/src/types/flow.ts:47` **一个字不改**；管理后台"客户端页"（A5）编辑的 `disabled_factors` 落 `login_policies.client_override`，界面与接口字段均无变化。**`页面规格:533` 的注释（"来自 `clients` 的禁用因子"）与 `接口清单:211` 是同一处笔误**，同批对齐。
+  2. **测试断言**：`AC-FLOW-04`（`acceptance-criteria.md:135`：不进 `steps[]`、不计入 `current_acr`、直发 → `FACTOR_DISABLED`）、`AC-FLOW-07`（`:138`：全禁 + 目标 AAL2 → 200 + `terminal_state='unreachable'`）以及 Spec 已按本条完成的 `AC-FLOW-05`/`AC-FLOW-09` 判据，全部建立在 `login_policies` 上；夹具要直改库必须写 `login_policies`（`scope='client_override'`），写 `clients` 无列可写。**若改判到 `clients`**：需新迁移加列 + 改 store/flow 两处读取 + 上述断言整套失效 → **不采用**。
+  3. **接口文档**：只有 `接口清单:211`（+ `页面规格:533` 同一处注释）的措辞需更正；`数据模型` 正文不动。
+
+- **平台级 ≠ 本条（顺手纠正一处转述）**：`AC-FLOW-05` 里的「平台级开关」**不在** `login_policies`——基线把它落在 **`runtime_config`**（`数据模型:1071`：`factors.<type>.enabled=true`），与 client 级禁用**互不覆盖、效果取并集**；`login_policies` 只承载 **client 级**（含 `tier_default` 回落）。此前群聊里「平台级开关 = `login_policies`」的转述应更正为「**平台级 = `runtime_config`，client 级 = `login_policies`**」。附事实：`/api/v1/factors/{type}` 端点当前 main **未实现**（`cmd/guanjind/main.go` 未挂 `/api/v1/factors`），`AC-FLOW-05` 的实现侧仍依赖该端点与 `factors.<type>.enabled` 键；**本条不改变它的账目状态**。
+
+- **已知行为（只登记，不改）**：现实现是**整行胜出**——`client_override` 存在即整份取它的 `disabled_factors`，**不与 `tier_default` 合并**。当前 `000017` 三档 seed 都是 `{}`，故今日无差异；一旦某档 `tier_default` 设了非空禁用集，`client_override` 会遮蔽它。要不要改成并集属**行为变更**，另开裁定（不在本条）。
+
+- **基线处理：不改正文，也不进 CH**。按 **P8③** 的判据（"是否让业务方能用基线原本不允许的方式配置？"），本条对外可见面——Descriptor 字段名、管理 API 字段外形、错误码——**一个字不变**，属**措辞纠错**，不占 CH 编号；`/docs/baseline/` 一个字不改（本文效力条款），更正随**下版契约文档一次性落盘**（与 CH-1~CH-9 同批，时机 = M1 判据回填后）。
+
+- **归属**：Spec（判据沿用本条、不另立表述）；Vue（不改数据源与字段）；Gate（断言/夹具只写 `login_policies`，不写 `clients`）；Core/Edge（`LoadAdmissionPolicy` 路径与注释已一致，**无需改代码**）。
+
+---
+
 ## 契约变更清单（对外可见）—— 状态：**CH-1~CH-5 已追认（经 hugo 追认，2026-11-02）；CH-6 为内部口径；CH-7 已裁定；CH-8 待追认（2026-11-04）；CH-9 待追认（2026-11-10）**
 
 > 本表只收**对外可见**的变更（影响业务系统、SDK、前端或对外错误码的）。基线 `/docs/baseline/` 一个字不改，这些变更以本表为准并在**下版契约文档**（OpenAPI + `sdk-contract.md` + 页面规格口径）一次性落盘；落盘时机 = 全部 M1 判据回填后、M1 编码前。**本表状态：CH-1~CH-5 = 已追认（经 hugo 追认，2026-11-02，记录法见 P8）；CH-6 = 内部口径、无需追认；CH-7 = 已裁定；CH-8 = 待追认（2026-11-04）；CH-9 = 待追认（2026-11-10，SLO 通知）。** 后续新增变更一律按 **P8②** 追加行（编号只增不重排）；作废条目改「已撤回」并保留原行。
@@ -548,6 +574,7 @@
 | `D14①②③④⑤` | §**D14** | 挑战 TTL/次数只从 `runtime_config` 读（`000018`）、`register_token` = HMAC-SM3 签名串、邀请码非空一律 400、`attempts_left` 两处口径、跨模块代落登记表 |
 | `D4-C(5)` | D4 裁定 C 的第 (5) 条 | 链序 = `created_at`；`occurred_at` 原样并**参与 `integrity_tag`**；二者不同不算缺陷；下界守卫防跨月破链（完整裁定 `notes/audit-chain-order-2026-11-10.md`） |
 | `D17` | §**D17** | 能力矩阵与 AC 账目的计数单位：`GJ-CAP-17/20/21` **无 AC 条目**、能力矩阵记 `DEFERRED(M5)`/`N/A(M2)`、与 `AC-AGENT-01~03` **不得双计**、22 能力与 90 判据**不得换算**；`90 = 83/0/0/6/0/1` 不受影响 |
+| `D19` | §**D19** | `disabled_factors` 的物理落点 = `login_policies`（client 级 `client_override`、回落 `tier_default`），`clients` 无此列；`接口清单:211`/`页面规格:533` 的"来自 clients"是笔误、只改措辞不进 CH；平台级开关在 `runtime_config` |
 | `D16①②③④⑤` | §**D16** | 数据面 S8 收口：断言 claim 逐项来源（`aud`=路由命中 client、`roles`=活跃 `role_bindings`、`exp=iat+60`、`jti`=UUIDv7）、准入基准=`login_policies.min_acr`、路由规则冻结（R11①）、SLO 通知与 `details.flow` 字段集登记 R12/R13 |
 | `CH-8` | 契约变更清单 | `§3.3.1` 响应新增 `attempts_left`（纯加字段，**待追认**；追认前不作判据依据） |
 | `D6(1)(6)` + `F0-5` | D6 裁定 (1)/(6) + F0 第 5 条 | SDK 配置 **29 键**（缺号 #7/#16/#17 不补）+ 环境变量逐段机械转换 |
