@@ -142,7 +142,7 @@ func TestACFLOW09_01_L3VisitBlocksAAL1WithZeroInsert(t *testing.T) {
 
 	const trace = "trace-acflow09-01"
 	status, body := doBind(t, h, okResolver{userID: f.userID, sessionID: f.sessionID}, trace,
-		`{"type":"email","value":"acflow09-01@example.com"}`)
+		`{"type":"email","value":"acflow09-01-`+uuid.NewString()[:8]+`@example.com"}`)
 
 	// ① 只允许 403：200/302/401/500 都算缺陷（判据原文）。
 	if status != http.StatusForbidden {
@@ -195,7 +195,7 @@ func TestACFLOW09_02_AAL2WritesOneUnverifiedRow_ClaimIgnored(t *testing.T) {
 	before := countIdentifiers(t, db, f.userID)
 
 	status, body := doBind(t, h, okResolver{userID: f.userID, sessionID: f.sessionID},
-		"trace-acflow09-02a", `{"type":"email","value":"acflow09-02@example.com"}`)
+		"trace-acflow09-02a", `{"type":"email","value":"acflow09-02-`+uuid.NewString()[:8]+`@example.com"}`)
 	if status != http.StatusCreated {
 		t.Fatalf("AAL2 会话应放行（201），实际 %d（body=%s）", status, body)
 	}
@@ -217,7 +217,7 @@ func TestACFLOW09_02_AAL2WritesOneUnverifiedRow_ClaimIgnored(t *testing.T) {
 	status2, body2 := doBind(t,
 		h, claimsResolver{userID: other.userID, sessionID: other.sessionID,
 			claims: map[string]any{"acr": "AAL2", "amr": []string{"pwd", "totp"}}},
-		"trace-acflow09-02b", `{"type":"email","value":"acflow09-02b@example.com"}`)
+		"trace-acflow09-02b", `{"type":"email","value":"acflow09-02b-`+uuid.NewString()[:8]+`@example.com"}`)
 	if status2 != http.StatusForbidden {
 		t.Fatalf("令牌 claims 里写 acr=AAL2 也必须 403（不得采信客户端自报），实际 %d（body=%s）",
 			status2, body2)
@@ -236,7 +236,7 @@ func TestACFLOW09_03_FallbacksAndDBDown503(t *testing.T) {
 	userA, sessA := acflow09User(t, db, "AAL1", 0)
 	h := acflow09Handler(t, db, binder)
 	status, body := doBind(t, h, okResolver{userID: userA, sessionID: sessA},
-		"trace-acflow09-03a", `{"type":"email","value":"acflow09-03a@example.com"}`)
+		"trace-acflow09-03a", `{"type":"email","value":"acflow09-03a-`+uuid.NewString()[:8]+`@example.com"}`)
 	if status != http.StatusCreated {
 		t.Fatalf("无访问记录应回退 AAL1 并放行（201），实际 %d（body=%s）", status, body)
 	}
@@ -248,7 +248,7 @@ func TestACFLOW09_03_FallbacksAndDBDown503(t *testing.T) {
 		t.Fatalf("停用 client：%v", err)
 	}
 	status, body = doBind(t, h, okResolver{userID: userB, sessionID: sessB},
-		"trace-acflow09-03b", `{"type":"email","value":"acflow09-03b@example.com"}`)
+		"trace-acflow09-03b", `{"type":"email","value":"acflow09-03b-`+uuid.NewString()[:8]+`@example.com"}`)
 	if status != http.StatusCreated {
 		t.Fatalf("client 全停用应同样回退 AAL1（201），实际 %d（body=%s）", status, body)
 	}
@@ -265,7 +265,7 @@ func TestACFLOW09_03_FallbacksAndDBDown503(t *testing.T) {
 	// 会话读取仍走真库：否则 401 会先盖住 503（本判据要的是"门槛算不出来"这条路径）。
 	deadHandler.sessions = store.NewSessionOpsRepo(db)
 	status, body = doBind(t, deadHandler, okResolver{userID: userA, sessionID: sessA},
-		"trace-acflow09-03c", `{"type":"email","value":"acflow09-03c@example.com"}`)
+		"trace-acflow09-03c", `{"type":"email","value":"acflow09-03c-`+uuid.NewString()[:8]+`@example.com"}`)
 	if status != http.StatusServiceUnavailable {
 		t.Fatalf("DB 不可用应 503，实际 %d（body=%s）—— 降级放行或 500 都算缺陷", status, body)
 	}
