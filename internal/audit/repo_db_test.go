@@ -133,6 +133,9 @@ func cleanMonth(t *testing.T) time.Time {
 	return base.AddDate(0, int(n), 0)
 }
 
+// lastUsedMonth 记录本进程已分配过的最大月份（保证不重复）。
+var lastUsedMonth atomic.Value // time.Time
+
 // freshMonth 返回一个**保证可写**的月份：`max(链尾月份 + 1, 2040-01)`，并现场建好该月分区。
 //
 // 为什么不再用"预建池 + 顺序分配"：`-p 8` 下别的包/别的用例会把全局链尾推高，
@@ -154,6 +157,12 @@ func freshMonth(t *testing.T, db *gorm.DB) time.Time {
 			month = tm
 		}
 	}
+	// 还要**大于本进程已用过的最大月份**：`cleanupMonth` 删行会让链尾回退，
+	// 只用 `tail+1` 会把同一个月份发给两个用例（实测"期望 3 实际 7"、锚点对不上）。
+	if last, ok := lastUsedMonth.Load().(time.Time); ok && !last.IsZero() && !month.After(last) {
+		month = last.AddDate(0, 1, 0)
+	}
+	lastUsedMonth.Store(month)
 	// **运行期零 DDL**：不在这里建分区（`CREATE TABLE … PARTITION OF` 取 ACCESS EXCLUSIVE，
 	// 与并发 INSERT 的 ROW EXCLUSIVE 相撞会 40P01）。分区全部由 `TestMain` 预建；
 	// 越界就当场 Fatalf 并打出范围与链尾，不等到 INSERT 抛 23514。

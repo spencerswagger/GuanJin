@@ -315,7 +315,9 @@ func fcFlowWithUser(t *testing.T, db *gorm.DB, clientID string) string {
 		t.Fatalf("uuid: %v", err)
 	}
 	if err := db.Exec(`INSERT INTO users (id, username) VALUES (?, ?)`,
-		userID, "fc-"+userID.String()[:8]).Error; err != nil {
+		// 用**完整 uuid** 做用户名：uuid v7 的前 8 位是毫秒级时间戳前缀，
+		// 同一毫秒内两次调用会撞 `users_username_lower_uidx`（实测 23505）。
+		userID, "fc-"+userID.String()).Error; err != nil {
 		t.Fatalf("insert user: %v", err)
 	}
 	flowID, err := uuid.NewV7()

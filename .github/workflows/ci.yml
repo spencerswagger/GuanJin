@@ -190,6 +190,18 @@ jobs:
           # ③ 真跑并留证据；SKIP/失败/缓存/空跑一律由 test-summary.sh 判红
           go test -tags=integration ./... -count=1 -v | tee integration-test.log
           ./scripts/test-summary.sh integration-test.log | tee integration-summary.txt
+      - name: 审计并发串行套件（-tags 'integration audit_serial'，-p 1；探针敏感性必须在包内独占跑）
+        run: |
+          set -euo pipefail
+          # `AC-AUD-04`（100 并发写不断链）、串行零分叉、b1/b2（删锁反证）依赖**稳定的全局链尾**，
+          # 多包并行时语义不可解释（其它包会同时写同一张 audit_logs）。故单列、串行、`-p 1 -count=3`。
+          go test -tags 'integration audit_serial' ./internal/audit -p 1 -count=3 -v | tee audit-serial.log
+          ./scripts/test-summary.sh audit-serial.log | tee audit-serial-summary.txt
+          grep -Eq '^--- PASS: TestAC_AUD_04_Concurrent100AppendsKeepChainIntact' audit-serial.log \
+            || { echo "[FAIL] 串行套件里没有 AC-AUD-04 的 PASS 行 → 记账依据缺失 = 红"; exit 1; }
+          grep -Eq '^--- PASS: TestAppendB2BothLocksRemovedMustFork' audit-serial.log \
+            || { echo "[FAIL] b2（删两道锁必出分叉）没跑过 → 探针敏感性未验证 = 红"; exit 1; }
+
       - name: Redis 真连接断言（integration 期间必须真读过 Redis，否则判红）
         run: |
           set -euo pipefail
