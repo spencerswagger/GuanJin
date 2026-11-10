@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -59,6 +60,12 @@ var (
 	ErrFactorTypeRequired = errors.New("store: factor type is required")
 	// ErrFactorDisabledStore 表示 `factors.disabled` 的值不是合法的字符串数组（配置被写坏）。
 	ErrFactorDisabledStore = errors.New("store: factors.disabled is not a string array")
+	// ErrFactorDisabledMissing 表示 `factors.disabled` **这一行不存在**（D22 要求它由迁移 seed 出来）。
+	//
+	// **为什么是错误而不是空集**（2026-11-11 定稿口径）：把"缺行"当空集是**安全方向的静默降级** ——
+	// 平台禁用集读成空集，等于"该禁的因子全都可用"，而系统照常跑、只在日志里少一行。
+	// 缺行的真实含义只有两种：迁移没跑 / 有人删了行；两种都必须当场炸（启动 fail-fast、运行期 500）。
+	ErrFactorDisabledMissing = errors.New("store: runtime_config[" + KeyFactorsDisabled + "] row is missing")
 )
 
 // FactorAuditRecord 是一条"平台级因子启停"的审计事实（字段口径见 D4-C）。
@@ -138,17 +145,18 @@ func NewPlatformFactorRepo(reader *PlatformFactorReader, audit FactorAuditWriter
 
 // Disabled 读平台级被禁用的因子集合（排序后返回，便于断言与稳定输出）。
 //
-// 键不存在 → 空集（不是错误，见文件头）；值不是字符串数组 → `ErrFactorDisabledStore`
-// （配置被写坏属缺陷，不能静默当成空集——那会让"管理员关了却没生效"永远查不出来）。
+// **缺行 → `ErrFactorDisabledMissing`**，值不是字符串数组（含 `null` / `{}`）→ `ErrFactorDisabledStore`；
+// 两者都是 fail-closed 的错误，**不再**把任何一种静默当成空集（D22 定稿口径 2026-11-11）：
+// "平台级禁用集为空"的唯一表达是**行存在且值为 `[]`**。
 func (r *PlatformFactorReader) Disabled(ctx context.Context) ([]string, error) {
 	var raw string
-	err := r.db.WithContext(ctx).Raw(
-		`SELECT value::text FROM runtime_config WHERE "key" = ?`, KeyFactorsDisabled).Scan(&raw).Error
-	if err != nil {
+	row := r.db.WithContext(ctx).Raw(
+		`SELECT value::text FROM runtime_config WHERE "key" = ?`, KeyFactorsDisabled).Row()
+	if err := row.Scan(&raw); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrFactorDisabledMissing
+		}
 		return nil, MapError(err)
-	}
-	if raw == "" {
-		return nil, nil
 	}
 	return decodeDisabledFactors(raw)
 }
@@ -177,9 +185,15 @@ func (r *PlatformFactorRepo) SetEnabled(ctx context.Context, in SetFactorEnabled
 		//    行不存在时是空操作（真正的互斥由 ① 提供）——两道都留，防以后有人只删掉其中一道。
 		var current string
 		row := tx.Raw(`SELECT value::text FROM runtime_config WHERE "key" = ? FOR UPDATE`,
-			KeyFactorsDisabled).Scan(&current)
-		if row.Error != nil {
-			return MapError(row.Error)
+			KeyFactorsDisabled).Row()
+		if err := row.Scan(&current); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				// 缺行 = 部署缺陷（D22 的 seed 没跑 / 被删）→ fail-closed：**不**顺手 insert 建行。
+				// 早先"缺行按空集 + 写入时 upsert 建行"看起来更"健壮"，实际是两条安全降级：
+				// ① 读成空集等于"该禁的因子全可用"；② 谁先写谁决定初始值，并发下还会丢更新。
+				return ErrFactorDisabledMissing
+			}
+			return MapError(err)
 		}
 
 		if r.afterRead != nil {
@@ -199,15 +213,17 @@ func (r *PlatformFactorRepo) SetEnabled(ctx context.Context, in SetFactorEnabled
 			return fmt.Errorf("store: marshal %s: %w", KeyFactorsDisabled, err)
 		}
 
-		// upsert：键不存在时建行（零 seed 迁移），存在时覆盖。
-		// `value_type='json'`（DB CHECK 允许集合里），`is_secret=false`。
-		up := tx.Exec(`INSERT INTO runtime_config ("key", value, value_type, description, is_secret, updated_by)
-			VALUES (?, ?::jsonb, 'json', ?, false, ?)
-			ON CONFLICT ("key") DO UPDATE
-			   SET value = EXCLUDED.value, value_type = 'json', updated_by = EXCLUDED.updated_by`,
-			KeyFactorsDisabled, string(payload), platformFactorConfigDesc, nullableUUID(in.ActorUserID))
+		// 只 UPDATE（不 upsert）：行必须由迁移 seed 出来（D22），缺行在 ② 就已经 fail-closed 返回。
+		// `RowsAffected != 1` 说明行在 ② 与这里之间被删了（并发运维动作）→ 同样当缺行处理，不静默成功。
+		up := tx.Exec(`UPDATE runtime_config
+			   SET value = ?::jsonb, value_type = 'json', description = ?, updated_by = ?, updated_at = now()
+			 WHERE "key" = ?`,
+			string(payload), platformFactorConfigDesc, nullableUUID(in.ActorUserID), KeyFactorsDisabled)
 		if up.Error != nil {
 			return MapError(up.Error)
+		}
+		if up.RowsAffected != 1 {
+			return ErrFactorDisabledMissing
 		}
 
 		action := "factor.enable"
@@ -250,10 +266,39 @@ func (r *PlatformFactorReader) PlatformDisabledFactors(ctx context.Context) (map
 	return out, nil
 }
 
-// decodeDisabledFactors 把 jsonb 文本解成字符串集合（undefined/null → 空）。
+// UnknownFactorTypes 返回 `disabled` 里**本进程注册表不认识**的类型（排序、去重）。
+//
+// 口径（2026-11-11 定稿）：未知类型**读保留原文、不删不丢**——滚动升级时新版本已加的类型，
+// 旧节点不认识；一旦在读-改-写里把它丢掉，那个类型在其它节点上就会**意外变为可用**（安全降级）。
+// 但必须**点名告警**：数组里出现未知类型（尤其把类型名写错）意味着"本该禁用的那个因子其实没被禁用"，
+// 只留一行日志没人看，所以要带上全量集合一起 WARN。
+func UnknownFactorTypes(disabled []string, known []string) []string {
+	knownSet := make(map[string]struct{}, len(known))
+	for _, k := range known {
+		knownSet[k] = struct{}{}
+	}
+	seen := make(map[string]struct{}, len(disabled))
+	out := make([]string, 0, len(disabled))
+	for _, t := range disabled {
+		if _, ok := knownSet[t]; ok {
+			continue
+		}
+		if _, dup := seen[t]; dup {
+			continue
+		}
+		seen[t] = struct{}{}
+		out = append(out, t)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// decodeDisabledFactors 把 jsonb 文本解成字符串集合（`null`/空串/非数组一律当坏值）。
 func decodeDisabledFactors(raw string) ([]string, error) {
 	if raw == "" || raw == "null" {
-		return nil, nil
+		// `null` 与"空集"不可区分（D22 原文），且 `jsonb 'null'` 展开会报错 → 一律当坏值。
+		// "空集"只能用 `[]` 表达。
+		return nil, fmt.Errorf("%w: value is %q (empty set must be [])", ErrFactorDisabledStore, raw)
 	}
 	var list []string
 	if err := json.Unmarshal([]byte(raw), &list); err != nil {

@@ -2,8 +2,10 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -91,6 +93,10 @@ const (
 	kindSeconds startupKeyKind = iota + 1
 	// kindCount 表示值是次数/个数，**不得**转成时间。
 	kindCount
+	// kindJSONArray 表示值是 **jsonb 字符串数组**（可空数组），**不是**整数。
+	// 单独一类是因为它的校验规则与整数键完全不同（存在 + `value_type='json'` + `jsonb_typeof='array'`），
+	// 而"当整数读"会得到一个莫名其妙的错误。
+	kindJSONArray
 )
 
 // startupSpec 是「启动期必备键 → 解释方式」的唯一清单。
@@ -106,6 +112,10 @@ var startupSpecs = []startupSpec{
 	{key: KeyFlowTTLSeconds, kind: kindSeconds},
 	{key: KeyChallengeTTLSeconds, kind: kindSeconds},
 	{key: KeyChallengeMaxAttempts, kind: kindCount},
+	// D22（迁移 000020）seed 的这一行：平台级因子禁用集的**唯一**载体。
+	// 放进启动校验是因为"缺行/坏值"都被读侧当错误（fail-closed），
+	// 而启动期炸掉比上线后每个 PATCH 都 500、且禁用不生效要早得多。
+	{key: KeyFactorsDisabled, kind: kindJSONArray},
 }
 
 // StartupKeys 返回启动期**必须存在**的 runtime_config 键（缺失即启动失败）。
@@ -120,7 +130,8 @@ var startupSpecs = []startupSpec{
 // 所以 `LoadFlowTTL` / `ValidateStartup` 必须在"DB 已确认可达"之后才调，
 // 不能拿它的错误去判 DB 是否可用（那会把两种故障混成一种）。
 //
-// 键清单：`flow.ttl_seconds`、`challenge.ttl_seconds`、`challenge.max_attempts`（D14①）。
+// 键清单：`flow.ttl_seconds`、`challenge.ttl_seconds`、`challenge.max_attempts`（D14①）、
+// `factors.disabled`（D22，jsonb 字符串数组）。
 func StartupKeys() []string {
 	out := make([]string, 0, len(startupSpecs))
 	for _, spec := range startupSpecs {
@@ -210,6 +221,12 @@ type StartupConfig struct {
 	ChallengeTTL time.Duration
 	// ChallengeMaxAttempts = `challenge.max_attempts`（单挑战失败次数上限）。
 	ChallengeMaxAttempts int
+	// FactorsDisabled = `factors.disabled`（平台级禁用集，D22；空集 = `[]`）。
+	//
+	// 值本身不在这里"解释"，只做**存在性与形态**校验：启动期必须能读到一个字符串数组，
+	// 缺行 / `null` / `{}` / 非字符串数组一律 fail-fast（否则运行期每个 PATCH 都会 500，
+	// 而"平台禁用不生效"没有任何人会发现）。
+	FactorsDisabled []string
 }
 
 // ValidateStartup 校验全部启动期键存在且可用，返回已解释的值。
@@ -223,8 +240,18 @@ func ValidateStartup(ctx context.Context, reader ConfigReader) (StartupConfig, e
 		return out, errors.New("store: nil config reader")
 	}
 	values := make(map[string]int, len(startupSpecs))
+	var disabledFactors []string
 	var failures []error
 	for _, spec := range startupSpecs {
+		if spec.kind == kindJSONArray {
+			list, err := requiredStringArray(ctx, reader, spec.key)
+			if err != nil {
+				failures = append(failures, err)
+				continue
+			}
+			disabledFactors = list
+			continue
+		}
 		value, err := requiredPositiveInt(ctx, reader, spec.key)
 		if err != nil {
 			failures = append(failures, err)
@@ -240,5 +267,43 @@ func ValidateStartup(ctx context.Context, reader ConfigReader) (StartupConfig, e
 	out.FlowTTL = time.Duration(values[KeyFlowTTLSeconds]) * time.Second
 	out.ChallengeTTL = time.Duration(values[KeyChallengeTTLSeconds]) * time.Second
 	out.ChallengeMaxAttempts = values[KeyChallengeMaxAttempts]
+	out.FactorsDisabled = disabledFactors
 	return out, nil
+}
+
+// requiredStringArray 是 jsonb 字符串数组类配置的**唯一取值口径**（当前只有 `factors.disabled`）。
+//
+// 三重校验缺一条都不行：① 键必须存在；② `value_type='json'`；③ 值必须是 **jsonb array**，
+// 且元素全是**非空字符串**。`null`/`{}`/`""`/"不是数组" 一律 `ErrConfigValueInvalid`——
+// 它们是"空集"的假朋友：读成空集等于"该禁的因子全可用"（安全方向的静默降级）。
+func requiredStringArray(ctx context.Context, reader ConfigReader, key string) ([]string, error) {
+	if reader == nil {
+		return nil, errors.New("store: nil config reader")
+	}
+	row, err := reader.Lookup(ctx, key)
+	if err != nil {
+		return nil, err
+	}
+	if row.ValueType != "json" {
+		return nil, fmt.Errorf("%w: %q is %q, want \"json\"", ErrConfigTypeMismatch, key, row.ValueType)
+	}
+	raw := strings.TrimSpace(row.Value.String())
+	if raw == "" {
+		return nil, fmt.Errorf("%w: %q is empty", ErrConfigValueInvalid, key)
+	}
+	var list []string
+	if err := json.Unmarshal([]byte(raw), &list); err != nil {
+		return nil, fmt.Errorf("%w: %q is not a json string array: %v", ErrConfigValueInvalid, key, err)
+	}
+	if list == nil {
+		// `json.Unmarshal` 对 `null` 不报错（得到 nil 切片）→ 必须在这里挡住：
+		// `null` 与"空集"不可区分（D22 原文），空集只能用 `[]`。
+		return nil, fmt.Errorf("%w: %q is null (empty set must be [])", ErrConfigValueInvalid, key)
+	}
+	for _, one := range list {
+		if one == "" {
+			return nil, fmt.Errorf("%w: %q contains an empty factor type", ErrConfigValueInvalid, key)
+		}
+	}
+	return list, nil
 }
