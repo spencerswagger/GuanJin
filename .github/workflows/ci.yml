@@ -190,6 +190,18 @@ jobs:
           # ③ 真跑并留证据；SKIP/失败/缓存/空跑一律由 test-summary.sh 判红
           go test -tags=integration ./... -count=1 -v | tee integration-test.log
           ./scripts/test-summary.sh integration-test.log | tee integration-summary.txt
+      - name: 审计并发串行套件（-tags 'integration audit_serial'，-p 1；探针敏感性必须在包内独占跑）
+        run: |
+          set -euo pipefail
+          # `AC-AUD-04`（100 并发写不断链）、串行零分叉、b1/b2（删锁反证）依赖**稳定的全局链尾**，
+          # 多包并行时语义不可解释（其它包会同时写同一张 audit_logs）。故单列、串行、`-p 1 -count=3`。
+          go test -tags 'integration audit_serial' ./internal/audit -p 1 -count=3 -v | tee audit-serial.log
+          ./scripts/test-summary.sh audit-serial.log | tee audit-serial-summary.txt
+          grep -Eq '^--- PASS: TestAC_AUD_04_Concurrent100AppendsKeepChainIntact' audit-serial.log \
+            || { echo "[FAIL] 串行套件里没有 AC-AUD-04 的 PASS 行 → 记账依据缺失 = 红"; exit 1; }
+          grep -Eq '^--- PASS: TestAppendB2BothLocksRemovedMustFork' audit-serial.log \
+            || { echo "[FAIL] b2（删两道锁必出分叉）没跑过 → 探针敏感性未验证 = 红"; exit 1; }
+
       - name: Redis 真连接断言（integration 期间必须真读过 Redis，否则判红）
         run: |
           set -euo pipefail
@@ -207,6 +219,13 @@ jobs:
           dbsize=$(redis-cli -h 127.0.0.1 -p 6379 dbsize)
           echo "redis_commands_before=$before after=$after delta=$delta dbsize_after=$dbsize"
           [ "$delta" -ge 3 ] || { echo "[FAIL] integration 期间 Redis 命令数几乎无增长（delta=$delta）→ 真 Redis 未被使用 = 未验证 = 红"; exit 1; }
+      - name: 审计串行套件覆盖率（与并行 profile 并集判定，避免"搬用例"被误读为覆盖下降）
+        run: |
+          set -euo pipefail
+          go test -tags 'integration audit_serial' ./internal/audit -p 1 -count=1 \
+            -coverprofile=audit-serial-cover.out > audit-serial-cover.log 2>&1 || { tail -40 audit-serial-cover.log; exit 1; }
+          echo "[OK] audit_serial profile: $(wc -l < audit-serial-cover.out) blocks"
+
       - name: 集成覆盖率采集（integration profile；供 flowstore 85% 判定）
         run: |
           set -euo pipefail
@@ -220,7 +239,9 @@ jobs:
       - name: 集成覆盖率门禁（flowstore 85% 在此判定；unit profile 判不了）
         run: |
           set -euo pipefail
-          COVERAGE_TAGS=integration COVERAGE_PROFILE=integration-cover.out COVERAGE_MIN=60 \
+          # 并行 profile + 串行套件 profile **并集**判定（`internal/audit` 的用例分两套标签）。
+          COVERAGE_TAGS=integration COVERAGE_PROFILE=integration-cover.out \
+            COVERAGE_EXTRA_PROFILE=audit-serial-cover.out COVERAGE_MIN=60 \
             ./scripts/coverage-gate.sh | tee integration-coverage.txt
 
   sdk:

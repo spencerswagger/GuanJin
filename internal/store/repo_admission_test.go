@@ -153,3 +153,26 @@ func TestResolveAdmissionPolicyOrder(t *testing.T) {
 		}
 	})
 }
+
+// ListClientIDs 必须是一条有序查询（`all_clients` 的 SLO 级联范围）；非法入参直接报错。
+func TestListClientIDsShapeAndValidation(t *testing.T) {
+	db, capture := dryRunDB(t)
+	repo := NewVisitRepo(db)
+
+	// DryRun 下 Scan 报 "dry run mode unsupported"：只验它发出的 SQL。
+	_, _ = repo.ListClientIDs(context.Background(), uuid.MustParse("0193f0aa-0000-7000-8000-000000000001"))
+	sql := capture.last(t)
+	for _, want := range []string{"SELECT client_id", "user_visited_clients", "WHERE user_id = ", "ORDER BY client_id"} {
+		if !strings.Contains(sql, want) {
+			t.Fatalf("ListClientIDs 查询缺 %q：%s", want, sql)
+		}
+	}
+
+	if _, err := repo.ListClientIDs(context.Background(), uuid.Nil); err == nil {
+		t.Fatal("nil user_id 必须报错")
+	}
+	var nilRepo *VisitRepo
+	if _, err := nilRepo.ListClientIDs(context.Background(), uuid.New()); err == nil {
+		t.Fatal("nil repo 必须报错")
+	}
+}

@@ -25,6 +25,8 @@ import (
 
 	"gorm.io/gorm"
 
+	"github.com/redis/go-redis/v9"
+
 	"github.com/spencerswagger/guanjin/internal/config"
 	"github.com/spencerswagger/guanjin/internal/httpx"
 	"github.com/spencerswagger/guanjin/internal/store"
@@ -37,6 +39,10 @@ import (
 type app struct {
 	srv *http.Server
 	db  *gorm.DB
+	// stopAuditJob 停止进程内的审计链整链复核任务（S10；close 时调用）。
+	stopAuditJob func()
+	// stopPartitionJob 停止审计分区滚动任务（S10）。
+	stopPartitionJob func()
 }
 
 // startup 完成装配期的全部 fail-fast，成功后返回可用的进程句柄。
@@ -110,13 +116,12 @@ func startup(ctx context.Context, getenv func(string) string, logger *slog.Logge
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
 	})
-	// /readyz 反映依赖状态：装配期已 ping 过 DB 并校验过策略 seed，
-	// 所以这两项是 ok；Redis 尚未接入 → 如实留在 pending 里（不谎报）。
-	mux.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"status":"ready","checks":{"config":"ok","db":"ok","login_policies":"ok"},"pending":["redis"]}`))
-	})
+	// /readyz 反映**当前**依赖状态（每次现打，不吃启动期的旧结论）：DB 不通 → 503 `DB_UNAVAILABLE`、
+	// Redis 不通 → 503 `REDIS_UNAVAILABLE`（D8-C / AC-FC-01/02）。Redis 客户端与数据面/风控共用同一地址。
+	mux.HandleFunc("/readyz", readyzHandler(readyzDeps{
+		db:    db,
+		redis: redis.NewClient(&redis.Options{Addr: cfg.RedisAddr, Password: cfg.RedisPassword}),
+	}))
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, httpx.TraceIDFromContext(r.Context()), httpx.CodeInvalidRequest,
 			"endpoint not implemented yet", nil)
@@ -135,12 +140,38 @@ func startup(ctx context.Context, getenv func(string) string, logger *slog.Logge
 		"challenge_ttl_seconds", int64(startupCfg.ChallengeTTL.Seconds()),
 		"challenge_max_attempts", startupCfg.ChallengeMaxAttempts,
 	)
-	return &app{srv: srv, db: db}, nil
+	// S10：审计链整链复核 Job（**本进程内**，非新二进制；指标由 internal/audit 暴露）。
+	stopAuditJob, err := startAuditVerifyJob(ctx, db, cfg, logger)
+	if err != nil {
+		_ = store.Close(db)
+		return nil, err
+	}
+	// S10：审计**分区滚动**任务（当月 + 未来 5 个月，幂等；启动即跑一次）。
+	// 这条补的是 Gate 指出的生产缺口：migrations 只预建 -1/0/+1 三个月，若没有滚动任务，
+	// 第四个月起审计写入会因"无分区"直接失败（23514）。
+	stopPartitionJob, err := startAuditPartitionJob(ctx, db, logger)
+	if err != nil {
+		stopAuditJob()
+		_ = store.Close(db)
+		return nil, err
+	}
+
+	app := &app{srv: srv, db: db, stopAuditJob: stopAuditJob, stopPartitionJob: stopPartitionJob}
+	return app, nil
 }
 
-// close 释放装配期建立的资源（目前只有数据库连接池）。
+// close 释放装配期建立的资源（数据库连接池 + 审计校验 Job）。
 func (a *app) close() error {
-	if a == nil || a.db == nil {
+	if a == nil {
+		return nil
+	}
+	if a.stopPartitionJob != nil {
+		a.stopPartitionJob()
+	}
+	if a.stopAuditJob != nil {
+		a.stopAuditJob()
+	}
+	if a.db == nil {
 		return nil
 	}
 	return store.Close(a.db)

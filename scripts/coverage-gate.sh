@@ -27,7 +27,16 @@ relax_until="${COVERAGE_RELAX_UNTIL:-}"
 # 逐模块下限（技术栈 §9.3，照抄；改这里等于改判据，必须同步 decisions.md）
 module_floor() {
   case "$1" in
-    internal/crypto|internal/audit) echo 90 ;;
+    internal/crypto) echo 90 ;;
+    # S10 补登（2026-11-10）：`internal/audit` 的 90% 下限**只能在 integration profile 判定**——
+    # 它的行为是"哈希链落库 + 整链复核"（advisory lock、分区、扫表、锚点），unit profile 里
+    # 只剩入参校验与指标语义，实测 56%，硬在 unit 判 90 会让**每个** unit job 永久红。
+    # 与 flowstore / identity 同一处理方式（不是放宽：integration profile 里照样 90%）。
+    internal/audit)
+      case ",${COVERAGE_TAGS:-}," in
+        *,integration,*) echo 90 ;;
+        *) echo "" ;;   # 由"未判定"分支显式说明，不许静默跳过
+      esac ;;
     internal/factor|internal/credential|internal/identifier|internal/flow|internal/authz) echo 85 ;;
     internal/risk|internal/gateway) echo 80 ;;
     internal/store) echo 75 ;;
@@ -83,6 +92,53 @@ if [ -z "$profile" ] || [ ! -f "$profile" ]; then
   CGO_ENABLED=0 go test ./... -count=1 -coverprofile="$profile" >/dev/null || { echo "[FAIL] go test failed while producing coverage"; exit 1; }
 fi
 
+# ---- 0) 可选：合并第二个 profile（S10 起 `internal/audit` 拆了"串行专用套件"） ----
+# 串行套件（-tags 'integration audit_serial' -p 1）里的用例同样覆盖产品代码；
+# 只看并行 profile 会因为"把用例搬去串行"而**误判为覆盖下降**。
+# 传 `COVERAGE_EXTRA_PROFILE=<serial profile>` 即按两套标签**并集**判定（同名块计数相加）。
+if [ -n "${COVERAGE_EXTRA_PROFILE:-}" ]; then
+  if [ ! -f "$COVERAGE_EXTRA_PROFILE" ]; then
+    echo "[FAIL] COVERAGE_EXTRA_PROFILE 指向的文件不存在：$COVERAGE_EXTRA_PROFILE"
+    exit 1
+  fi
+  merged="$(mktemp -t guanjin-cover-merged.XXXXXX).out"
+  if ! python3 - "$profile" "$COVERAGE_EXTRA_PROFILE" "$merged" <<'PYEOF'
+import sys
+main, extra, out = sys.argv[1], sys.argv[2], sys.argv[3]
+counts = {}
+order = []
+mode = None
+for path in (main, extra):
+    with open(path) as f:
+        for line in f:
+            line = line.rstrip("\n")
+            if not line:
+                continue
+            if line.startswith("mode:"):
+                mode = line
+                continue
+            parts = line.rsplit(" ", 2)
+            if len(parts) != 3:
+                continue
+            key, nstmt, cnt = parts[0], parts[1], parts[2]
+            k = (key, nstmt)
+            if k not in counts:
+                counts[k] = 0
+                order.append(k)
+            counts[k] += int(cnt)
+with open(out, "w") as f:
+    f.write((mode or "mode: set") + "\n")
+    for k in order:
+        f.write("%s %s %d\n" % (k[0], k[1], counts[k]))
+PYEOF
+  then
+    echo "[FAIL] 合并 profile 失败（$profile + $COVERAGE_EXTRA_PROFILE）"
+    exit 1
+  fi
+  echo "[coverage] 已按两套标签并集判定：$profile + $COVERAGE_EXTRA_PROFILE"
+  profile="$merged"
+fi
+
 fail=0
 
 # ---- 1) 逐模块下限 ----
@@ -111,8 +167,8 @@ if [ "$relax" != "1" ]; then
     if [ -z "$floor" ]; then
       # D8 补登模块在 unit profile 下没有下限可判：**显式说明**，不让它变成静默跳过
       case "$m" in
-        internal/flowstore|internal/identity)
-          echo "[INFO] ${m}：下限 85% 须由 integration profile 判定（unit profile 不编译 //go:build integration 用例）"
+        internal/flowstore|internal/identity|internal/audit)
+          echo "[INFO] ${m}：下限须由 integration profile 判定（unit profile 不编译 //go:build integration 用例）"
           echo "[INFO]       → 运行方式：COVERAGE_TAGS=integration COVERAGE_PROFILE=<integration 覆盖率> $0" ;;
       esac
       continue
@@ -120,8 +176,8 @@ if [ "$relax" != "1" ]; then
     st=${stmts[$m]}; cv=${covered[$m]:-0}
     if [ "$st" -eq 0 ]; then
       case "$m" in
-        internal/flowstore|internal/identity)
-          echo "[FAIL] ${m} 在 integration profile 里没有任何语句 → 下限 85% 无法判定（判据不成立即为红）"; fail=1 ;;
+        internal/flowstore|internal/identity|internal/audit)
+          echo "[FAIL] ${m} 在 integration profile 里没有任何语句 → 下限无法判定（判据不成立即为红）"; fail=1 ;;
       esac
       continue
     fi
@@ -144,7 +200,7 @@ case ",${COVERAGE_TAGS:-}," in
   *,integration,*)
     # relax 模式下 stmts 未声明（1) 整段被跳过）：此时按放宽语义不判，不做存在性检查。
     if declare -p stmts >/dev/null 2>&1; then
-      for required in internal/flowstore internal/identity; do
+      for required in internal/flowstore internal/identity internal/audit; do
         if [ -z "${stmts[$required]:-}" ]; then
           echo "[FAIL] integration profile 里没有 ${required} 的语句 → 85% 下限无法判定（判据不成立即为红）"
           fail=1

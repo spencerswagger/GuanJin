@@ -98,6 +98,9 @@ gates: ## 工程红线门禁（禁 AutoMigrate / 禁废弃错误码 / 数据面�
 	@./scripts/check-no-automigrate.sh
 	@./scripts/check-forbidden-error-codes.sh
 	@./scripts/check-dataplane-boundaries.sh --self-test
+	@# 审计并发/探针敏感性用例**必须**在 CI 里真的跑：它们需要稳定链尾，故单列串行
+	@# （`-p 1`）；漏跑等于把 AC-AUD-04 的判据藏起来。
+	@$(MAKE) --no-print-directory test-audit-serial
 
 lint: fmt-check vet gates ## 静态检查（只读判定：gofmt -l + vet + 门禁）
 
@@ -111,3 +114,9 @@ web-check: ## vue-tsc 类型检查（第三闸，只读）
 # ---------- 一条命令跑完三闸（＋门禁；不含 race）----------
 ci: lint test coverage web-check ## 三闸全绿（go vet / go test / vue-tsc）＋门禁＋覆盖率；race 另跑 make test-race
 	@echo "[OK] three gates green"
+
+
+# 串行专用套件：审计并发/探针敏感性（AC-AUD-04、b1/b2、串行零分叉）。
+# `-p 1 -count=3`：这些用例需要一个稳定的全局链尾，多包并行时语义不可解释。
+test-audit-serial:
+	@go test -tags 'integration audit_serial' ./internal/audit -p 1 -count=3 -v
