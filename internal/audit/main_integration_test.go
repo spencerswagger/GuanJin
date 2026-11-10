@@ -13,6 +13,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/spencerswagger/guanjin/internal/store"
+	"github.com/spencerswagger/guanjin/internal/testdb"
 )
 
 // TestMain 在**跑任何用例之前**一次性建好测试分区（运行期零 DDL）。
@@ -30,6 +31,17 @@ func TestMain(m *testing.M) {
 	if dsn == "" {
 		// 没有 DSN 时本包的 integration 用例本就该红（不许 Skip）：让 m.Run 去报。
 		os.Exit(m.Run())
+	}
+
+	// **入口第一件事：校验库名（任何 DDL 之前）**。
+	// 之前这步放在建 schema 之后，导致"指向非测试库时套件照样绿、库里多出 68 张表"
+	// —— 只建表不删数据，但同样不可接受（指到生产会安静地建出一个 schema + 68 张表）。
+	if guardDB, err := store.Open(context.Background(), store.Options{DSN: dsn}); err == nil {
+		testdb.MustBeTestDBOrExit(guardDB)
+		_ = store.Close(guardDB)
+	} else {
+		fmt.Fprintf(os.Stderr, "[audit.TestMain] open for db-name guard: %v\n", err)
+		os.Exit(1)
 	}
 
 	// **schema 隔离**：本包的用例必须往"链尾之后的月份"写，若落在共享库 `public` 的全局链上，
