@@ -14,6 +14,8 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
+	"github.com/spencerswagger/guanjin/internal/testdb"
+
 	"github.com/spencerswagger/guanjin/internal/store/model"
 )
 
@@ -319,15 +321,19 @@ func TestDBTwoPhaseCleanup(t *testing.T) {
 
 	// 造"8 天前就过期"：只能临时停触发器（它会把 updated_at 改回 now()），改完立刻恢复。
 	// 这不是绕过约束，是为了把"时间流逝"这个外部条件造出来；生产里 updated_at 天然由 DB 维护。
-	if err := db.Exec(`ALTER TABLE flows DISABLE TRIGGER flows_set_updated_at`).Error; err != nil {
+	// **安全护栏**：改表触发器是删改类动作，必须确认是测试库。
+	testdb.RequireTestDB(t, db)
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Exec(`ALTER TABLE flows DISABLE TRIGGER flows_set_updated_at`).Error; err != nil {
+			return err
+		}
+		if err := tx.Exec(`UPDATE flows SET updated_at = now() - interval '8 days' WHERE id = ?`,
+			doomed.ID).Error; err != nil {
+			return err
+		}
+		return tx.Exec(`ALTER TABLE flows ENABLE TRIGGER flows_set_updated_at`).Error
+	}); err != nil {
 		t.Fatalf("disable trigger: %v", err)
-	}
-	if err := db.Exec(`UPDATE flows SET updated_at = now() - interval '8 days' WHERE id = ?`,
-		doomed.ID).Error; err != nil {
-		t.Fatalf("age the row: %v", err)
-	}
-	if err := db.Exec(`ALTER TABLE flows ENABLE TRIGGER flows_set_updated_at`).Error; err != nil {
-		t.Fatalf("enable trigger: %v", err)
 	}
 
 	// 到期的删掉、没到期的那条（刚被触发器刷新过）留着。
