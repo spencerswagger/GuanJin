@@ -91,7 +91,7 @@ ALLOW = {
     'internal/protocol/server_test.go': {'algo': 'sha256', 'marker': 'PKCE-S256'},
 }
 
-TEST_FILE = re.compile(r'(_test\.go$|(?:Test|Tests|IT)\.java$|\.(?:test|spec)\.(?:ts|tsx|js)$)')
+TEST_FILE = re.compile(r'(_test\.go$|(?:Test|Tests|IT)\.(?:java|kt)$|\.(?:test|spec)\.(?:ts|tsx|js)$)')
 
 
 def is_test_file(rel):
@@ -110,12 +110,12 @@ def strip_comments(raw_lines, lang):
     """
     out = []
     in_block = False
-    html = lang == 'js' and False  # 由调用方按扩展名传；见下方 scan_file
+    carry_quote = None  # 只有反引号（`多行模板串`）跨行携带
     i = 0
     while i < len(raw_lines):
         line = raw_lines[i]
         res = []
-        quote = None
+        quote = carry_quote
         j = 0
         while j < len(line):
             ch = line[j]
@@ -152,6 +152,7 @@ def strip_comments(raw_lines, lang):
             res.append(ch)
             j += 1
         out.append(''.join(res))
+        carry_quote = quote if quote == '`' else None
         i += 1
     return out
 
@@ -283,7 +284,7 @@ if [ "${1:-}" != "--self-test" ]; then
   exit 0
 fi
 
-echo "== 2/2 自检：14 条注入必须逐个被点名检出（规则名 + 算法），另 2 条不误伤 =="
+echo "== 2/2 自检：15 条注入必须逐个被点名检出（规则名 + 算法），另 3 条不误伤 =="
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
@@ -353,6 +354,8 @@ expect_green javadoc-mention sdk/java/core/src/main/java/Doc.java '/**
  * 本类不使用 SHA-256 / RSA，全部走 SM3 / SM2。
  */
 class Doc { int x = 1; }' || rc=1
+expect_green kt-negative-test sdk/kotlin/src/BadTest.kt '// NEGATIVE-SHA-TEST（负向用例：断言 SHA256 必须被拒）
+val bad = "SHA256"' || rc=1
 expect_green marker-prev-line-test internal/credential/foo_test.go '// NEGATIVE-SHA-TEST（负向用例：断言 SHA256 必须被拒）
 var bad = "SHA256"' || rc=1
 
@@ -394,6 +397,8 @@ inject kt-sha sdk/kotlin/src/Bad.kt 'import java.security.MessageDigest
 val d = MessageDigest.getInstance("SHA-256")' 'MessageDigest' 'SHA-256' || rc=1
 inject cjs-hash sdk/node/src/bad.cjs "const { createHash } = require('crypto');
 module.exports = () => createHash('sha1');" 'createHash' 'sha1' || rc=1
+inject template-block-bypass sdk/node/src/bad4.ts "const tpl = \`a /* b\`;
+export const h = () => createHash('sha256');" 'createHash' 'sha256' || rc=1
 inject marker-in-production internal/crypto/bad4.go 'package crypto
 // NEGATIVE-SHA-TEST 生产文件不许用这个豁免
 import "crypto/sha1"
@@ -404,4 +409,4 @@ if [ "$rc" -ne 0 ]; then
   echo "[FAIL] 自检未通过：有注入没被检出（脚本存在 ≠ 门禁存在）"
   exit 1
 fi
-echo "[OK] 自检通过：14 条注入（含跨行、HmacSHA、JWT RS256、行内块注释绕过、.kt/.cjs、白名单缺标记、生产文件伪造豁免）全部被点名检出；javadoc 提及与测试文件豁免 2 条不误伤；基线判绿"
+echo "[OK] 自检通过：15 条注入（含跨行、HmacSHA、JWT RS256、行内块注释绕过、模板串含 /*、.kt/.cjs、白名单缺标记、生产文件伪造豁免）全部被点名检出；javadoc 提及、go/Kotlin 测试文件豁免 3 条不误伤；基线判绿"
