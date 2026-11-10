@@ -250,24 +250,17 @@ func TestACFLOW05_01_PatchContractAndIdempotency(t *testing.T) {
 	}
 	_ = env
 
-	// ② type 未装配 → 404 FACTOR_NOT_SUPPORTED。
+	// ② type 未装配 → **422** `FACTOR_NOT_SUPPORTED`（Spec 裁决 2026-11-11：判据改为断言 422，
+	// 码表不动 —— 基线 §5.4 的 E4 组本就是 404/409/422，端点行只钉码名不钉状态）。
 	status, raw, env = e.patch(t, "webauthn",
 		`{"enabled":false,"reason":"x"}`, "trace-acflow05-01-unknown")
 	if env.Code != httpx.CodeFactorNotSupported {
 		t.Fatalf("未装配 type 的码必须是 %s，实际 %q（body=%s）",
 			httpx.CodeFactorNotSupported, env.Code, raw)
 	}
-	// 判据写 404，实现按统一码表把 `FACTOR_NOT_SUPPORTED` 归到 422 组（`httpx.HTTPStatus`）。
-	// **实测差异（已报 Spec/host）**：码一致、状态码不一致。谁改由 Spec 定；本用例先锁码、
-	// 把状态码差异显式打印出来，避免"悄悄放宽"。
-	switch status {
-	case http.StatusNotFound:
-		// 与判据一致。
-	case http.StatusUnprocessableEntity:
-		t.Logf("差异（已报）：判据要求 404，实现返回 %d（统一码表把 %s 归在 422 组）",
-			status, httpx.CodeFactorNotSupported)
-	default:
-		t.Fatalf("未装配 type 应为 404（判据）或 422（现状），实际 %d（body=%s）", status, raw)
+	if status != http.StatusUnprocessableEntity {
+		t.Fatalf("未装配 type 应 422 %s（Spec 裁决），实际 %d（body=%s）",
+			httpx.CodeFactorNotSupported, status, raw)
 	}
 
 	// ③ 缺 enabled / 缺 reason → 400 MISSING_PARAMETER（裁定：reason 必填非空）。
@@ -283,23 +276,29 @@ func TestACFLOW05_01_PatchContractAndIdempotency(t *testing.T) {
 		}
 	}
 
-	// ④ enabled 非布尔：判据说 400 `INVALID_PARAMETER`。
-	//    **实测差异（已报 Spec/host）**：实现把它当"请求体不是合法 JSON"处理 → 400 `INVALID_REQUEST`。
-	//    本用例只锁"必须 400 且不得 200/5xx"，并把实际码打印出来；码值差异由 Spec 决定改哪边。
-	status, raw, env = e.patch(t, "password",
-		`{"enabled":"true","reason":"x"}`, "trace-acflow05-01-nonbool-"+uuid.NewString()[:6])
-	if status != http.StatusBadRequest {
-		t.Fatalf("enabled 非布尔应 400，实际 %d（body=%s）", status, raw)
+	// ④ 解码层：能解但不合类型 → 400 `INVALID_REQUEST`（Spec 裁决 2026-11-11，采「解码先于校验」
+	// 为正式语义）。三段式：解码层（类型不符/未知字段/超体积）→ INVALID_REQUEST；
+	// 缺字段层（能解码但必填缺/null）→ MISSING_PARAMETER；值/语义层（越界/引用不存在）→ INVALID_PARAMETER。
+	// 顺序：鉴权 → 解码 → 缺字段 → 值校验 → 业务语义。
+	for _, tc := range []struct{ name, body string }{
+		{"enabled 是字符串", `{"enabled":"true","reason":"x"}`},
+		{"enabled 是数字", `{"enabled":1,"reason":"x"}`},
+		{"含未知字段", `{"enabled":false,"reason":"x","dry_run":true}`},
+	} {
+		status, raw, env = e.patch(t, "password", tc.body, "trace-acflow05-01-decode-"+uuid.NewString()[:6])
+		if status != http.StatusBadRequest || env.Code != httpx.CodeInvalidRequest {
+			t.Fatalf("%s 属解码层，应 400 %s，实际 %d / %q（body=%s）",
+				tc.name, httpx.CodeInvalidRequest, status, env.Code, raw)
+		}
 	}
-	switch env.Code {
-	case httpx.CodeInvalidParam:
-		// 与判据一致。
-	case httpx.CodeInvalidRequest:
-		t.Logf("差异（已报）：判据要求 %s，实现返回 %s —— 状态码与「必须 400」一致，仅码值不同",
-			httpx.CodeInvalidParam, env.Code)
-	default:
-		t.Fatalf("enabled 非布尔应为参数类 400 码（%s 或 %s），实际 %q",
-			httpx.CodeInvalidParam, httpx.CodeInvalidRequest, env.Code)
+
+	// ④′ 缺字段层：`*bool` 用来区分「没给」与「给了 false」——给了 false 是合法请求，
+	//     没给才是 MISSING_PARAMETER（这条区分本身就是判据的一部分）。
+	status, raw, env = e.patch(t, "password", `{"enabled":null,"reason":"x"}`,
+		"trace-acflow05-01-null-"+uuid.NewString()[:6])
+	if status != http.StatusBadRequest || env.Code != httpx.CodeMissingParameter {
+		t.Fatalf("enabled=null 属缺字段层，应 400 %s，实际 %d / %q（body=%s）",
+			httpx.CodeMissingParameter, status, env.Code, raw)
 	}
 
 	// ⑤ 非法 JSON → 400 INVALID_REQUEST。
@@ -616,4 +615,67 @@ func newACFLOW05FailingEnv(t *testing.T, db *gorm.DB) *acflow05Env {
 	base.srv.Close()
 	base.srv = httptest.NewServer(httpx.TraceMiddleware(mux, "X-Trace-Id", logger))
 	return base
+}
+
+// ── 假绿防线：**纯外部行为**交叉验证（Spec 2026-11-11 指出） ──────────────────
+
+// TestACFLOW05_02b_PlatformDisableVisibleThroughBehaviour 只用**对外可见的行为**证明
+// 「平台级禁用真的生效」，**一次都不读 `runtime_config`**。
+//
+// 为什么必须有这一条：判据 1/2 的其它断言里有几处直接读 `store.KeyFactorsDisabled`
+// （`factors.disabled` 数组）——那是**内部键**。键形态一旦变（Ark 正在收口 D19/D22），
+// 那些断言会跟着漂；而「键变了」≠「平台禁用真的生效」。所以这里换一条完全独立的证据链：
+//
+//	基线：Descriptor 的 available_factors 含 password，`POST /auth/challenge/password` 能下发（200）
+//	PATCH 平台禁用 password
+//	之后：available_factors 不含 password、disabled_factors 含 password
+//	      `POST /auth/challenge/password` → 422 FACTOR_DISABLED
+//
+// 前后差只有「PATCH」一个动作，且观测点全在对外契约上（Descriptor + 错误码）。
+func TestACFLOW05_02b_PlatformDisableVisibleThroughBehaviour(t *testing.T) {
+	db := openTestDB(t)
+	e := newACFLOW05Env(t, db)
+	// client 级**不**禁用任何因子：这样"生效"只能来自平台级，排除 client 策略混淆。
+	f := newFlowFixture(t, db, "L2", "{}")
+	row := f.startFlow(t, nil, string(factor.ACRAAL1))
+	challengeBody := `{"purpose":"login","flow_id":"` + row.ID.String() + `"}`
+
+	// ① 基线（正控）：可用集含 password，且挑战能下发 —— 否则"之后 422"说明不了任何事。
+	var before flow.Descriptor
+	if status, raw := getJSON(t, f.srv.URL+"/authorize/flow?flow_id="+row.ID.String(), &before); status != 200 {
+		t.Fatalf("基线取 Descriptor 应 200，实际 %d（body=%s）", status, raw)
+	}
+	if !containsType(before.AvailableFactors, "password") {
+		t.Fatalf("基线 available_factors 应含 password，实际 %v", before.AvailableFactors)
+	}
+	// 基线必须"本来就没被禁"，否则"之后 422"可能只是继承了一个既成事实（假对照）。
+	if containsType(before.DisabledFactors, "password") {
+		t.Fatalf("基线 disabled_factors 不该含 password，实际 %v", before.DisabledFactors)
+	}
+	if status, raw, env := e2ePost(t, f.srv.URL+"/auth/challenge/password", challengeBody); status != 200 {
+		t.Fatalf("基线开挑战应 200，实际 %d / %q（body=%s）", status, env.Code, raw)
+	}
+
+	// ② 唯一变更：平台级禁用（走端点）。
+	if status, raw, env := e.patch(t, "password",
+		`{"enabled":false,"reason":"ACFLOW05 行为交叉验证"}`, "trace-acflow05-02b-"+uuid.NewString()[:8]); status != 200 {
+		t.Fatalf("PATCH 平台禁用应 200，实际 %d / %q（body=%s）", status, env.Code, raw)
+	}
+
+	// ③ 之后：同一条流的 Descriptor 与挑战端点必须都反映"不可用"。
+	var after flow.Descriptor
+	if status, raw := getJSON(t, f.srv.URL+"/authorize/flow?flow_id="+row.ID.String(), &after); status != 200 {
+		t.Fatalf("禁用后取 Descriptor 应 200，实际 %d（body=%s）", status, raw)
+	}
+	if containsType(after.AvailableFactors, "password") {
+		t.Fatalf("平台禁用后 available_factors 不得再含 password，实际 %v", after.AvailableFactors)
+	}
+	if !containsType(after.DisabledFactors, "password") {
+		t.Fatalf("平台禁用后 disabled_factors 应含 password，实际 %v", after.DisabledFactors)
+	}
+	status, raw, env := e2ePost(t, f.srv.URL+"/auth/challenge/password", challengeBody)
+	if status != http.StatusUnprocessableEntity || env.Code != httpx.CodeFactorDisabled {
+		t.Fatalf("平台禁用后开挑战应 422 %s，实际 %d / %q（body=%s）",
+			httpx.CodeFactorDisabled, status, env.Code, raw)
+	}
 }
