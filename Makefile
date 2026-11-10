@@ -100,7 +100,7 @@ gates: ## 工程红线门禁（禁 AutoMigrate / 禁废弃错误码 / 数据面�
 	@./scripts/check-dataplane-boundaries.sh --self-test
 	@# 审计并发/探针敏感性用例**必须**在 CI 里真的跑：它们需要稳定链尾，故单列串行
 	@# （`-p 1`）；漏跑等于把 AC-AUD-04 的判据藏起来。
-	@go test -tags 'integration audit_serial' ./internal/audit -p 1 -count=1 2>&1 | tail -1
+	@$(MAKE) --no-print-directory test-audit-serial
 
 lint: fmt-check vet gates ## 静态检查（只读判定：gofmt -l + vet + 门禁）
 

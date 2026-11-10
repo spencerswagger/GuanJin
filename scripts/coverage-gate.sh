@@ -92,6 +92,53 @@ if [ -z "$profile" ] || [ ! -f "$profile" ]; then
   CGO_ENABLED=0 go test ./... -count=1 -coverprofile="$profile" >/dev/null || { echo "[FAIL] go test failed while producing coverage"; exit 1; }
 fi
 
+# ---- 0) 可选：合并第二个 profile（S10 起 `internal/audit` 拆了"串行专用套件"） ----
+# 串行套件（-tags 'integration audit_serial' -p 1）里的用例同样覆盖产品代码；
+# 只看并行 profile 会因为"把用例搬去串行"而**误判为覆盖下降**。
+# 传 `COVERAGE_EXTRA_PROFILE=<serial profile>` 即按两套标签**并集**判定（同名块计数相加）。
+if [ -n "${COVERAGE_EXTRA_PROFILE:-}" ]; then
+  if [ ! -f "$COVERAGE_EXTRA_PROFILE" ]; then
+    echo "[FAIL] COVERAGE_EXTRA_PROFILE 指向的文件不存在：$COVERAGE_EXTRA_PROFILE"
+    exit 1
+  fi
+  merged="$(mktemp -t guanjin-cover-merged.XXXXXX).out"
+  if ! python3 - "$profile" "$COVERAGE_EXTRA_PROFILE" "$merged" <<'PYEOF'
+import sys
+main, extra, out = sys.argv[1], sys.argv[2], sys.argv[3]
+counts = {}
+order = []
+mode = None
+for path in (main, extra):
+    with open(path) as f:
+        for line in f:
+            line = line.rstrip("\n")
+            if not line:
+                continue
+            if line.startswith("mode:"):
+                mode = line
+                continue
+            parts = line.rsplit(" ", 2)
+            if len(parts) != 3:
+                continue
+            key, nstmt, cnt = parts[0], parts[1], parts[2]
+            k = (key, nstmt)
+            if k not in counts:
+                counts[k] = 0
+                order.append(k)
+            counts[k] += int(cnt)
+with open(out, "w") as f:
+    f.write((mode or "mode: set") + "\n")
+    for k in order:
+        f.write("%s %s %d\n" % (k[0], k[1], counts[k]))
+PYEOF
+  then
+    echo "[FAIL] 合并 profile 失败（$profile + $COVERAGE_EXTRA_PROFILE）"
+    exit 1
+  fi
+  echo "[coverage] 已按两套标签并集判定：$profile + $COVERAGE_EXTRA_PROFILE"
+  profile="$merged"
+fi
+
 fail=0
 
 # ---- 1) 逐模块下限 ----

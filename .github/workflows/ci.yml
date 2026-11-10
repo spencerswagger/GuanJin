@@ -219,6 +219,13 @@ jobs:
           dbsize=$(redis-cli -h 127.0.0.1 -p 6379 dbsize)
           echo "redis_commands_before=$before after=$after delta=$delta dbsize_after=$dbsize"
           [ "$delta" -ge 3 ] || { echo "[FAIL] integration 期间 Redis 命令数几乎无增长（delta=$delta）→ 真 Redis 未被使用 = 未验证 = 红"; exit 1; }
+      - name: 审计串行套件覆盖率（与并行 profile 并集判定，避免"搬用例"被误读为覆盖下降）
+        run: |
+          set -euo pipefail
+          go test -tags 'integration audit_serial' ./internal/audit -p 1 -count=1 \
+            -coverprofile=audit-serial-cover.out > audit-serial-cover.log 2>&1 || { tail -40 audit-serial-cover.log; exit 1; }
+          echo "[OK] audit_serial profile: $(wc -l < audit-serial-cover.out) blocks"
+
       - name: 集成覆盖率采集（integration profile；供 flowstore 85% 判定）
         run: |
           set -euo pipefail
@@ -232,7 +239,9 @@ jobs:
       - name: 集成覆盖率门禁（flowstore 85% 在此判定；unit profile 判不了）
         run: |
           set -euo pipefail
-          COVERAGE_TAGS=integration COVERAGE_PROFILE=integration-cover.out COVERAGE_MIN=60 \
+          # 并行 profile + 串行套件 profile **并集**判定（`internal/audit` 的用例分两套标签）。
+          COVERAGE_TAGS=integration COVERAGE_PROFILE=integration-cover.out \
+            COVERAGE_EXTRA_PROFILE=audit-serial-cover.out COVERAGE_MIN=60 \
             ./scripts/coverage-gate.sh | tee integration-coverage.txt
 
   sdk:
