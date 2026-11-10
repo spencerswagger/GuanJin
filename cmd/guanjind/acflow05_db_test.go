@@ -353,6 +353,16 @@ func TestACFLOW05_02_UnionWithClientDisabled(t *testing.T) {
 		t.Fatalf("有效禁用应为 {password,totp}（并集），实际 %v", got)
 	}
 
+	// ①′ **物理来源隔离（Ark D19）**：两侧必须是两张表、互不改写。
+	//    平台级 → `runtime_config.factors.disabled`；client 级 → `login_policies.disabled_factors`。
+	//    没有这条，"并集"可能只是"某一次 PATCH 顺手把另一侧也改了"造成的假绿。
+	if got := clientDisabledText(t, db, f.clientID); got != "password" {
+		t.Fatalf("平台级 PATCH 不得改写 login_policies.disabled_factors（应仍为 password），实际 %q", got)
+	}
+	if got := e.disabledSet(t); strings.Join(got, ",") != "totp" {
+		t.Fatalf("client 级禁用不得写进 runtime_config.factors.disabled（应只有 totp），实际 %v", got)
+	}
+
 	// ② 任一侧变更不得清空另一侧：把平台侧清空后，客户端级仍必须生效。
 	if status, raw, env := e.patch(t, "totp",
 		`{"enabled":true,"reason":"恢复 totp"}`, "trace-acflow05-02b-"+uuid.NewString()[:8]); status != http.StatusOK {
@@ -482,6 +492,21 @@ func TestACFLOW05_03_AuditExactlyOnceInSameTx(t *testing.T) {
 	if now := failing.disabledSet(t); strings.Join(now, ",") != strings.Join(beforeState, ",") {
 		t.Fatalf("审计失败必须整体回滚：before=%v after=%v", beforeState, now)
 	}
+}
+
+// clientDisabledText 读 `login_policies.disabled_factors` 的落地值（text[]，用 array_to_string
+// 避免驱动把数组扫成 "{a,b}" 这种带花括号的字符串）。空数组 → ""。
+func clientDisabledText(t *testing.T, db *gorm.DB, clientID string) string {
+	t.Helper()
+	var raw *string
+	if err := db.Raw(`SELECT array_to_string(disabled_factors, ',') FROM login_policies
+		WHERE client_id = ? AND scope = 'client_override'`, clientID).Row().Scan(&raw); err != nil {
+		t.Fatalf("读 login_policies.disabled_factors：%v", err)
+	}
+	if raw == nil {
+		return ""
+	}
+	return *raw
 }
 
 // containsStr 报告字符串切片里是否有某值。
