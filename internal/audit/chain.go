@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"sort"
+	"strconv"
 	"time"
 
 	"github.com/google/uuid"
@@ -104,6 +106,15 @@ func (c *Chain) Tag(prevTag []byte, r Record) ([]byte, error) {
 //  1. `rec.PrevTag` 必须逐字节等于上一条的 `IntegrityTag`（删中间一条/乱序都会在这里暴露）；
 //  2. 按内容重算的 tag 必须等于 `rec.IntegrityTag`（改内容但没改 tag 会在这里暴露）。
 func (c *Chain) Verify(records []Record, anchor []byte) (*BrokenPoint, error) {
+	return c.VerifyFrom(records, anchor, true)
+}
+
+// VerifyFrom 与 `Verify` 相同，但可以**跳过首条的 `prev_tag` 校验**（`checkFirst=false`）。
+//
+// 为什么要这个开关：链按自然月分段，段首的 `prev_tag` 应当等于**上个月封锚的链尾 tag**。
+// 如果上个月还没有锚点（历史月、或还没跑过复核），段首的 `prev_tag` 是"未知"而不是"应为 nil"——
+// 把"未知"当成 nil 判，会让非首月的首次复核恒报 `prev_tag_mismatch`（Owl II P0 的另一面）。
+func (c *Chain) VerifyFrom(records []Record, anchor []byte, checkFirst bool) (*BrokenPoint, error) {
 	// **先判链是否可用**：空记录集也要报错——nil/零键的链若在这里静默返回"通过"，
 	// 调用方会拿到"整链完好"的结论，而实际上一次都没校验（最坏形态：校验 Job 变成摆设）。
 	if c == nil || c.key.IsZero() {
@@ -112,6 +123,18 @@ func (c *Chain) Verify(records []Record, anchor []byte) (*BrokenPoint, error) {
 	prev := anchor
 	for i := range records {
 		rec := records[i]
+		if i == 0 && !checkFirst {
+			// 段首 prev_tag 未知：不判它，但仍按内容重算 tag（改内容照样能发现）。
+			want, err := c.Tag(rec.PrevTag, rec)
+			if err != nil {
+				return nil, err
+			}
+			if !bytesEqual(want, rec.IntegrityTag) {
+				return &BrokenPoint{Index: 0, RecordID: rec.ID, Reason: ReasonTagMismatch}, nil
+			}
+			prev = rec.IntegrityTag
+			continue
+		}
 		if !bytesEqual(rec.PrevTag, prev) {
 			return &BrokenPoint{
 				Index:    i,
@@ -141,6 +164,10 @@ const (
 	ReasonPrevMismatch = "prev_tag_mismatch"
 	// ReasonTagMismatch 内容被改（tag 与按内容重算的结果不符）。
 	ReasonTagMismatch = "integrity_tag_mismatch"
+	// ReasonAnchorMismatch 本月封条（`anchor[M]`）在段内**找不到对应记录** ——
+	// 典型形态是"整月尾部被删"（链内每一对 prev/tag 仍自洽，只有锚点能发现）。
+	// 单独一个原因码，避免把运维引去查一条无辜的最后记录。
+	ReasonAnchorMismatch = "anchor_mismatch"
 )
 
 // BrokenPoint 是第一个断点的位置。
@@ -190,6 +217,65 @@ func canonical(r Record) ([]byte, error) {
 	return b.buf, nil
 }
 
+// numberText 把 Go 数值转成**与读侧（`encoding/json`）完全一致**的文本。
+//
+// 返回 ok=false 表示"不是数字"，交给调用方走其它分支。
+func numberText(v any) (string, bool, error) {
+	switch t := v.(type) {
+	case json.Number:
+		return t.String(), true, nil
+	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64, float32, float64:
+		raw, err := json.Marshal(t)
+		if err != nil {
+			return "", false, fmt.Errorf("audit: canonical number: %w", err)
+		}
+		return string(raw), true, nil
+	}
+	return "", false, nil
+}
+
+// canonicalNumber 是**数字的唯一规范口径**：读（JSON 文本）写（Go 值转出的文本）共用同一个函数。
+//
+// 入参是"最像 JSON 的文本"——写侧负责把 Go 值转成这种文本（整型用 `FormatInt/FormatUint`，
+// `float32` 用 `bitsize=32` 的最短表示，`float64` 用 `bitsize=64`），读侧给 JSON 原文。
+// 输出规则按序：
+//
+//  1. 能 `ParseInt` → 定点十进制（保精度，雪花 ID / 毫秒时间戳不会被抹平）；
+//  2. 能 `ParseUint` → 定点十进制；
+//  3. 解析不出数（如 `1e400`）→ 原文（仍然确定）；
+//  4. `float` 值是整数值且在 int64 范围内 → 定点十进制
+//     （`float64(1e18)` 的文本 `1e+18` 与读侧文本 `1000000000000000000` 因此归到同一串）；
+//  5. 非负且在 uint64 范围内 → 定点十进制（覆盖 `2^63..2^64` 那段）；
+//  6. 其余 → 最短可逆浮点 `'g'`（`1e21` 两侧都停在 `1e+21`）。
+//
+// **边界不是 2^53**：`v == math.Trunc(v)` 在任何量级都精确；真正的边界是 int64/uint64 的取值域。
+// （上两轮把边界写成 `|v| < 2^53` 是错的：`2^53` 本身被排除在外，而它用 `FormatInt` 完全精确，
+// 于是 `float64(2^53)`、`1e18` 这类整数在写侧走 `'g'`、读侧走十进制 → 链自断。）
+func canonicalNumber(txt string) string {
+	if n, err := strconv.ParseInt(txt, 10, 64); err == nil {
+		return strconv.FormatInt(n, 10)
+	}
+	if u, err := strconv.ParseUint(txt, 10, 64); err == nil {
+		return strconv.FormatUint(u, 10)
+	}
+	f, err := strconv.ParseFloat(txt, 64)
+	if err != nil {
+		return txt // 既不是整型也超出 float64 范围：退回原文（确定性由调用方输入决定）
+	}
+	if f == math.Trunc(f) {
+		// `float64(1<<63)` 已经超出 int64 上界，必须用 `<` 而不是 `<=`（否则转换是未定义行为）。
+		const maxInt64AsFloat = float64(1 << 63)
+		if f >= -maxInt64AsFloat && f < maxInt64AsFloat {
+			return strconv.FormatInt(int64(f), 10)
+		}
+		const maxUint64AsFloat = float64(1 << 64)
+		if f >= 0 && f < maxUint64AsFloat {
+			return strconv.FormatUint(uint64(f), 10)
+		}
+	}
+	return strconv.FormatFloat(f, 'g', -1, 64)
+}
+
 // enc 是"长度前缀 + presence 标记"的小编码器（不引序列化库：要的是**确定**，不是通用）。
 type enc struct{ buf []byte }
 
@@ -231,6 +317,20 @@ func (e *enc) json(v map[string]any) error {
 
 // value 递归编码 JSON 值：对象按键名排序、数组保序、数字统一成 `json.Number` 的规范串。
 func (e *enc) value(v any) error {
+	// 数字：写侧与读侧**用同一个编码器产出文本**（`encoding/json`），再走同一个 `canonicalNumber`。
+	//
+	// 为什么要借 `json.Marshal` 而不是自己拼 `FormatFloat`：读回来的文本是 `encoding/json`
+	// 给的（例如 `float64(7.0888e16)` → `70888282338495940`，而 `FormatFloat('g')` 是
+	// `7.088828233849594e+16`）。两侧文本不同就会算出不同 tag —— 自己写的链自己验不过。
+	// 借同一个编码器后，"写侧的值"与"读回的文本"天然一致，只剩跨类型归一化要做。
+	if txt, ok, err := numberText(v); err != nil {
+		return err
+	} else if ok {
+		e.str("n")
+		e.str(canonicalNumber(txt))
+		return nil
+	}
+
 	switch t := v.(type) {
 	case map[string]any:
 		keys := make([]string, 0, len(t))
@@ -270,15 +370,6 @@ func (e *enc) value(v any) error {
 		return nil
 	case nil:
 		e.str("null")
-		return nil
-	case json.Number:
-		e.str("n")
-		e.str(t.String())
-		return nil
-	case float64:
-		// 统一成 `json.Number` 的规范串，避免 `1` 与 `1.0` 算出两个 tag。
-		e.str("n")
-		e.str(fmt.Sprintf("%v", t))
 		return nil
 	default:
 		// 未知类型：用 JSON 兜底（仍然确定，因为 encoding/json 对同一 Go 值是确定的）。

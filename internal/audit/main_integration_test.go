@@ -109,19 +109,19 @@ func setPoolBaseMonth(db *gorm.DB) error {
 	if err := db.Raw(`SELECT max(occurred_at) FROM audit_logs`).Scan(&tail).Error; err != nil {
 		return err
 	}
-	// 基准月 = max(链尾月份 + 1, 2040-01)：既要晚于链尾（否则撞下界守卫），
-	// 又要**远离真实月份**——`cmd/guanjind` 的分区用例会删/建"当月 + N 个月"的分区，
-	// 若基准月与之重合，`DROP TABLE` 会把本包的行连同分区一起删掉
-	// （实测：`AC-AUD_03` 报"应有 4 条，实际 0"）。
+	// 基准月 = 链尾月份 + 1（链空则当月 + 1）。
+	//
+	// **不再用 2040 这种"远未来"地板**：当初设它是怕 `cmd/guanjind` 的分区用例
+	// DROP/建"当月 + N"的分区时把本包的行连分区一起删掉；而审计集成用例从
+	// PR #74/#77 起跑在**独立 schema `audit_test`**，那条冲突已不存在。
+	// 月份贴近当下还有两个好处：断言里的"当月"语义可读；将来若要给 `occurred_at`
+	// 加"不得晚于链尾月 + 1"的上界守卫，这套基建不用再改。
 	var base time.Time
 	if tail.Valid && !tail.Time.IsZero() {
 		base = time.Date(tail.Time.UTC().Year(), tail.Time.UTC().Month(), 1, 0, 0, 0, 0, time.UTC).AddDate(0, 1, 0)
 	} else {
 		now := time.Now().UTC()
 		base = time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC).AddDate(0, 1, 0)
-	}
-	if floor := time.Date(2040, 1, 1, 0, 0, 0, 0, time.UTC); base.Before(floor) {
-		base = floor
 	}
 	poolBaseMonth.Store(base)
 	return nil
