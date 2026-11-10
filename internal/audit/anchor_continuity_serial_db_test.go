@@ -137,3 +137,112 @@ func TestCanonicalEncodingUnified(t *testing.T) {
 		t.Fatal("1 与 2 的 canonical 相同 —— 归一化过头，链失去区分力")
 	}
 }
+
+// TestAnchorContinuityAfterSameMonthAppend —— Owl II P0 复审抓到的**新假告警**回归。
+//
+// 场景（生产上必然发生）：Job 每一拍是「先 RunOnce 复核当月 → 再 AnchorCurrentMonth 写当月链尾」。
+// 所以封锚之后同月**还会继续写入**审计事实。若段尾校验写成"段尾 tag == anchor[M]"（等值），
+// 第二天复核就必然报 `integrity_tag_mismatch` —— 症状与本次要修的 P0 一模一样（只是 index 从 0 挪到末尾）。
+//
+// 正确口径：**存在性**判定 —— 段内必须找得到 `anchor[M]` 对应的那条记录；正常追加不影响，
+// 而"整月尾部被删"照样能发现（见下一条用例）。
+func TestAnchorContinuityAfterSameMonthAppend(t *testing.T) {
+	db := openAuditTestDB(t)
+	chain := auditTestChain(t)
+	month := freshMonth(t, db)
+	cleanupMonth(t, db, month)
+
+	ctx := context.Background()
+	if _, marker := appendN(t, chain, db, month, 3); marker == "" {
+		t.Fatal("appendN 未返回标记")
+	}
+
+	anchors := NewAnchorStore(db)
+	verifier, err := NewVerifier(chain, db, anchors, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatalf("NewVerifier: %v", err)
+	}
+	verifier.now = func() time.Time { return month.Add(10 * time.Minute) }
+	if err := verifier.AnchorCurrentMonth(ctx); err != nil {
+		t.Fatalf("AnchorCurrentMonth: %v", err)
+	}
+
+	// 封锚之后同月继续写入（Job 下一拍之前，业务还在产生审计事实）。
+	if _, marker := appendN(t, chain, db, month, 2); marker == "" {
+		t.Fatal("appendN 未返回标记")
+	}
+
+	ResetMetricsForTest()
+	verifier.now = func() time.Time { return month.Add(20 * time.Minute) }
+	res, err := verifier.RunOnce(ctx)
+	if err != nil {
+		t.Fatalf("封锚后追加再复核：%v", err)
+	}
+	if res.Broken != nil {
+		t.Fatalf("封锚后同月追加一条就报断链：index=%d reason=%s（broken_total=%d）—— "+
+			"段尾校验用了等值判定，正常追加被当成篡改",
+			res.Broken.Index, res.Broken.Reason, ChainBrokenTotal())
+	}
+	if got := ChainBrokenTotal(); got != 0 {
+		t.Fatalf("audit_chain_broken_total 不应递增，实际 %d", got)
+	}
+	if lastVerifiedUnixSec.Load() == 0 {
+		t.Fatal("anchor_age 基准未被刷新：复核没走到整链通过分支")
+	}
+}
+
+// TestSealedMonthTailDeletedIsDetected —— 存在性判定的另一半：封条对应的记录被删，必须检出。
+//
+// 整月尾部被删时，段内**每一对 prev/tag 仍然自洽**（链看不出断），只有锚点能发现。
+// 这也是段尾校验存在的唯一理由——所以它必须能红。
+func TestSealedMonthTailDeletedIsDetected(t *testing.T) {
+	db := openAuditTestDB(t)
+	chain := auditTestChain(t)
+	month := freshMonth(t, db)
+	cleanupMonth(t, db, month)
+
+	ctx := context.Background()
+	appendN(t, chain, db, month, 3)
+
+	anchors := NewAnchorStore(db)
+	verifier, err := NewVerifier(chain, db, anchors, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatalf("NewVerifier: %v", err)
+	}
+	verifier.now = func() time.Time { return month.Add(10 * time.Minute) }
+	if err := verifier.AnchorCurrentMonth(ctx); err != nil {
+		t.Fatalf("AnchorCurrentMonth: %v", err)
+	}
+
+	// 删掉封条对应的那条（本月最后一条）：链内 prev/tag 仍自洽，只有锚点对不上。
+	records, err := chain.Load(ctx, db, month, month.AddDate(0, 1, 0))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(records) < 3 {
+		t.Fatalf("本月记录不足（期望 ≥3，实际 %d）", len(records))
+	}
+	victim := records[len(records)-1]
+	if err := db.Exec(fmt.Sprintf(`DELETE FROM audit_logs WHERE id = '%s'`, victim.ID)).Error; err != nil {
+		t.Fatalf("delete tail: %v", err)
+	}
+
+	ResetMetricsForTest()
+	res, err := verifier.RunOnce(ctx)
+	if err != nil {
+		t.Fatalf("RunOnce: %v", err)
+	}
+	if res.Broken == nil {
+		t.Fatal("封条对应的记录被删却判绿 —— 尾部截断检测失效（AC-AUD-06）")
+	}
+	if res.Broken.Reason != ReasonAnchorMismatch {
+		t.Fatalf("应报 anchor_mismatch（不是 integrity_tag_mismatch：剩下的记录内容没被改），实际 %s",
+			res.Broken.Reason)
+	}
+	if got := ChainBrokenTotal(); got == 0 {
+		t.Fatal("检出断链必须让 audit_chain_broken_total 递增")
+	}
+	if lastVerifiedUnixSec.Load() != 0 {
+		t.Fatal("断链时不许刷新 anchor_age 基准（否则指标会把'没验过'显示成'刚验过'）")
+	}
+}

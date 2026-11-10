@@ -163,6 +163,10 @@ const (
 	ReasonPrevMismatch = "prev_tag_mismatch"
 	// ReasonTagMismatch 内容被改（tag 与按内容重算的结果不符）。
 	ReasonTagMismatch = "integrity_tag_mismatch"
+	// ReasonAnchorMismatch 本月封条（`anchor[M]`）在段内**找不到对应记录** ——
+	// 典型形态是"整月尾部被删"（链内每一对 prev/tag 仍自洽，只有锚点能发现）。
+	// 单独一个原因码，避免把运维引去查一条无辜的最后记录。
+	ReasonAnchorMismatch = "anchor_mismatch"
 )
 
 // BrokenPoint 是第一个断点的位置。
@@ -294,11 +298,25 @@ func (e *enc) value(v any) error {
 		e.str("null")
 		return nil
 	case json.Number:
-		// 数字统一口径：先把文本解析成 float64 再按最短可逆十进制输出——
-		// 这样 `json.Number("1")`、`json.Number("1.0")`、`float64(1)` 编出同一个字节串。
+		// 数字统一口径：**整型先按整型保精度**，再退到 float64，最后才退回原文。
+		//
+		// 为什么不能一律 `Float64()` 中转（Owl II P1）：>2^53 的整数会丢精度，
+		// `9007199254740993` 与 `…992` 会算出同一个 tag —— "改 ID 不改 tag"也能验过，
+		// 防篡改强度被静默削弱。整型走 `FormatInt` 既保精度，又保住
+		// `1` == `int64(1)` == `float64(1)` == `json.Number("1")` == `json.Number("1.0")`。
+		if n, err := strconv.ParseInt(t.String(), 10, 64); err == nil {
+			e.str("n")
+			e.str(strconv.FormatInt(n, 10))
+			return nil
+		}
+		if u, err := strconv.ParseUint(t.String(), 10, 64); err == nil {
+			e.str("n")
+			e.str(strconv.FormatUint(u, 10))
+			return nil
+		}
 		f, err := t.Float64()
 		if err != nil {
-			// 超出 float64 范围时退回原文（仍然确定，只是与 float64 口径不同，已在文档里写明）。
+			// 既不是整型也超出 float64 范围（如 `1e400`）：退回原文（仍然确定）。
 			e.str("n")
 			e.str(t.String())
 			return nil
@@ -308,11 +326,19 @@ func (e *enc) value(v any) error {
 		return nil
 	case int:
 		e.str("n")
-		e.str(strconv.FormatFloat(float64(t), 'g', -1, 64))
+		e.str(strconv.FormatInt(int64(t), 10))
 		return nil
 	case int64:
 		e.str("n")
-		e.str(strconv.FormatFloat(float64(t), 'g', -1, 64))
+		e.str(strconv.FormatInt(t, 10))
+		return nil
+	case uint:
+		e.str("n")
+		e.str(strconv.FormatUint(uint64(t), 10))
+		return nil
+	case uint64:
+		e.str("n")
+		e.str(strconv.FormatUint(t, 10))
 		return nil
 	case float64:
 		// **与其他数字类型统一口径**（Owl II P2 ②）：一律用最短可逆十进制表示

@@ -140,3 +140,44 @@ func TestAnchorCurrentMonthSurfacesDBError(t *testing.T) {
 		t.Fatal("库不可用时 AnchorCurrentMonth 必须报错")
 	}
 }
+
+// canonical 的大整数精度（Owl II P1）：>2^53 的不同整数**不许**被抹成同一个 tag。
+//
+// 旧实现一律 `float64` 中转：`9007199254740993` 与 `…992` 会编成同一串 →
+// `before/after` 里出现雪花 ID 时，"改 ID 不改 tag"也能验过，防篡改强度被静默削弱。
+func TestCanonicalBigIntegersKeepPrecision(t *testing.T) {
+	c := testChain(t)
+	base := Record{ID: uuid.New(), Action: "canon", Result: "success", OccurredAt: time.Unix(0, 0).UTC()}
+	tagOf := func(v any) []byte {
+		rec := base
+		rec.Before = map[string]any{"id": v}
+		tag, err := c.Tag(nil, rec)
+		if err != nil {
+			t.Fatalf("Tag(%#v): %v", v, err)
+		}
+		return tag
+	}
+
+	distinct := []struct {
+		a, b any
+	}{
+		{int64(9007199254740993), int64(9007199254740992)},
+		{int64(1) << 62, (int64(1) << 62) + 1},
+		{json.Number("12345678901234567890"), json.Number("12345678901234567891")},
+		{uint64(18446744073709551615), uint64(18446744073709551614)},
+	}
+	for _, p := range distinct {
+		if bytesEqual(tagOf(p.a), tagOf(p.b)) {
+			t.Fatalf("%#v 与 %#v 编出了同一个 tag —— 大整数丢精度，篡改验不出来", p.a, p.b)
+		}
+	}
+
+	// 但"同值不同写法"必须仍然归一到同一个 tag（P2 ② 的原始目的）。
+	same := []any{int(1), int64(1), uint(1), uint64(1), float64(1), json.Number("1"), json.Number("1.0"), json.Number("1.00")}
+	first := tagOf(same[0])
+	for _, v := range same[1:] {
+		if !bytesEqual(first, tagOf(v)) {
+			t.Fatalf("同值不同写法 %#v 与 1 的 canonical 不一致（链会自断）", v)
+		}
+	}
+}

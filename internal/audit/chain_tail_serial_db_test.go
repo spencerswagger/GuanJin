@@ -526,7 +526,7 @@ func TestSameMonthMicrosecondRollbackIsAccepted(t *testing.T) {
 	}
 }
 
-func TestAnchorMismatchBreaksAtFirstRecord(t *testing.T) {
+func TestAnchorMismatchBreaksAtTail(t *testing.T) {
 	db := openAuditTestDB(t)
 	chain := auditTestChain(t)
 	month := freshMonth(t, db)
@@ -552,9 +552,10 @@ func TestAnchorMismatchBreaksAtFirstRecord(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RunRange: %v", err)
 	}
-	// 锚点语义（P0 修复后）：`anchor[M]` 是本月的**封条**（链尾 tag），所以错锚在**段尾**暴露，
-	// 而不是首条——首条只看 `anchor[M-1]`（上月封条），与本用例无关。
-	if res.Broken == nil || res.Broken.Index != 2 || res.Broken.Reason != ReasonTagMismatch {
-		t.Fatalf("错锚点应在段尾（index=2, integrity_tag_mismatch）暴露，实际 %+v", res.Broken)
+	// 锚点语义（P0 修复后）：`anchor[M]` 是本月的**封条**（链尾 tag）。校验方式是
+	// **存在性**——段内必须找得到这一条。错锚找不到 → 在段尾位置报 `anchor_mismatch`
+	// （不报 `integrity_tag_mismatch`：最后那条记录的内容并没有被改）。
+	if res.Broken == nil || res.Broken.Index != 2 || res.Broken.Reason != ReasonAnchorMismatch {
+		t.Fatalf("错锚点应在段尾（index=2, anchor_mismatch）暴露，实际 %+v", res.Broken)
 	}
 }

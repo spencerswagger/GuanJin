@@ -129,6 +129,8 @@ func (v *Verifier) RunRange(ctx context.Context, from, to time.Time) (VerifyResu
 	if err != nil {
 		return res, fmt.Errorf("audit: load anchor: %w", err)
 	}
+	// 字段含义：**本月封条**（`anchor[M]`）。段首实际用的是 `anchor[M-1]`，
+	// 两者不是同一个值——这里保留本月封条，因为它是"本段复核完成度"的凭据。
 	res.AnchorUsed = selfAnchor
 
 	records, err := v.chain.Load(ctx, v.db, from, to)
@@ -141,9 +143,12 @@ func (v *Verifier) RunRange(ctx context.Context, from, to time.Time) (VerifyResu
 	checkFirst := len(prevAnchor) > 0
 	if !checkFirst && len(records) > 0 {
 		var before int64
+		// `EXISTS … LIMIT 1` 而不是 `count(*)`：只需回答"之前有没有"，精确计数在
+		// `audit_logs`（按月分区、`occurred_at` 无单列索引）上要扫全表。
 		if err := v.db.WithContext(ctx).Raw(
-			`SELECT count(*) FROM audit_logs WHERE occurred_at < ?`, from.UTC()).Scan(&before).Error; err != nil {
-			return res, fmt.Errorf("audit: count before: %w", err)
+			`SELECT CASE WHEN EXISTS (SELECT 1 FROM audit_logs WHERE occurred_at < ?) THEN 1 ELSE 0 END`,
+			from.UTC()).Scan(&before).Error; err != nil {
+			return res, fmt.Errorf("audit: probe records before: %w", err)
 		}
 		checkFirst = before == 0
 	}
@@ -152,11 +157,31 @@ func (v *Verifier) RunRange(ctx context.Context, from, to time.Time) (VerifyResu
 	if err != nil {
 		return res, err
 	}
-	// ④ 段尾必须等于本月封条（若已封锚）。
-	if broken == nil && len(selfAnchor) > 0 && len(records) > 0 {
-		last := records[len(records)-1]
-		if !bytesEqual(last.IntegrityTag, selfAnchor) {
-			broken = &BrokenPoint{Index: len(records) - 1, RecordID: last.ID, Reason: ReasonTagMismatch}
+	// ④ 本月封条必须**在段内找得到对应记录**（若已封锚且复核的是整月区间）。
+	//
+	// 这里必须是**存在性**判定，不能拿"段尾 tag == 锚点"做等值判定（Owl II P0）：
+	// `StartJob` 每一拍是「先 RunOnce 复核当月 → 再 AnchorCurrentMonth 写当月链尾」，
+	// 所以 `anchor[M]` 是**上一次**复核时的链尾；同月之后只要再写一条审计事实，
+	// 段尾就变了 → 等值判定会把"正常追加"报成 `integrity_tag_mismatch`，
+	// 与本次要修的假告警症状一模一样（`chain_broken_total` 照样每天 +1、`anchor_age` 停住）。
+	// 存在性判定既能发现"整月尾部被删"（锚点对应的那条没了），又不会误报正常追加。
+	//
+	// 只在**整月区间**（`to == 下月 1 号`）启用：`RunRange` 也支持取证用的子区间，
+	// 那种区间里本来就不含封条对应的记录。
+	if broken == nil && len(selfAnchor) > 0 && len(records) > 0 &&
+		to.UTC().Equal(month.AddDate(0, 1, 0)) {
+		found := false
+		for i := range records {
+			if bytesEqual(records[i].IntegrityTag, selfAnchor) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			// 指到段内最后一条（便于人查"从哪之后没了"），但原因码单列 `anchor_mismatch`，
+			// 别让运维以为最后那条记录的内容被改过。
+			last := records[len(records)-1]
+			broken = &BrokenPoint{Index: len(records) - 1, RecordID: last.ID, Reason: ReasonAnchorMismatch}
 		}
 	}
 	res.Broken = broken
