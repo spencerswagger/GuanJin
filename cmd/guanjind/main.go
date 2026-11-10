@@ -90,7 +90,7 @@ func startup(ctx context.Context, getenv func(string) string, logger *slog.Logge
 		return nil, err
 	}
 	// S7 的装配（会话自助面 + 管理面 sessions 段）在自己的文件里：`wiring.go` 归 S6。
-	sessRoutes, adminSessRoutes, err := newSessionWiring(ctx, db, cfg, logger)
+	sessRoutes, adminSessRoutes, callerResolver, err := newSessionWiring(ctx, db, cfg, logger)
 	if err != nil {
 		_ = store.Close(db)
 		return nil, err
@@ -111,6 +111,13 @@ func startup(ctx context.Context, getenv func(string) string, logger *slog.Logge
 	// 会话自助面 + 管理面 sessions 段（S7）：`/api/v1/me/sessions*`、`/api/v1/sessions*`。
 	sessRoutes.Routes(mux)
 	adminSessRoutes.Routes(mux)
+	// 因子管理面（AC-FLOW-05）：`/api/v1/factors` 读 + `/{type}` 详情 + PATCH 平台级启停（写审计）。
+	factorRoutes, err := newFactorsAdminWiring(db, cfg, w.registry, callerResolver, logger)
+	if err != nil {
+		_ = store.Close(db)
+		return nil, err
+	}
+	factorRoutes.Routes(mux)
 
 	mux.HandleFunc("/livez", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)

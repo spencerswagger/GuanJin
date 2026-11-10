@@ -39,11 +39,14 @@ type wiring struct {
 	flowHandler     *flow.HTTPHandler
 	registerHandler *identity.RegisterHTTP
 	riskGuard       *risk.Guard
+	// registry 是启动期建好的因子注册表：管理面 `GET/PATCH /api/v1/factors` 要复用它，
+	// **不能**第二个地方再 Register 一遍（两份注册表 = 两份能力声明，迟早不一致）。
+	registry *factor.Registry
 }
 
 // newWiring 装出本进程的全部业务面。
 func newWiring(ctx context.Context, db *gorm.DB, cfg *config.Config, startup store.StartupConfig, logger *slog.Logger) (*wiring, error) {
-	flowHandler, guard, err := newFlowHandler(ctx, db, cfg, startup, logger)
+	flowHandler, guard, registry, err := newFlowHandler(ctx, db, cfg, startup, logger)
 	if err != nil {
 		return nil, err
 	}
@@ -51,49 +54,55 @@ func newWiring(ctx context.Context, db *gorm.DB, cfg *config.Config, startup sto
 	if err != nil {
 		return nil, err
 	}
-	return &wiring{flowHandler: flowHandler, registerHandler: registerHandler, riskGuard: guard}, nil
+	return &wiring{flowHandler: flowHandler, registerHandler: registerHandler, riskGuard: guard, registry: registry}, nil
 }
 
 // newFlowHandler 装出因子与挑战面（S5）。
-func newFlowHandler(ctx context.Context, db *gorm.DB, cfg *config.Config, startup store.StartupConfig, logger *slog.Logger) (*flow.HTTPHandler, *risk.Guard, error) {
+func newFlowHandler(ctx context.Context, db *gorm.DB, cfg *config.Config, startup store.StartupConfig, logger *slog.Logger) (*flow.HTTPHandler, *risk.Guard, *factor.Registry, error) {
 	flowRepo := store.NewFlowRepo(db)
 	flowSvc, err := flowstore.New(db, flowRepo, startup.FlowTTL)
 	if err != nil {
-		return nil, nil, fmt.Errorf("startup: flowstore: %w", err)
+		return nil, nil, nil, fmt.Errorf("startup: flowstore: %w", err)
 	}
 	flowAdapter, err := flowstore.NewAdapter(flowSvc, flowRepo)
 	if err != nil {
-		return nil, nil, fmt.Errorf("startup: flow adapter: %w", err)
+		return nil, nil, nil, fmt.Errorf("startup: flow adapter: %w", err)
 	}
 	challengeAdapter, err := flowstore.NewChallengeAdapter(store.NewChallengeRepo(db))
 	if err != nil {
-		return nil, nil, fmt.Errorf("startup: challenge adapter: %w", err)
+		return nil, nil, nil, fmt.Errorf("startup: challenge adapter: %w", err)
 	}
 
 	// 账号级失败计数（Redis 权威，D3-D）。**启动期不 ping**：Redis 挂了进程要活着、
 	// 业务全拒（`/readyz` 与请求路径负责），否则会连探针都没有。
 	guard, err := risk.New(cfg.RedisAddr, cfg.RedisPassword)
 	if err != nil {
-		return nil, nil, fmt.Errorf("startup: risk guard: %w", err)
+		return nil, nil, nil, fmt.Errorf("startup: risk guard: %w", err)
 	}
 
 	credStore, err := identity.NewCredentialStore(db)
 	if err != nil {
-		return nil, nil, fmt.Errorf("startup: credential store: %w", err)
+		return nil, nil, nil, fmt.Errorf("startup: credential store: %w", err)
 	}
 	// 认证路径只做校验，不判口令策略（策略在注册/改密时有 client 上下文才判）——
 	// 所以用 `NewPasswordVerifier`，不为了过构造器自检而伪造一份策略数字。
 	password, err := holding.NewPasswordVerifier(credStore)
 	if err != nil {
-		return nil, nil, fmt.Errorf("startup: password factor: %w", err)
+		return nil, nil, nil, fmt.Errorf("startup: password factor: %w", err)
 	}
 	registry := factor.NewRegistry()
 	descriptors, err := holding.Register(registry, password)
 	if err != nil {
-		return nil, nil, fmt.Errorf("startup: factor registry: %w", err)
+		return nil, nil, nil, fmt.Errorf("startup: factor registry: %w", err)
 	}
 
 	policies := store.NewClientPolicyRepo(db)
+	// 有效禁用 = 平台级（runtime_config `factors.disabled`）∪ 客户端级（login_policies）；
+	// 两级互不覆盖，任一级禁用即不可用（AC-FLOW-05）。
+	platformFactors, err := store.NewPlatformFactorReader(db)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("startup: platform factor reader: %w", err)
+	}
 	orc, err := flow.New(flow.Deps{
 		Reader:     flowAdapter,
 		Starter:    flowAdapter,
@@ -104,7 +113,7 @@ func newFlowHandler(ctx context.Context, db *gorm.DB, cfg *config.Config, startu
 			factor.FactorPassword: password,
 		},
 		Factors:         flow.FactorInfosOf(descriptors),
-		DisabledFactors: disabledFactorsOf(policies),
+		DisabledFactors: mergeDisabledFactors(disabledFactorsOf(policies), platformFactors.PlatformDisabledFactors),
 		TierOf:          tierOf(policies),
 		ClientOf:        clientOf(policies),
 		Guard:           &riskGuardAdapter{guard: guard},
@@ -112,13 +121,13 @@ func newFlowHandler(ctx context.Context, db *gorm.DB, cfg *config.Config, startu
 		Now:             time.Now,
 	})
 	if err != nil {
-		return nil, nil, fmt.Errorf("startup: flow orchestrator: %w", err)
+		return nil, nil, nil, fmt.Errorf("startup: flow orchestrator: %w", err)
 	}
 	handler, err := flow.NewHTTPHandler(orc, logger)
 	if err != nil {
-		return nil, nil, fmt.Errorf("startup: flow handler: %w", err)
+		return nil, nil, nil, fmt.Errorf("startup: flow handler: %w", err)
 	}
-	return handler, guard, nil
+	return handler, guard, registry, nil
 }
 
 // newRegisterHandler 装出注册面（S4：`/auth/register/start|complete`）。
@@ -295,7 +304,7 @@ func newProtocolHandler(ctx context.Context, db *gorm.DB, cfg *config.Config, st
 	}
 	policies := store.NewClientPolicyRepo(db)
 	// 授权端点需要编排器：复用 flow 那条装配（同进程内共享，避免两套 Descriptor 口径）。
-	flowHandler, _, err := newFlowHandler(ctx, db, cfg, startup, logger)
+	flowHandler, _, _, err := newFlowHandler(ctx, db, cfg, startup, logger)
 	if err != nil {
 		return nil, err
 	}
@@ -493,4 +502,40 @@ func (r *redirects) RedirectURIs(ctx context.Context, clientID string) ([]string
 		return nil, clientError(err)
 	}
 	return uris, nil
+}
+
+// mergeDisabledFactors 把**平台级**（`runtime_config.factors.disabled`）与**客户端级**
+// （`login_policies.disabled_factors`）合成"有效禁用"集合（AC-FLOW-05：两级互不覆盖，取并集）。
+//
+// fail-closed：平台级集合读不出来就报错，**不**降级成"只按客户端级算"——那等于把管理员
+// 关掉的因子悄悄放回来。平台集合只由 `PATCH /api/v1/factors/{type}` 写入且写入前已校验
+// 因子存在，所以这里不会出现未知类型。
+func mergeDisabledFactors(clientDisabled func(context.Context, string) ([]factor.FactorType, error),
+	platformDisabled func(context.Context) (map[string]bool, error)) func(context.Context, string) ([]factor.FactorType, error) {
+	return func(ctx context.Context, clientID string) ([]factor.FactorType, error) {
+		out, err := clientDisabled(ctx, clientID)
+		if err != nil {
+			return nil, err
+		}
+		plat, err := platformDisabled(ctx)
+		if err != nil {
+			return nil, err
+		}
+		seen := make(map[factor.FactorType]bool, len(out)+len(plat))
+		merged := make([]factor.FactorType, 0, len(out)+len(plat))
+		for _, t := range out {
+			if !seen[t] {
+				seen[t] = true
+				merged = append(merged, t)
+			}
+		}
+		for t := range plat {
+			ft := factor.FactorType(t)
+			if !seen[ft] {
+				seen[ft] = true
+				merged = append(merged, ft)
+			}
+		}
+		return merged, nil
+	}
 }
