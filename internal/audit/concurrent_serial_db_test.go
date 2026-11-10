@@ -20,6 +20,8 @@ import (
 	"github.com/google/uuid"
 )
 
+func init() { disableReanchor.Store(true) }
+
 func TestAC_AUD_04_Concurrent100AppendsKeepChainIntact(t *testing.T) {
 	db := openAuditTestDB(t)
 	chain := auditTestChain(t)

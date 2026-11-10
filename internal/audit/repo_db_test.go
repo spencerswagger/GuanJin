@@ -137,6 +137,11 @@ func cleanMonth(t *testing.T) time.Time {
 // retriesTotal 记录"重锚重试"的累计次数（Gate 要看这个数：> 总写入 10% 说明结构性问题仍在）。
 var retriesTotal atomic.Int64
 
+// disableReanchor 在串行套件里置 true：串行套件用 `freshMonth` 的独占月份，
+// 重锚会把行写到**别的月份**、绕过该用例的清理，造成"同月 70 条"这种跨轮污染。
+// 因此串行套件里**不做重锚**：真出现 `predates` 就让它红出来（配额足够时不该发生）。
+var disableReanchor atomic.Bool
+
 // appendWithReanchor 写一条记录；命中 `ErrOccurredAtTooOld` / 23514 时**重锚**（重取链尾 → 新月份）
 // 后重试，最多 3 次，并把次数累加到 `retriesTotal`。
 //
@@ -152,7 +157,7 @@ func appendWithReanchor(chain *Chain, db *gorm.DB, rec Record) ([]byte, error) {
 			return saved, nil
 		}
 		lastErr = err
-		if !errors.Is(err, ErrOccurredAtTooOld) && !strings.Contains(err.Error(), "23514") {
+		if disableReanchor.Load() || (!errors.Is(err, ErrOccurredAtTooOld) && !strings.Contains(err.Error(), "23514")) {
 			return nil, err
 		}
 		retriesTotal.Add(1)
