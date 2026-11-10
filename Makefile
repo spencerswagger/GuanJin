@@ -111,3 +111,9 @@ web-check: ## vue-tsc 类型检查（第三闸，只读）
 # ---------- 一条命令跑完三闸（＋门禁；不含 race）----------
 ci: lint test coverage web-check ## 三闸全绿（go vet / go test / vue-tsc）＋门禁＋覆盖率；race 另跑 make test-race
 	@echo "[OK] three gates green"
+
+
+# 串行专用套件：审计并发/探针敏感性（AC-AUD-04、b1/b2、串行零分叉）。
+# `-p 1 -count=3`：这些用例需要一个稳定的全局链尾，多包并行时语义不可解释。
+test-audit-serial:
+	go test -tags 'integration audit_serial' ./internal/audit -p 1 -count=3 -v

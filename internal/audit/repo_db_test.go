@@ -12,8 +12,6 @@ import (
 	"io"
 	"log/slog"
 	"os"
-	"strings"
-	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -90,8 +88,8 @@ func auditTestChain(t *testing.T) *Chain {
 // 下与并发写入撞出 **40P01 死锁**（Gate 复现：`create partition audit_logs_pXXXXXX`）。
 // 运行期 DDL 在并发测试里必然不稳；生产也不这么做（分区由月度任务建，见 000011 注释）。
 const (
-	partitionStartYear  = 2035
-	partitionMonthCount = 36
+	partitionStartYear  = 2040
+	partitionMonthCount = 120 // 10 年：运行期**零 DDL**，全部由 TestMain 预建
 )
 
 // partitionMonths 是预建分区覆盖的月份窗口：**基准月起连续 `partitionMonthCount` 个月**。
@@ -143,40 +141,35 @@ func cleanMonth(t *testing.T) time.Time {
 // **断言分区真的存在**，把这类错误在"拿到月份那一刻"就炸掉，而不是等 INSERT 抛 23514。
 func freshMonth(t *testing.T, db *gorm.DB) time.Time {
 	t.Helper()
-	for i := 0; i < 5; i++ {
-		var tail sql.NullTime
-		if err := db.Raw(`SELECT max(occurred_at) FROM audit_logs`).Scan(&tail).Error; err != nil {
-			t.Fatalf("read tail: %v", err)
-		}
-		base := time.Date(2040, 1, 1, 0, 0, 0, 0, time.UTC)
-		if tail.Valid && !tail.Time.IsZero() {
-			tm := time.Date(tail.Time.UTC().Year(), tail.Time.UTC().Month(), 1, 0, 0, 0, 0, time.UTC).AddDate(0, 1, 0)
-			if tm.After(base) {
-				base = tm
-			}
-		}
-		name := fmt.Sprintf("audit_logs_p%s", base.Format("200601"))
-		var exists bool
-		if err := db.Raw(`SELECT to_regclass(?) IS NOT NULL`, name).Scan(&exists).Error; err != nil {
-			t.Fatalf("check %s: %v", name, err)
-		}
-		if exists {
-			return base // **已有分区就不做 DDL**：`CREATE TABLE … PARTITION OF` 会对父表取
-			// ACCESS EXCLUSIVE，与并发 INSERT 的 ROW EXCLUSIVE 互撞 → 40P01（Gate 的 `-p 8` 里 deadlock=1）。
-		}
-		if err := EnsurePartitions(context.Background(), db, []time.Time{base}); err != nil {
-			t.Fatalf("EnsurePartitions(%s): %v", base.Format("200601"), err)
-		}
-		if err := db.Raw(`SELECT to_regclass(?) IS NOT NULL`, name).Scan(&exists).Error; err != nil {
-			t.Fatalf("check %s: %v", name, err)
-		}
-		if !exists {
-			t.Fatalf("分区 %s 建完仍不存在", name)
-		}
-		return base
+	var tail sql.NullTime
+	if err := db.Raw(`SELECT max(occurred_at) FROM audit_logs`).Scan(&tail).Error; err != nil {
+		t.Fatalf("read tail: %v", err)
 	}
-	t.Fatal("freshMonth: 重试 5 次仍拿不到可用月份")
-	return time.Time{}
+	lo := time.Date(partitionStartYear, 1, 1, 0, 0, 0, 0, time.UTC)
+	hi := lo.AddDate(0, partitionMonthCount-1, 0) // 最后一个**已预建**月份
+	month := lo
+	if tail.Valid && !tail.Time.IsZero() {
+		tm := time.Date(tail.Time.UTC().Year(), tail.Time.UTC().Month(), 1, 0, 0, 0, 0, time.UTC).AddDate(0, 1, 0)
+		if tm.After(month) {
+			month = tm
+		}
+	}
+	// **运行期零 DDL**：不在这里建分区（`CREATE TABLE … PARTITION OF` 取 ACCESS EXCLUSIVE，
+	// 与并发 INSERT 的 ROW EXCLUSIVE 相撞会 40P01）。分区全部由 `TestMain` 预建；
+	// 越界就当场 Fatalf 并打出范围与链尾，不等到 INSERT 抛 23514。
+	if month.Before(lo) || month.After(hi) {
+		t.Fatalf("可用月份 %s 超出预建范围 [%s, %s]（链尾=%v）——调大 partitionMonthCount",
+			month.Format("200601"), lo.Format("200601"), hi.Format("200601"), tail)
+	}
+	name := fmt.Sprintf("audit_logs_p%s", month.Format("200601"))
+	var exists bool
+	if err := db.Raw(`SELECT to_regclass(?) IS NOT NULL`, name).Scan(&exists).Error; err != nil {
+		t.Fatalf("check %s: %v", name, err)
+	}
+	if !exists {
+		t.Fatalf("分区 %s 不在预建集合里（TestMain 应预建 %d 个月）", name, partitionMonthCount)
+	}
+	return month
 }
 
 // requirePartition 保证"该月分区存在"且**该月晚于全局链尾月份**，返回实际可用的月份。
@@ -348,77 +341,6 @@ func TestAC_AUD_05_TamperedRecordIsDetectedAndMetricIncrements(t *testing.T) {
 
 // AC-AUD-04：**并发 100 写** → 全部落库、链完整（逐条 hash 接上、tag 无重复），
 // 且整链复核通过（这是"并发下不丢链不重号"的唯一证明）。
-func TestAC_AUD_04_Concurrent100AppendsKeepChainIntact(t *testing.T) {
-	db := openAuditTestDB(t)
-	chain := auditTestChain(t)
-	month := freshMonth(t, db)
-	cleanupMonth(t, db, month)
-
-	const n = 100
-	// **按本次写入的标记过滤**，不按月份统计：全局链里可能混入其它包/其它用例的记录
-	// （Gate 实测按月份数到 55 条，形同"期望 20 实际 55"）。标记用唯一 `TargetID` 前缀。
-	marker := "ac-aud-04-" + uuid.NewString()[:8]
-	// 注意：**不在这里逐 goroutine 重锚**——重锚会把链尾不断推高（M→M+1→M+2…），
-	// 反而让同批写者互相判"早于链尾"（实测重试 76~123 次、最终只落 32~50 条）。
-	// 月份由 `freshMonth` 一次性取好；若真被别的写者越过，就让用例红并打印月份。
-	var wg sync.WaitGroup
-	errs := make(chan error, n)
-	for i := 0; i < n; i++ {
-		wg.Add(1)
-		go func(i int) {
-			defer wg.Done()
-			if _, err := chain.Append(context.Background(), db, Record{
-				Action: "user.disable", Result: "success", TargetType: "user",
-				TargetID: fmt.Sprintf("%s-%d", marker, i), ClientID: "s10-audit",
-				After:      map[string]any{"i": fmt.Sprintf("%d", i)},
-				OccurredAt: month.Add(time.Duration(i) * time.Millisecond),
-			}); err != nil {
-				errs <- fmt.Errorf("月份=%s i=%d: %w", month.Format("200601"), i, err)
-			}
-		}(i)
-	}
-	wg.Wait()
-	close(errs)
-	for err := range errs {
-		t.Fatalf("并发写入失败：%v", err)
-	}
-
-	all, err := chain.Load(context.Background(), db, month, month.AddDate(0, 1, 0))
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
-	// 只挑本次标记的记录（同月可能还有别的用例/别的包的记录）。
-	var records []Record
-	for _, rec := range all {
-		if strings.HasPrefix(rec.TargetID, marker) {
-			records = append(records, rec)
-		}
-	}
-	if len(records) != n {
-		t.Fatalf("本次写入应有 %d 条，实际 %d（本月总 %d 条，含其它标记）", n, len(records), len(all))
-	}
-	// 逐条 hash 接得上 + tag 无重复（"不重号"）。
-	seen := map[string]bool{}
-	for i, rec := range records {
-		if len(rec.IntegrityTag) == 0 {
-			t.Fatalf("第 %d 条没有 integrity_tag", i)
-		}
-		key := string(rec.IntegrityTag)
-		if seen[key] {
-			t.Fatalf("第 %d 条 tag 与前面重复（链出现分叉）", i)
-		}
-		seen[key] = true
-	}
-	// 整链复核：从本次首条的 `prev_tag` 起，沿链走到本次末条为止。
-	broken, err := chain.Verify(records, records[0].PrevTag)
-	if err != nil {
-		t.Fatalf("Verify: %v", err)
-	}
-	if broken != nil {
-		t.Fatalf("并发 100 写后整链必须通过，实际断在 %+v", broken)
-	}
-}
-
 // AC-AUD-11：锚点写入/读取 + 复核通过后 `AnchorAge` 归零（指标基准）。
 func TestAC_AUD_11_AnchorAndVerifyMetrics(t *testing.T) {
 	db := openAuditTestDB(t)

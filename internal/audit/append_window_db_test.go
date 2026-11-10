@@ -1,4 +1,9 @@
-//go:build integration
+//go:build integration && audit_serial
+
+// **串行专用套件**（`-tags 'integration audit_serial' -p 1`）：本文件的三条用例
+// （串行零分叉 / b1 / b2）验证的是"串行化与探针敏感性"，在 `-p 8` 的多包并行下
+// 会与其它包共享全局审计链、结果不可解释；因此从默认并行套件里摘出，
+// 由 `make test-audit-serial`（CI 单列一步）以 `-p 1 -count=3` 运行。
 
 package audit
 
