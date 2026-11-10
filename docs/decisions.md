@@ -466,7 +466,7 @@
 
 - **平台级 ≠ 本条（顺手纠正一处转述）**：`AC-FLOW-05` 里的「平台级开关」**不在** `login_policies`——基线把它落在 **`runtime_config`**（`数据模型:1071`：`factors.<type>.enabled=true`），与 client 级禁用**互不覆盖、效果取并集**；`login_policies` 只承载 **client 级**（含 `tier_default` 回落）。此前群聊里「平台级开关 = `login_policies`」的转述应更正为「**平台级 = `runtime_config`，client 级 = `login_policies`**」。附事实：`/api/v1/factors/{type}` 端点当前 main **未实现**（`cmd/guanjind/main.go` 未挂 `/api/v1/factors`），`AC-FLOW-05` 的实现侧仍依赖该端点与 `factors.<type>.enabled` 键；**本条不改变它的账目状态**。
 - **有效禁用集 = 两个物理来源的并集（后来者只需记这一句）**：`effective_disabled = 平台级(runtime_config) ∪ client/tier 级(login_policies.disabled_factors)`；**两侧互不覆盖、互不改写**，任一侧新增禁用只会让有效集变大（方向恒为"只能增加禁用"，预设档位 §三 E 组）。`AC-FLOW-05` 的「两级不互相覆盖」正是这个并集语义——**它与本条争论的物理落点无关**（落点只决定 client 级那一半存在哪张表）。举例：client 级禁 `otp` + 平台级停 `sms` ⇒ 有效集 `{otp, sms}`，两者都不进 `available_factors`、都不计入 `current_acr`。
-- **平台级那一半的键形态（诚实标注，别自造）**：基线只给了**示例**——`factors.<type>.enabled=true`（`数据模型:1071`，逐因子一键、写在 `runtime_config`），**没有**冻结"禁用集数组"式的键名（如 `factors.disabled: [...]` 不存在于任何基线文本）。因此：实现平台级启停时按"**逐因子一个 `enabled` 键**"落地，键名形如 `factors.<type>.enabled`；若将来要改成集合键，属新增键形态 → 走本文裁定 + `runtime_config` 迁移，**不得在代码里先造一个再用**。
+- **平台级那一半的键形态（以 D22 为准，别自造）**：基线只给了**示例**——`factors.<type>.enabled=true`（`数据模型:1071`，是"新增因子零 DDL"的举例，**未冻结键名**）；实现在 `runtime_config` 里只有**唯一一个聚合键 `factors.disabled`**（jsonb 字符串数组，常量 `store.KeyFactorsDisabled`），由 **D22** 冻结形态与 seed（迁移 `000020`）。**旧文本曾写"按逐因子 `enabled` 键落地"，已作废**——代码里从未有过逐因子键（全仓非测试代码零处 `factors.<type>.enabled` 读写），且 D22 明写"废除基线示例式的 `factors.<type>.enabled`"。改键形态 = D22 翻案（同时改台账 + 迁移 + 读写路径），**不得在代码里先造一个再用**。
 
 - **已知行为（只登记，不改）**：现实现是**整行胜出**——`client_override` 存在即整份取它的 `disabled_factors`，**不与 `tier_default` 合并**。当前 `000017` 三档 seed 都是 `{}`，故今日无差异；一旦某档 `tier_default` 设了非空禁用集，`client_override` 会遮蔽它。要不要改成并集属**行为变更**，另开裁定（不在本条）。
 
@@ -536,6 +536,8 @@
 > **触发**：`SetEnabled` 的并发安全靠 `SELECT … WHERE key='factors.disabled' FOR UPDATE` 锁住那一行；**行不存在时 `FOR UPDATE` 锁不到任何东西** → 两个并发 `PATCH /api/v1/factors/{type}` 都读到"空集" → 后写覆盖先写（丢更新）且两条审计的 before/after 都算错 = **一条真实变更记两条审计**（Core #92 的红证据；锁修复归 Edge）。本文只裁定**载体形态与落法**，不修锁。
 >
 > **前提校正（谁为准）**：基线 `数据模型:1071` 只给了**示例**——「写一行开关（如 `factors.webauthn.enabled=true`）」，是"新增因子零 DDL"的举例，**没有冻结键名**；`runtime_config` 是内部配置表、不是对外契约面（F0 名单未列其键）。因此**实现用单行聚合键 `factors.disabled` 是合法的**，但必须由本条**冻结形态**，且**不得再出现第二个键名**（`factors.disabled` 唯一；谁再写 `factors.<type>.enabled` 就是自造第二套）。
+
+- **与 D19 的旧句对齐（2026-11-11 更正）**：D19 早期写过"实现按逐因子 `enabled` 键落地"，那句**作废**——本条冻结的是**唯一聚合键 `factors.disabled`**，代码里从来没有逐因子键（全仓非测试代码零处 `factors.<type>.enabled` 读写）。D19 正文已就地更正并指回本条。
 
 - **① 载体形态：`jsonb` **空数组 `[]`**（`value_type='json'`、`is_secret=false`）**
   - **不用 `null`**：`jsonb 'null'` 与"空集"在语义上不可区分（读侧要么写 `raw=="null"` 特判、要么判 `jsonb_typeof`），且 `jsonb_array_elements('null'::jsonb)` 直接报错——SQL 侧任何聚合/展开都要再兜一层。
@@ -694,7 +696,7 @@
 | `D14①②③④⑤` | §**D14** | 挑战 TTL/次数只从 `runtime_config` 读（`000018`）、`register_token` = HMAC-SM3 签名串、邀请码非空一律 400、`attempts_left` 两处口径、跨模块代落登记表 |
 | `D4-C(5)` | D4 裁定 C 的第 (5) 条 | 链序 = `created_at`；`occurred_at` 原样并**参与 `integrity_tag`**；二者不同不算缺陷；下界守卫防跨月破链（完整裁定 `notes/audit-chain-order-2026-11-10.md`） |
 | `D17` | §**D17** | 能力矩阵与 AC 账目的计数单位：`GJ-CAP-17/20/21` **无 AC 条目**、能力矩阵记 `DEFERRED(M5)`/`N/A(M2)`、与 `AC-AGENT-01~03` **不得双计**、22 能力与 90 判据**不得换算**；`90 = 83/0/0/6/0/1` 不受影响 |
-| `D19` | §**D19** | `disabled_factors` 的物理落点 = `login_policies`（client 级 `client_override`、回落 `tier_default`），`clients` 无此列；`接口清单:211`/`页面规格:533` 的"来自 clients"是笔误、只改措辞不进 CH；**有效禁用集 = 平台级 `runtime_config`（`factors.<type>.enabled`，逐因子一键）∪ client 级，互不覆盖** |
+| `D19` | §**D19** | `disabled_factors` 的物理落点 = `login_policies`（client 级 `client_override`、回落 `tier_default`），`clients` 无此列；`接口清单:211`/`页面规格:533` 的"来自 clients"是笔误、只改措辞不进 CH；**有效禁用集 = 平台级 `runtime_config.factors.disabled`（唯一聚合键，jsonb 数组，见 D22）∪ client 级，互不覆盖** |
 | `D23①②③` | §**D23** | `AC-ENG-07` 三笔账：①**升 Go 1.26**（`go.mod` 是锁定权威、基线版本是建议值）+ **stdlib 一律不得进白名单**（只能升）；②**vue 3.5.42+ 升**（不留豁免，Vue 出回归）；③`sdk/java` **显式打 `[UNCOVERED]`**（立即）+ 一个迭代内改**离线 SBOM**（Nova 产 / Gate 判，2026-12-10 前），逾期则账目降级 |
 | `D22` | §**D22** | 平台级禁用集载体 = `runtime_config.factors.disabled`（jsonb **`[]`**、唯一键名，废除基线示例式的 `factors.<type>.enabled`）；**seed 落行**（迁移 `000020`，`ON CONFLICT DO NOTHING`）+ 启动期校验（缺键/坏值 fail-fast）；运行期缺行 = 500 不静默空集；否决读路径自愈 |
 | `D21` | §**D21** | `AC-REG-04` 的耗时阈值 = `runtime_config.register.timing.max_diff_ms`（int，默认 **50**，迁移 `000019`）；口径 = `register/start` 两条路径耗时中位数之差的**绝对值**上界，时钟源 = 进程单调钟；**超阈值 = 红**；键是**判据参数、服务不读、不进 `StartupKeys()`**、零代码改动 |
