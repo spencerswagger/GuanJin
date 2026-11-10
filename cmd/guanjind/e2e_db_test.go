@@ -101,7 +101,9 @@ func newFlowFixture(t *testing.T, db *gorm.DB, tier, disabledFactors string) *fl
 	}
 	f.ttl = startupCfg.FlowTTL
 
-	w, err := newWiring(ctx, db, testConfig(t), startupCfg, discardLogger())
+	// 本套用例只走 flow/register 两条面；`/api/v1/me/*` 需要一个 resolver 才能装配，
+	// 这里给一个"永远拒绝"的桩（不伪造登录态，也不影响被测路径）。
+	w, err := newWiring(ctx, db, testConfig(t), startupCfg, rejectResolver{}, discardLogger())
 	if err != nil {
 		t.Fatalf("newWiring: %v", err)
 	}
@@ -596,4 +598,14 @@ func TestE2E_AC_LOGIN_03_Lockout(t *testing.T) {
 	if err := guard.Reset(context.Background(), userID.String()); err != nil {
 		t.Fatalf("reset: %v", err)
 	}
+}
+
+// rejectResolver 是 `session.TokenResolver` 的桩：任何令牌都判未认证。
+//
+// 只给"不需要登录态的集成用例"装配用（flow/register/fail-closed 那几条）；
+// 自助面用例必须用真解析器（否则等于没验认证）。
+type rejectResolver struct{}
+
+func (rejectResolver) Resolve(context.Context, string) (httpx.Caller, error) {
+	return httpx.Caller{}, httpx.ErrCallerUnauthenticated
 }
