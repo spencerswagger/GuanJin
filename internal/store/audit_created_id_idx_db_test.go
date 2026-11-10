@@ -31,19 +31,37 @@ import (
 
 const chainOrderIdxName = "audit_logs_created_id_idx"
 
-// auditPartitions 返回当前 schema 下 audit_logs 的所有分区名（排序）。
-func auditPartitions(t *testing.T, db *gorm.DB) []string {
+// partitionIndexState 返回"分区 → 是否挂着父索引的子索引"，**一条 SQL 一次快照**。
+//
+// 为什么要合成一条：先枚举分区、再逐个查继承关系是 **TOCTOU** —— `-p 8` 下同库的
+// `internal/audit` 用例会在收尾 `DropPartitions`，两次查询之间分区就没了，
+// 于是 `42P01 relation "audit_logs_pYYYYMM" does not exist`（实测偶发红一次）。
+// 一条语句里枚举+判定，拿的是同一个 MVCC 快照，不会再出现"查到一半消失"。
+func partitionIndexState(t *testing.T, db *gorm.DB) map[string]bool {
 	t.Helper()
-	var names []string
-	err := db.Raw(`SELECT c.relname::text FROM pg_class c
-		 JOIN pg_inherits i ON i.inhrelid = c.oid
-		 JOIN pg_namespace n ON n.oid = c.relnamespace
-		WHERE i.inhparent = 'audit_logs'::regclass AND n.nspname = current_schema()
-		ORDER BY 1`).Scan(&names).Error
-	if err != nil {
-		t.Fatalf("读 audit_logs 分区清单：%v", err)
+	var rows []struct {
+		Partition string
+		HasIndex  bool
 	}
-	return names
+	err := db.Raw(`SELECT c.relname::text AS partition,
+			EXISTS (
+				SELECT 1 FROM pg_inherits h
+				  JOIN pg_index i ON i.indexrelid = h.inhrelid
+				 WHERE h.inhparent = ?::regclass AND i.indrelid = c.oid
+			) AS has_index
+		FROM pg_class c
+		JOIN pg_inherits pi ON pi.inhrelid = c.oid
+		JOIN pg_namespace n ON n.oid = c.relnamespace
+		WHERE pi.inhparent = 'audit_logs'::regclass AND n.nspname = current_schema()
+		ORDER BY 1`, chainOrderIdxName).Scan(&rows).Error
+	if err != nil {
+		t.Fatalf("读 audit_logs 分区的索引状态：%v", err)
+	}
+	out := make(map[string]bool, len(rows))
+	for _, r := range rows {
+		out[r.Partition] = r.HasIndex
+	}
+	return out
 }
 
 // partitionHasChainOrderIndex 报告某分区上是否挂着**父索引的子索引**（不看子索引名字）。
@@ -76,13 +94,13 @@ func TestDBAuditCreatedIDIndexOnParentAndEveryPartition(t *testing.T) {
 		t.Fatalf("父索引 relkind 期望 I/i（分区父索引），实际 %q", parentKind)
 	}
 
-	// ② 每个现有分区都必须挂着它的子索引。
-	parts := auditPartitions(t, db)
-	if len(parts) == 0 {
+	// ② 每个现有分区都必须挂着它的子索引（一条 SQL 一次快照，避免与并行包的 DDL 抢出 TOCTOU）。
+	state := partitionIndexState(t, db)
+	if len(state) == 0 {
 		t.Fatal("audit_logs 竟然没有分区（D4-C 要求按月分区）")
 	}
-	for _, p := range parts {
-		if !partitionHasChainOrderIndex(t, db, p) {
+	for p, hasIndex := range state {
+		if !hasIndex {
 			t.Errorf("分区 %s 上没有 %s 的子索引：分区索引不全 → 规划器会退回逐分区 Seq Scan",
 				p, chainOrderIdxName)
 		}

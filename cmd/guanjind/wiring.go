@@ -108,6 +108,28 @@ func newFlowHandler(ctx context.Context, db *gorm.DB, cfg *config.Config, startu
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("startup: platform factor reader: %w", err)
 	}
+	// **未知因子类型：保留不删，但必须点名**（2026-11-11 定稿口径）。
+	//
+	// 为什么保留：滚动升级时"新版本已加的类型"旧节点不认识；一旦在读-改-写里丢掉，
+	// 那个类型在其它节点上就会**意外变为可用**（安全降级）。
+	// 为什么必须 WARN：数组里出现未知类型（尤其把类型名写错）意味着"本该禁用的那个因子
+	// 其实没被禁用"，只有一行 info 没人会看。
+	// 读失败**不降级**：缺行/坏值由 `ValidateStartup`（`factors.disabled` 已在 startupSpecs 里）
+	// 更早 fail-fast；这里再读一次只是为了点名，失败就照样让进程起不来。
+	{
+		disabledNow, derr := platformFactors.Disabled(ctx)
+		if derr != nil {
+			return nil, nil, nil, fmt.Errorf("startup: read %s: %w", store.KeyFactorsDisabled, derr)
+		}
+		known := make([]string, 0, len(registry.Types()))
+		for _, t := range registry.Types() {
+			known = append(known, string(t))
+		}
+		if unknown := store.UnknownFactorTypes(disabledNow, known); len(unknown) > 0 {
+			logger.Warn("startup: 平台禁用集里有本进程未注册的因子类型（保留不删；可能来自更高版本的节点，或类型名写错）",
+				"unknown", unknown, "factors_disabled", disabledNow, "known", known)
+		}
+	}
 	orc, err := flow.New(flow.Deps{
 		Reader:     flowAdapter,
 		Starter:    flowAdapter,

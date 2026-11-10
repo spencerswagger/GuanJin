@@ -35,6 +35,11 @@ func intRow(key, raw string) *model.RuntimeConfig {
 	return &model.RuntimeConfig{Key: key, Value: model.JSONValue(raw), ValueType: "int"}
 }
 
+// jsonArrayRow 是 `factors.disabled` 这类 jsonb 数组键的测试行（D22）。
+func jsonArrayRow(key, raw string) *model.RuntimeConfig {
+	return &model.RuntimeConfig{Key: key, Value: model.JSONValue(raw), ValueType: "json"}
+}
+
 // 正常路径：600 秒 → 10 分钟。
 func TestLoadFlowTTLHappyPath(t *testing.T) {
 	reader := &fakeConfig{rows: map[string]*model.RuntimeConfig{
@@ -120,6 +125,8 @@ func TestValidateStartupReportsAllMissingKeys(t *testing.T) {
 		KeyFlowTTLSeconds:       intRow(KeyFlowTTLSeconds, "600"),
 		KeyChallengeTTLSeconds:  intRow(KeyChallengeTTLSeconds, "300"),
 		KeyChallengeMaxAttempts: intRow(KeyChallengeMaxAttempts, "5"),
+		// D22：平台级禁用集载体也是启动必备键（缺行 = fail-closed）。
+		KeyFactorsDisabled: jsonArrayRow(KeyFactorsDisabled, `[]`),
 	}}
 	got, err := ValidateStartup(context.Background(), ok)
 	if err != nil {
@@ -171,7 +178,8 @@ func TestValidateStartupRejectsNonIntValueType(t *testing.T) {
 
 // StartupKeys 必须逐字含 D5/D14 冻结的三个键名（拼错就是启动必挂）。
 func TestStartupKeysContainsFrozenNames(t *testing.T) {
-	want := []string{"flow.ttl_seconds", "challenge.ttl_seconds", "challenge.max_attempts"}
+	want := []string{"flow.ttl_seconds", "challenge.ttl_seconds", "challenge.max_attempts",
+		"factors.disabled"} // D22：平台级禁用集载体（jsonb 字符串数组）
 	got := StartupKeys()
 	if len(got) != len(want) {
 		t.Fatalf("StartupKeys = %v, want %v", got, want)
@@ -312,5 +320,43 @@ func TestRequiredPositiveInt(t *testing.T) {
 	boom := errors.New("db down")
 	if _, err := RequiredPositiveInt(ctx, &fakeConfig{err: boom}, KeyChallengeMaxAttempts); !errors.Is(err, boom) {
 		t.Fatalf("err = %v, want the reader error", err)
+	}
+}
+
+// `factors.disabled` 的启动校验（D22）：`[]` 合法；`null` / `{}` / 非数组 / 含空串 → fail-fast。
+func TestValidateStartupRejectsBadFactorsDisabled(t *testing.T) {
+	base := func(raw string) *fakeConfig {
+		return &fakeConfig{rows: map[string]*model.RuntimeConfig{
+			KeyFlowTTLSeconds:       intRow(KeyFlowTTLSeconds, "600"),
+			KeyChallengeTTLSeconds:  intRow(KeyChallengeTTLSeconds, "300"),
+			KeyChallengeMaxAttempts: intRow(KeyChallengeMaxAttempts, "5"),
+			KeyFactorsDisabled:      jsonArrayRow(KeyFactorsDisabled, raw),
+		}}
+	}
+	cfg, err := ValidateStartup(context.Background(), base(`[]`))
+	if err != nil {
+		t.Fatalf("空集 [] 必须通过启动校验：%v", err)
+	}
+	if len(cfg.FactorsDisabled) != 0 {
+		t.Fatalf("空集应解析成 0 项，实际 %v", cfg.FactorsDisabled)
+	}
+	cfg, err = ValidateStartup(context.Background(), base(`["sms","totp"]`))
+	if err != nil || len(cfg.FactorsDisabled) != 2 {
+		t.Fatalf("两项数组应通过并解析出 2 项：cfg=%v err=%v", cfg.FactorsDisabled, err)
+	}
+	for _, bad := range []string{`null`, `{}`, `""`, `[1]`, `[""]`} {
+		if _, err := ValidateStartup(context.Background(), base(bad)); err == nil {
+			t.Fatalf("%s 必须在启动期 fail-fast（不许当空集）", bad)
+		}
+	}
+	// value_type 不是 json 也要拦（例如被写成 int）。
+	wrongType := &fakeConfig{rows: map[string]*model.RuntimeConfig{
+		KeyFlowTTLSeconds:       intRow(KeyFlowTTLSeconds, "600"),
+		KeyChallengeTTLSeconds:  intRow(KeyChallengeTTLSeconds, "300"),
+		KeyChallengeMaxAttempts: intRow(KeyChallengeMaxAttempts, "5"),
+		KeyFactorsDisabled:      intRow(KeyFactorsDisabled, "0"),
+	}}
+	if _, err := ValidateStartup(context.Background(), wrongType); err == nil {
+		t.Fatal("value_type 不是 json 时必须 fail-fast")
 	}
 }
