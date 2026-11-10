@@ -173,6 +173,15 @@ jobs:
           echo "register_timing_key=$rtim type=$rtyp"
           [ "$rtim" = "50" ] || { echo "[FAIL] register.timing.max_diff_ms seed 期望 50（D21，迁移 000019），实际 '$rtim'"; exit 1; }
           [ "$rtyp" = "int" ] || { echo "[FAIL] register.timing.max_diff_ms 的 value_type 必须是 int（D21），实际 '$rtyp'"; exit 1; }
+      - name: 迁移往返（AC-ENG-02 的 down 半边：up → down -all → up → down -all）
+        # 判据原文「migrate up 全绿、down 可回滚」——此前只跑了 up，「可回滚」无证据。
+        # 用**专用库**（本步自建自删），不碰 guanjin_test，故不影响上面的 schema 断言与下面的集成用例。
+        # 断言四条：up 到最新版本；down -all 后零残留（表/列/索引/触发器/约束/函数/序列全清）；
+        #   再 up 的结构快照与第一次逐字节相同；再 down -all 仍零残留。任一不满足即 [FAIL] + exit 1。
+        env:
+          ROUNDTRIP_ADMIN_DSN: postgres://guanjin:guanjin@localhost:5432/postgres?sslmode=disable
+          ROUNDTRIP_DSN: postgres://guanjin:guanjin@localhost:5432/guanjin_miground?sslmode=disable
+        run: bash scripts/verify-migrate-roundtrip.sh
       - name: Redis 真连接基线（记录命令计数，供测试后比对增量）
         run: |
           set -euo pipefail
