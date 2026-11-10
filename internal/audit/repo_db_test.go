@@ -731,44 +731,6 @@ func TestLoadEmptyRangeAndAnchorOverwrite(t *testing.T) {
 	}
 }
 
-// `EnsurePartitions` / `DropPartitions` 的**真库**路径（生产月度任务用的就是这对函数）：
-// 建 → 存在 → 删 → 不存在；重复调用幂等；且与链锁共用同一把 advisory 锁（不与写入死锁）。
-func TestEnsureAndDropPartitionsRoundTrip(t *testing.T) {
-	db := openAuditTestDB(t)
-	month := time.Date(2071, 3, 1, 0, 0, 0, 0, time.UTC) // 故意用池外的月份，独立验证
-	ctx := context.Background()
-
-	// 先确保干净（可能上次跑挂了）。
-	_ = DropPartitions(ctx, db, []time.Time{month})
-	t.Cleanup(func() { _ = DropPartitions(ctx, db, []time.Time{month}) })
-
-	if err := EnsurePartitions(ctx, db, []time.Time{month}); err != nil {
-		t.Fatalf("EnsurePartitions: %v", err)
-	}
-	// 幂等：再建一次不报错。
-	if err := EnsurePartitions(ctx, db, []time.Time{month}); err != nil {
-		t.Fatalf("EnsurePartitions(again): %v", err)
-	}
-	var exists bool
-	if err := db.Raw(`SELECT to_regclass(?) IS NOT NULL`,
-		fmt.Sprintf("audit_logs_p%s", month.Format("200601"))).Scan(&exists).Error; err != nil {
-		t.Fatalf("check: %v", err)
-	}
-	if !exists {
-		t.Fatal("分区应已创建")
-	}
-	if err := DropPartitions(ctx, db, []time.Time{month}); err != nil {
-		t.Fatalf("DropPartitions: %v", err)
-	}
-	if err := db.Raw(`SELECT to_regclass(?) IS NOT NULL`,
-		fmt.Sprintf("audit_logs_p%s", month.Format("200601"))).Scan(&exists).Error; err != nil {
-		t.Fatalf("check after drop: %v", err)
-	}
-	if exists {
-		t.Fatal("分区应已删除")
-	}
-}
-
 // 链序真用例（Gate 要求：92% 必须来自真路径）：**同月内 `occurred_at` 微秒级回退**必须被接受，
 // 且链仍按 `created_at` 串起来（这正是"抬 created_at 而不是 occurred_at"要证明的行为）。
 func TestSameMonthMicrosecondRollbackIsAccepted(t *testing.T) {

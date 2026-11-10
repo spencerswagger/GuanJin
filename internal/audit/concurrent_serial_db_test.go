@@ -82,3 +82,45 @@ func TestAC_AUD_04_Concurrent100AppendsKeepChainIntact(t *testing.T) {
 		t.Fatalf("并发 100 写后整链必须通过，实际断在 %+v", broken)
 	}
 }
+
+// `EnsurePartitions` / `DropPartitions` 的**真库**路径（生产月度任务用的就是这对函数）：
+// 建 → 存在 → 删 → 不存在；重复调用幂等；且与链锁共用同一把 advisory 锁（不与写入死锁）。
+func TestEnsureAndDropPartitionsRoundTrip(t *testing.T) {
+	db := openAuditTestDB(t)
+	month := time.Date(2071, 3, 1, 0, 0, 0, 0, time.UTC) // 故意用池外的月份，独立验证
+	ctx := context.Background()
+
+	// 先确保干净（可能上次跑挂了）。
+	_ = DropPartitions(ctx, db, []time.Time{month})
+	t.Cleanup(func() { _ = DropPartitions(ctx, db, []time.Time{month}) })
+
+	if err := EnsurePartitions(ctx, db, []time.Time{month}); err != nil {
+		t.Fatalf("EnsurePartitions: %v", err)
+	}
+	// 幂等：再建一次不报错。
+	if err := EnsurePartitions(ctx, db, []time.Time{month}); err != nil {
+		t.Fatalf("EnsurePartitions(again): %v", err)
+	}
+	var exists bool
+	if err := db.Raw(`SELECT to_regclass(?) IS NOT NULL`,
+		fmt.Sprintf("audit_logs_p%s", month.Format("200601"))).Scan(&exists).Error; err != nil {
+		t.Fatalf("check: %v", err)
+	}
+	if !exists {
+		t.Fatal("分区应已创建")
+	}
+	if err := DropPartitions(ctx, db, []time.Time{month}); err != nil {
+		t.Fatalf("DropPartitions: %v", err)
+	}
+	if err := db.Raw(`SELECT to_regclass(?) IS NOT NULL`,
+		fmt.Sprintf("audit_logs_p%s", month.Format("200601"))).Scan(&exists).Error; err != nil {
+		t.Fatalf("check after drop: %v", err)
+	}
+	if exists {
+		t.Fatal("分区应已删除")
+	}
+}
+
+// 注：本用例做的是**DDL**（建/删分区，对父表 `audit_logs` 取 ACCESS EXCLUSIVE），
+// 与并行套件里其它用例的并发 INSERT（ROW EXCLUSIVE）会撞 40P01——实测 CI 上就红在这里。
+// 因此放在串行套件里跑（`-tags 'integration audit_serial' -p 1`）。
