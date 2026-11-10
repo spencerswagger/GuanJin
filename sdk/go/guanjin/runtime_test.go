@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 	"time"
 )
@@ -112,14 +113,20 @@ func TestPathMatcher(t *testing.T) {
 	}
 }
 
-func TestLoadFromEnvStrictWhitelist(t *testing.T) {
-	t.Setenv("GUANJIN_CLIENT_ID", "svc")
-	t.Setenv("GUANJIN_PLATFORM_BASE_URL", "https://gj.example.com")
-	t.Setenv("GUANJIN_GATEWAY_JWKS_CACHE_TTL", "5m")
-	t.Setenv("GUANJIN_ENV", "test")
-	t.Setenv("GUANJIN_TEST_DSN", "postgres://ignored")
+// baseEnviron 是受控的「合法 environ」：故意不读 os.Environ()，这样「白名单放过什么」
+// 不取决于跑用例那台机器/那个 CI job 导出了什么（PR #51 的红正是这么来的）。
+func baseEnviron() []string {
+	return []string{
+		"PATH=/usr/local/bin:/usr/bin",
+		"GUANJIN_ENV=test",
+		"GUANJIN_CLIENT_ID=svc",
+		"GUANJIN_PLATFORM_BASE_URL=https://gj.example.com",
+		"GUANJIN_GATEWAY_JWKS_CACHE_TTL=5m",
+	}
+}
 
-	cfg, err := LoadFromEnv()
+func TestLoadFromEnvironStrictWhitelist(t *testing.T) {
+	cfg, err := LoadFromEnviron(baseEnviron())
 	if err != nil {
 		t.Fatalf("装载失败：%v", err)
 	}
@@ -129,13 +136,142 @@ func TestLoadFromEnvStrictWhitelist(t *testing.T) {
 	if cfg.Gateway.JwksCacheTTL != 5*time.Minute {
 		t.Fatalf("duration 解析不对：%v", cfg.Gateway.JwksCacheTTL)
 	}
+
+	// 未知键 / 拼错键 / 已废止键一律**装载失败且报键名**（AC-FC-05、AC-SDK-01）。
+	// 注意第 3 条：旧实现用 `HasSuffix("_DSN")` 兜底，会把这种拼错当 "DSN" 静默吞掉；
+	// 现在排除面是封闭名单，它必须失败。
+	cases := []struct {
+		env  string
+		want string
+	}{
+		{"GUANJIN_NOPE=1", "guanjin.nope"},
+		{"GUANJIN_GATEWAY_JWKS_URL=https://x/jwks.json", "guanjin.gateway.jwks.url"},
+		{"GUANJIN_GATEWAY_JWKS_CACHE_TTL_DSN=1m", "guanjin.gateway.jwks.cache.ttl.dsn"},
+		{"GUANJIN_MODE=direct", "guanjin.mode"},
+		// 下面三条专门证明「非配置命名空间是逐条封闭枚举，不是前缀/后缀通配」（Spec 裁决）：
+		{"GUANJIN_TEST_FOO=1", "guanjin.test.foo"},               // TEST_ 前缀不再整体放行
+		{"GUANJIN_ALLOW_TEST_CLEANUP_2=1", "guanjin.allow.test"}, // 保留名加尾巴不算保留名
+		{"GUANJIN_GATEWAY_ROUTES_X=a", "guanjin.gateway.routes"}, // 同上，后缀不构成例外
+	}
+	for _, c := range cases {
+		_, err := LoadFromEnviron(append(baseEnviron(), c.env))
+		if err == nil {
+			t.Fatalf("%s 必须装载失败", c.env)
+		}
+		if !strings.Contains(err.Error(), c.want) {
+			t.Fatalf("%s 的报错必须含键名 %q，实得：%v", c.env, c.want, err)
+		}
+	}
+}
+
+// reservedEnvGolden 是**非配置命名空间的 golden 清单**：与 config.go 的 reservedEnv、
+// 契约 §3.6 附录必须逐条一致。它同时是「不许变成通配」的守卫——多一条少一条都会红。
+var reservedEnvGolden = []string{
+	// A. 平台启动配置（基线《技术栈与工程约定》§7.2 冻结）21 条
+	"GUANJIN_ENV", "GUANJIN_LOG_LEVEL", "GUANJIN_LOG_FORMAT", "GUANJIN_HTTP_ADDR",
+	"GUANJIN_GATEWAY_ADDR", "GUANJIN_PUBLIC_BASE_URL", "GUANJIN_ISSUER", "GUANJIN_DATABASE_URL",
+	"GUANJIN_DB_MAX_OPEN_CONNS", "GUANJIN_DB_MAX_IDLE_CONNS", "GUANJIN_DB_CONN_MAX_LIFETIME",
+	"GUANJIN_REDIS_URL", "GUANJIN_REDIS_TIMEOUT", "GUANJIN_MASTER_KEY", "GUANJIN_MASTER_KEY_FILE",
+	"GUANJIN_BOOTSTRAP_ADMIN_USERNAME", "GUANJIN_BOOTSTRAP_ADMIN_PASSWORD",
+	"GUANJIN_GATEWAY_UPSTREAM_TIMEOUT", "GUANJIN_GATEWAY_DIAL_TIMEOUT",
+	"GUANJIN_METRICS_ADDR", "GUANJIN_OTEL_ENDPOINT",
+	// B. 平台实现自用 6 条
+	"GUANJIN_DB_DSN", "GUANJIN_REDIS_ADDR", "GUANJIN_REDIS_PASSWORD",
+	"GUANJIN_TRACE_HEADER", "GUANJIN_GATEWAY_ROUTES", "GUANJIN_SLO_NOTIFY_PATH",
+	// C. 构建/本地/CI 夹具 8 条（后 6 条是过渡条目，随 GJTEST_* 改名 PR 删除）
+	"GUANJIN_DEV_DSN", "GUANJIN_STAGING_DSN", "GUANJIN_TEST_DSN", "GUANJIN_TEST_REDIS_ADDR",
+	"GUANJIN_TEST_REDIS_PASSWORD", "GUANJIN_TEST_DURATION",
+	"GUANJIN_ALLOW_TEST_CLEANUP", "GUANJIN_AUDIT_NO_ISOLATION",
+}
+
+// TestReservedEnvNamespaceIsClosed 锁住「保留命名空间 = 逐条封闭枚举」：
+// ① 代码里的 reservedEnv 必须与 golden 清单**完全相等**（多/少/改名都红，防止悄悄长成通配）；
+// ② 清单内每一条都能与合法配置共存装载（这是 PR #51 假红的回归点）；
+// ③ 清单外任何 `GUANJIN_*` 映射不到 29 项 → 必须失败（含"看起来像夹具"的名字）。
+func TestReservedEnvNamespaceIsClosed(t *testing.T) {
+	golden := make(map[string]struct{}, len(reservedEnvGolden))
+	for _, n := range reservedEnvGolden {
+		golden[n] = struct{}{}
+	}
+	if len(golden) != len(reservedEnvGolden) {
+		t.Fatalf("golden 清单自身有重复项：%d 条 vs %d 个唯一名", len(reservedEnvGolden), len(golden))
+	}
+	if len(reservedEnv) != len(golden) {
+		t.Fatalf("reservedEnv 有 %d 条，golden 清单有 %d 条：两侧必须逐条一致",
+			len(reservedEnv), len(golden))
+	}
+	for n := range reservedEnv {
+		if _, ok := golden[n]; !ok {
+			t.Fatalf("reservedEnv 里多出 golden 清单没有的条目：%s（新增保留名必须同步 §3.6 与本清单）", n)
+		}
+	}
+	for n := range golden {
+		if !isReservedEnv(n) {
+			t.Fatalf("golden 清单里的 %s 不在 reservedEnv：漏一个就是上线即挂", n)
+		}
+	}
+
+	// ② 全部保留名共存时，合法配置仍然装载成功（= PR #51 的假红不再出现）
+	env := baseEnviron()
+	for _, n := range reservedEnvGolden {
+		env = append(env, n+"=dummy")
+	}
+	cfg, err := LoadFromEnviron(env)
+	if err != nil {
+		t.Fatalf("保留命名空间被当成配置键：%v（PR #51 假红）", err)
+	}
+	if cfg.Client.ID != "svc" {
+		t.Fatalf("保留变量挤掉了配置键：%+v", cfg)
+	}
+
+	// ③ 同一批 environ 里混一个清单外的名字，仍然必须失败（封闭枚举不是后门）
+	for _, bad := range []string{"GUANJIN_PLATFORM_BASE_URLL=https://x", "GUANJIN_TEST_FOO=1"} {
+		if _, err := LoadFromEnviron(append(env, bad)); err == nil {
+			t.Fatalf("%s 必须装载失败（保留清单不得退化成通配）", bad)
+		}
+	}
+}
+
+// TestLoadFromEnvReadsProcessEnviron 验「真读进程环境」这条链路本身：
+// 先把当前进程里参与白名单的 GUANJIN_* 清干净（结束还原），再按 CI integration job 的
+// 现场导出一组变量，证明 LoadFromEnv() 在夹具变量共存时能正常装载。
+func TestLoadFromEnvReadsProcessEnviron(t *testing.T) {
+	scrubGuanjinEnv(t)
+	t.Setenv("GUANJIN_ENV", "test")
+	t.Setenv("GUANJIN_CLIENT_ID", "svc")
+	t.Setenv("GUANJIN_PLATFORM_BASE_URL", "https://gj.example.com")
+	t.Setenv("GUANJIN_TEST_REDIS_ADDR", "localhost:6379") // integration job 现场
+
+	cfg, err := LoadFromEnv()
+	if err != nil {
+		t.Fatalf("装载失败：%v（PR #51 假红）", err)
+	}
+	if cfg.Client.ID != "svc" {
+		t.Fatalf("进程环境未生效：%+v", cfg)
+	}
 	if EnvFromEnv() != EnvTest {
 		t.Fatalf("GUANJIN_ENV=test 应解析为 test，实得 %s", EnvFromEnv())
 	}
+}
 
-	t.Setenv("GUANJIN_NOPE", "1")
-	if _, err := LoadFromEnv(); err == nil {
-		t.Fatal("未知 GUANJIN_* 变量必须失败")
+// scrubGuanjinEnv 把当前进程里**会参与白名单**的 GUANJIN_* 临时清掉，用例结束还原。
+// 目的：任何人机器上跑都是同一结果，不因本地恰好 `export GUANJIN_FOO` 而红。
+func scrubGuanjinEnv(t *testing.T) {
+	t.Helper()
+	for _, kv := range os.Environ() {
+		i := strings.IndexByte(kv, '=')
+		if i < 0 {
+			continue
+		}
+		name, val := kv[:i], kv[i+1:]
+		if !strings.HasPrefix(name, "GUANJIN_") || isReservedEnv(name) {
+			continue
+		}
+		n, v := name, val
+		if err := os.Unsetenv(n); err != nil {
+			t.Fatalf("清理 %s 失败：%v", n, err)
+		}
+		t.Cleanup(func() { _ = os.Setenv(n, v) })
 	}
 }
 

@@ -315,9 +315,63 @@
 | Node | 构造 `createGuanjin(opts)` 时对 `opts` 做**深度遍历**并与 29 项白名单逐键比对：出现白名单外的键 → 立即 `throw`（`GuanjinConfigError`，附 `unknownKeys[]` + 可用键清单）。环境变量同理：**以 `GUANJIN_` 开头但映射不到 29 项** → 同样抛错（防 `GUANJIN_JAWKS_URI` 这类拼写错误静默失效） |
 | Go | ① `Config.Validate()` 在 `guanjin.New()` 内调用，**先于**任何网络动作（JWKS 拉取）；② 若配置来自文件/JSON，用 `json.Decoder.DisallowUnknownFields()`；③ 环境变量走白名单（`GUANJIN_` 前缀但未知 → 返回 error）；④ 返回 error 时**不得**同时返回可用实例（防调用方忽略 err 继续跑） |
 
-**明确不做**：不提供 `strict-config=false` 之类的关闭开关（否则又成暗开关，与 C-1 同类）；不为未知键提供「预留 / 实验」通道——新增键只能走 ADR 改 29 项。
+**口径（一）配置键只有一套白名单**：即 §3.2 的 **29 项**（「32 项」是编号空洞，已由 `decisions.md` D6-1 / ADR-003 作废，**不是缺项**、不得补齐）。
 
-**Gate 可断言**：塞一个 `guanjin.foo`（或 `GUANJIN_FOO`）→ **启动失败且错误信息含 `guanjin.foo`**；塞 `guanjin.mode: direct`（已废止键，§3.3）→ 同样启动失败（同时满足 `AC-SDK-01`）。
+**口径（二）来源二、映射一**：来源有两个——选项对象/配置文件用规范键名 `guanjin.*`；环境变量按 §1.1 **机械映射**：去掉 `guanjin.` 前缀，`.`→`_`，`-`→`_`，全大写，再加 `GUANJIN_`。映射名**逐字等价，不得别名/缩写/合段**（`GUANJIN_BASE_URL`、`GUANJIN_PLATFORM_BASEURL` 这类都不是契约，见 `decisions.md` D6(6)）。
+
+**口径（三）未知键 = 启动失败**：非 0 退出（或构造期抛错），错误信息**必须含键名**、可列出可用键，**无关闭开关**。三语言同语义（见上表）。
+
+**口径（四）非配置命名空间（例外，逐条封闭枚举，禁止通配）**：`GUANJIN_` 前缀同时被宿主/平台自用变量占用——它们是平台的**启动配置**（基线《技术栈与工程约定》§7.2 冻结）、平台的**实现自用参数**、以及**构建/测试夹具**。这些变量 SDK **不读、不校验、不参与默认值**，因此不进入白名单判定；**以本附录清单为准，逐条枚举，不做前缀/后缀式例外**（开放式例外会与「29 项冻结 + 未知键必须失败」正面冲突）。清单外任何 `GUANJIN_*` 映射不到 29 项 → **照样启动失败并报键名**。**例外不得当配置通道用**：清单内变量不能被 SDK 读成配置项，新增 SDK 配置只能走 ADR 改 29 项。
+
+**附录：非配置命名空间封闭清单（35 条，逐条；改这里必须同步三语言实现与 golden 用例）**
+
+| # | 变量 | 组 | 归属/用途 |
+|---|---|---|---|
+| 1 | `GUANJIN_ENV` | A | 运行时环境标识（基线 §7.2；Go `EnvFromEnv()` 读，值域 local/test/其余=prod） |
+| 2 | `GUANJIN_LOG_LEVEL` | A | 日志级别（基线 §7.2） |
+| 3 | `GUANJIN_LOG_FORMAT` | A | 日志格式（基线 §7.2） |
+| 4 | `GUANJIN_HTTP_ADDR` | A | 控制面监听地址（基线 §7.2；`internal/config`） |
+| 5 | `GUANJIN_GATEWAY_ADDR` | A | 数据面监听地址（基线 §7.2） |
+| 6 | `GUANJIN_PUBLIC_BASE_URL` | A | 对外基址（基线 §7.2，必填） |
+| 7 | `GUANJIN_ISSUER` | A | OIDC `iss`（基线 §7.2；`internal/config`、`cmd/guanjind`） |
+| 8 | `GUANJIN_DATABASE_URL` | A | 迁移用库地址（基线 §7.2） |
+| 9 | `GUANJIN_DB_MAX_OPEN_CONNS` | A | 连接池上限（基线 §7.2） |
+| 10 | `GUANJIN_DB_MAX_IDLE_CONNS` | A | 空闲连接（基线 §7.2） |
+| 11 | `GUANJIN_DB_CONN_MAX_LIFETIME` | A | 连接生命周期（基线 §7.2） |
+| 12 | `GUANJIN_REDIS_URL` | A | Redis 地址（基线 §7.2） |
+| 13 | `GUANJIN_REDIS_TIMEOUT` | A | Redis 单命令超时（基线 §7.2） |
+| 14 | `GUANJIN_MASTER_KEY` | A | 主密钥 base64（基线 §7.2，必填） |
+| 15 | `GUANJIN_MASTER_KEY_FILE` | A | 主密钥文件（基线 §7.2/§7.3 部署示例） |
+| 16 | `GUANJIN_BOOTSTRAP_ADMIN_USERNAME` | A | 引导管理员（基线 §7.2） |
+| 17 | `GUANJIN_BOOTSTRAP_ADMIN_PASSWORD` | A | 引导口令（基线 §7.2） |
+| 18 | `GUANJIN_GATEWAY_UPSTREAM_TIMEOUT` | A | 数据面转发超时（基线 §7.2；`cmd/guanjingw`、`internal/gateway`） |
+| 19 | `GUANJIN_GATEWAY_DIAL_TIMEOUT` | A | 上游连接超时（基线 §7.2；`cmd/guanjingw`、`internal/gateway`） |
+| 20 | `GUANJIN_METRICS_ADDR` | A | Prometheus 指标地址（基线 §7.2） |
+| 21 | `GUANJIN_OTEL_ENDPOINT` | A | OTel 导出端点（基线 §7.2） |
+| 22 | `GUANJIN_DB_DSN` | B | 平台库 DSN（`internal/config` 必填） |
+| 23 | `GUANJIN_REDIS_ADDR` | B | 平台 Redis（`internal/config` 必填） |
+| 24 | `GUANJIN_REDIS_PASSWORD` | B | 平台 Redis 口令（`internal/config`） |
+| 25 | `GUANJIN_TRACE_HEADER` | B | trace 头名（`internal/config`） |
+| 26 | `GUANJIN_GATEWAY_ROUTES` | B | 数据面路由表（`cmd/guanjingw`、`cmd/guanjind/slo_wiring.go`） |
+| 27 | `GUANJIN_SLO_NOTIFY_PATH` | B | SLO 通知落点（`internal/gateway/slo_http.go`） |
+| 28 | `GUANJIN_DEV_DSN` | C | 本地开发库（`Makefile`、`internal/store`/`internal/flowstore` 测试） |
+| 29 | `GUANJIN_STAGING_DSN` | C | 预发库（`Makefile` 提示与 DB/DEV DSN 一并导出） |
+| 30 | `GUANJIN_TEST_DSN` | C* | CI/测试夹具：测试库（`.github/workflows/ci.yml`、`internal/*`） |
+| 31 | `GUANJIN_TEST_REDIS_ADDR` | C* | CI/测试夹具：测试 Redis |
+| 32 | `GUANJIN_TEST_REDIS_PASSWORD` | C* | CI/测试夹具：测试 Redis 口令 |
+| 33 | `GUANJIN_TEST_DURATION` | C* | 测试夹具：时长参数（`cmd/guanjingw/main_test.go`） |
+| 34 | `GUANJIN_ALLOW_TEST_CLEANUP` | C* | 测试护栏：允许清理共享库（`internal/testdb`） |
+| 35 | `GUANJIN_AUDIT_NO_ISOLATION` | C* | 测试护栏：审计隔离旁路（`internal/audit`） |
+
+> `C*` = **过渡条目**：测试夹具正在改名 `GJTEST_*`（单独 PR，与 SDK 修复解耦）。改名落地后这 6 条从清单删除——`GJTEST_*` 不带 `GUANJIN_` 前缀，SDK 本来就看不见。
+
+> 事故记录（S9 / PR #51）：CI 的 `integration` job 导出 `GUANJIN_TEST_DSN` / `GUANJIN_TEST_REDIS_ADDR`，Go 侧曾把整个 `os.Environ()` 里的 `GUANJIN_*` 都当配置键（只用手写 `HasSuffix("_DSN")` 等三条例外兜）→ SDK 装载失败 → 该 job 必红。修法即本附录：**逐条封闭枚举 + 校验语义不变**；同时关掉 `_DSN` 后缀兜底这个**隐性放行**（`GUANJIN_X_DSN` 这类拼错键改后必须失败）。
+
+**发布说明（"重启即挂"类，需写进升级须知，不进 CH）**：升级到含本附录的版本后，若启动失败且错误信息形如 `未知键 [guanjin.<…>]（该键不属于 SDK 配置命名空间；…）`，说明部署里存在**清单外**的 `GUANJIN_*` 变量——要么是拼错/废止键（改掉），要么是平台自用变量但未登记（按流程补进附录，**不要**改成通配放行）。
+
+**明确不做**：不提供 `strict-config=false` 之类的关闭开关（否则又成暗开关，与 C-1 同类）；不为未知键提供「预留 / 实验」通道——新增键只能走 ADR 改 29 项。上表的非配置命名空间**不是**这种通道：它们不进 `Config`、不可被读取为配置项、也不新增任何 `guanjin.*` 键。
+
+**Gate 可断言**：塞一个 `guanjin.foo`（或 `GUANJIN_FOO`）→ **启动失败且错误信息含 `guanjin.foo`**；塞 `guanjin.mode: direct`（已废止键，§3.3）→ 同样启动失败（同时满足 `AC-SDK-01`）；同时导出 `GUANJIN_TEST_DSN` / `GUANJIN_TEST_REDIS_ADDR` + 合法配置 → **必须正常装载**（否则 integration job 假红）。
 
 ---
 
@@ -728,5 +782,5 @@ M1 的 S9 **只交付 Java 8 两份产物**；Node / Go 随 M2+ 落地。但**�
 
 ---
 
-**校对快照（v8，供 Spec 抽查）**：`sdk-contract.md` / 行数 **732** 行（`wc -l`） / md5 **`c220f6a6a5f61dc13946a282c9eaa0b0`**（md5 覆盖范围 = **本节 4 行以外、即第 1..728 行**，避免自引用；行数含本节）。上一快照 = v8 731 行 / md5 `a317c945`（PR #1 合入版）。本轮：**按 PR #1 Owl 评审一次性修完 2 个 P2 + 4 个 P3**——E26 `checkLabel(objLevel)` 全文统一（原三处仍写 `level`）；E27 命名原则重写为**两层命名 + §1.5 的 R-1..R-5 封闭形态规则 + 三处冲突的差异类别与理由 + CI 反射比对**（选「改 N3 措辞、不改表」）；E28 配置 #26 的 Node/Go 字段名改为机械可推导（并补 Go 缩写白名单）；E29 新增 **§2.1.2**（`withClearance` 唯一写法、裸 `clearance()` 与 `dataLabel()` 一并作废、密级 1/2/3 词表、公开不占级、禁词正则与扫描范围）；E30 补 `TOKEN_INVALID` vs `TOKEN_EXPIRED` 界分表；E31 确认 Ark 已在他分支放开 `.gitignore` 的 `docs/`（`origin/main` 尚未生效，我不重复改）。**能力仍 22 条、配置仍 29 项，键名/编号/默认值/必填性/判据一处未改；基线未动、无源码。** 追加 **E34**：按 Gate 把关（PR #1 READY 附 1 处 P3）把 §5.1.1 的 **C-2** 「上表 10 条」改为「上表 **14 条**（原 10 条 + 第 11–14 条同批扫描）」，连带把 **C-1** 的「第 1–10 条」改为「第 1–14 条」，与表体、E8/E19 的「14 条」全部对齐——**只改文字，黑名单条目一条未增删**。
+**校对快照（v8，供 Spec 抽查）**：`sdk-contract.md` / 行数 **786** 行（`wc -l`） / md5 **`8c8e6c09337a604246fab46aa7b49830`**（md5 覆盖范围 = **本节 4 行以外、即第 1..782 行**，避免自引用；行数含本节）。上一快照 = v8 732 行 / md5 `94fc0375`（**main 实测值**；本节原先写的 `c220f6a6` 是失真值——§3.2 三行「执行形态」追加后未重算，本次一并修正）。本轮：**按 PR #1 Owl 评审一次性修完 2 个 P2 + 4 个 P3**——E26 `checkLabel(objLevel)` 全文统一（原三处仍写 `level`）；E27 命名原则重写为**两层命名 + §1.5 的 R-1..R-5 封闭形态规则 + 三处冲突的差异类别与理由 + CI 反射比对**（选「改 N3 措辞、不改表」）；E28 配置 #26 的 Node/Go 字段名改为机械可推导（并补 Go 缩写白名单）；E29 新增 **§2.1.2**（`withClearance` 唯一写法、裸 `clearance()` 与 `dataLabel()` 一并作废、密级 1/2/3 词表、公开不占级、禁词正则与扫描范围）；E30 补 `TOKEN_INVALID` vs `TOKEN_EXPIRED` 界分表；E31 确认 Ark 已在他分支放开 `.gitignore` 的 `docs/`（`origin/main` 尚未生效，我不重复改）。**能力仍 22 条、配置仍 29 项，键名/编号/默认值/必填性/判据一处未改；基线未动、无源码。** 追加 **E34**：按 Gate 把关（PR #1 READY 附 1 处 P3）把 §5.1.1 的 **C-2** 「上表 10 条」改为「上表 **14 条**（原 10 条 + 第 11–14 条同批扫描）」，连带把 **C-1** 的「第 1–10 条」改为「第 1–14 条」，与表体、E8/E19 的「14 条」全部对齐——**只改文字，黑名单条目一条未增删**。追加 **E35/E36**（S9，#51 假红；E36 为按 Spec 裁决修订）：§3.6 重写为「①29 项唯一白名单 ②来源二映射一 ③未知键启动失败且报键名 ④**非配置命名空间=逐条封闭枚举、禁止通配**」四条口径，并给出**附录 35 条**清单（A 基线 §7.2 冻结 21 条 / B 平台实现自用 6 条 / C 构建·测试夹具 8 条，其中 6 条标 `C*` 为随 `GJTEST_*` 改名删除的过渡条目）；E36 明确废除上一稿的 `GUANJIN_TEST_` **前缀通配**（开放式例外与「29 项冻结 / 未知键必须失败」冲突），并关掉 Go 侧 `HasSuffix("_DSN")` 这个**隐性放行**（`GUANJIN_X_DSN` 这类拼错键改后必须失败）；补「发布说明」一行（错误信息含「该键不属于 SDK 配置命名空间」）。**29 项键名/编号/默认值/必填性/判据一处未改，基线未动。**
 

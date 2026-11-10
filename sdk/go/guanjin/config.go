@@ -219,11 +219,79 @@ func EnvFromEnv() Env {
 	}
 }
 
-// LoadFromEnv 从 `GUANJIN_*` 环境变量装载配置（严格白名单：未知键即失败）。
-func LoadFromEnv() (Config, error) {
-	c := DefaultConfig()
+// reservedEnv 是**非配置命名空间**：宿主/平台自用的 `GUANJIN_*` 变量。它们不是 29 项配置键
+// （契约 §3.2），SDK 不读、不校验、不参与默认值 —— 因此不进入严格白名单判定。
+//
+// **封闭枚举，禁止通配**（Spec 裁决）：保留命名空间 + 逐条封闭枚举；不得用前缀/后缀式例外，
+// 因为开放式例外会与「29 项冻结 / 未知键必须失败」正面冲突。清单外的 `GUANJIN_*` 映射不到
+// 29 项 → 照样启动失败并报键名（AC-FC-05）。
+//
+// 为什么需要它：`GUANJIN_` 前缀被两类东西共用——本 SDK 的 29 项配置键，与平台自己的启动配置
+// （基线《技术栈与工程约定》§7.2 冻结 21 条）以及构建/测试夹具（Makefile、CI integration job
+// 的 `GUANJIN_TEST_DSN` / `GUANJIN_TEST_REDIS_ADDR`）。不排除它们，SDK 在平台/测试进程里被加载
+// 时会把宿主变量当未知配置键 → 启动失败（PR #51 integration job 的红即此）。
+//
+// 清单与 docs/sdk-contract.md §3.6 附录逐条对应，**两侧必须同改**；新增/删除都会让
+// TestReservedEnvNamespaceIsClosed（golden 列表）失败，防止清单悄悄长成"通配"。
+// C 组后 6 条是**过渡条目**：测试夹具改名 GJTEST_* 后（单独 PR）即从本表删除。
+var reservedEnv = map[string]struct{}{
+	// A. 平台启动配置（基线《技术栈与工程约定》§7.2 冻结；SDK 不读）—— 21 条
+	"GUANJIN_ENV":                      {},
+	"GUANJIN_LOG_LEVEL":                {},
+	"GUANJIN_LOG_FORMAT":               {},
+	"GUANJIN_HTTP_ADDR":                {},
+	"GUANJIN_GATEWAY_ADDR":             {},
+	"GUANJIN_PUBLIC_BASE_URL":          {},
+	"GUANJIN_ISSUER":                   {},
+	"GUANJIN_DATABASE_URL":             {},
+	"GUANJIN_DB_MAX_OPEN_CONNS":        {},
+	"GUANJIN_DB_MAX_IDLE_CONNS":        {},
+	"GUANJIN_DB_CONN_MAX_LIFETIME":     {},
+	"GUANJIN_REDIS_URL":                {},
+	"GUANJIN_REDIS_TIMEOUT":            {},
+	"GUANJIN_MASTER_KEY":               {},
+	"GUANJIN_MASTER_KEY_FILE":          {},
+	"GUANJIN_BOOTSTRAP_ADMIN_USERNAME": {},
+	"GUANJIN_BOOTSTRAP_ADMIN_PASSWORD": {},
+	"GUANJIN_GATEWAY_UPSTREAM_TIMEOUT": {},
+	"GUANJIN_GATEWAY_DIAL_TIMEOUT":     {},
+	"GUANJIN_METRICS_ADDR":             {},
+	"GUANJIN_OTEL_ENDPOINT":            {},
+	// B. 平台实现自用（internal/config、cmd/guanjind、cmd/guanjingw、internal/gateway）—— 6 条
+	"GUANJIN_DB_DSN":          {},
+	"GUANJIN_REDIS_ADDR":      {},
+	"GUANJIN_REDIS_PASSWORD":  {},
+	"GUANJIN_TRACE_HEADER":    {},
+	"GUANJIN_GATEWAY_ROUTES":  {},
+	"GUANJIN_SLO_NOTIFY_PATH": {},
+	// C. 构建/本地/CI 夹具（Makefile、.github/workflows/ci.yml、测试护栏）—— 8 条，后 6 条为过渡条目
+	"GUANJIN_DEV_DSN":             {},
+	"GUANJIN_STAGING_DSN":         {},
+	"GUANJIN_TEST_DSN":            {},
+	"GUANJIN_TEST_REDIS_ADDR":     {},
+	"GUANJIN_TEST_REDIS_PASSWORD": {},
+	"GUANJIN_TEST_DURATION":       {},
+	"GUANJIN_ALLOW_TEST_CLEANUP":  {},
+	"GUANJIN_AUDIT_NO_ISOLATION":  {},
+}
+
+// isReservedEnv 判断某个环境变量名是否属于非配置命名空间（**精确匹配**，无通配/无前缀）。
+func isReservedEnv(name string) bool {
+	_, ok := reservedEnv[name]
+	return ok
+}
+
+// LoadFromEnv 从**当前进程环境**装载配置（= LoadFromEnviron(os.Environ())）。
+func LoadFromEnv() (Config, error) { return LoadFromEnviron(os.Environ()) }
+
+// LoadFromEnviron 从给定的 `KEY=VALUE` 列表装载配置（严格白名单：未知键即失败）。
+//
+// 参数化（而不是直接读 os.Environ）是为了让「白名单必须拦什么、必须放过什么」可以
+// **脱离宿主环境**被断言——否则用例的结果取决于跑它的那台机器/那个 CI job 恰好导出了
+// 哪些 `GUANJIN_*`（这正是 PR #51 红的原因）。
+func LoadFromEnviron(environ []string) (Config, error) {
 	in := map[string]string{}
-	for _, kv := range os.Environ() {
+	for _, kv := range environ {
 		i := strings.IndexByte(kv, '=')
 		if i < 0 {
 			continue
@@ -232,13 +300,12 @@ func LoadFromEnv() (Config, error) {
 		if !strings.HasPrefix(name, "GUANJIN_") {
 			continue
 		}
-		// GUANJIN_ENV / GUANJIN_DSN 之类是运行时环境变量，不是 29 项配置键，跳过。
-		if name == "GUANJIN_ENV" || strings.HasSuffix(name, "_DSN") || strings.HasPrefix(name, "GUANJIN_DB") {
+		if isReservedEnv(name) {
 			continue
 		}
-		key := envNameToKey(name)
-		in[key] = val
+		in[envNameToKey(name)] = val
 	}
+	c := DefaultConfig()
 	if err := c.applyMap(in); err != nil {
 		return Config{}, err
 	}
@@ -295,7 +362,7 @@ func (c *Config) applyMap(in map[string]string) error {
 	}
 	if len(unknown) > 0 {
 		sort.Strings(unknown)
-		return fmt.Errorf("%w: 未知键 %v（只有 %d 项交付集，见 docs/sdk-contract.md §3.2；AC-FC-05）",
+		return fmt.Errorf("%w: 未知键 %v（该键不属于 SDK 配置命名空间；只有 %d 项交付集，见 docs/sdk-contract.md §3.2；AC-FC-05）",
 			ErrConfig, unknown, len(ConfigKeys))
 	}
 
