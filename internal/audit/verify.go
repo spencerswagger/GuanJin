@@ -56,7 +56,8 @@ type VerifyResult struct {
 	Checked int
 	// Broken 第一个断点（nil = 整链通过）。
 	Broken *BrokenPoint
-	// AnchorUsed 本次复核使用的锚点（首月为空）。
+	// AnchorUsed 本次复核用来钉住**段首** `prev_tag` 的那个值（链首为空）：
+	// 正常是"链上真实前驱的 `integrity_tag`"；只有前驱分区已被 DROP 时才是上月锚点（断点锚）。
 	AnchorUsed []byte
 	// From / To 复核区间（左闭右开，按自然月）。
 	From, To time.Time
@@ -106,33 +107,40 @@ func (v *Verifier) RunOnce(ctx context.Context) (VerifyResult, error) {
 
 // RunRange 复核 `[from, to)` 区间。
 //
-// ## 锚点语义（Owl II P0 修复后的**唯一口径**）
+// ## 锚点 / 段首口径（2026-11-11 修订：段首改为"真实前驱"，锚点退回"封条 + 断点兜底"）
 //
-// **`anchor[M]` = 第 M 月最后一条已复核记录的 `integrity_tag`（"该月的封条"）。**
-//   - 写：`AnchorCurrentMonth` 在整链通过后写入（就是本月链尾的 tag）。
-//   - 读：复核第 M 月时，段首期望的 `prev_tag` 来自 **`anchor[M-1]`**（**不是** `anchor[M]`）；
-//     段尾必须等于 `anchor[M]`（若已存在）——尾部被整段删除时链内仍自洽，只有锚点对不上。
+// **段首 `prev_tag` 的唯一期望值 = 链上紧邻本段之前那条记录的 `integrity_tag`**
+// （D4-C(2)「跨分区首条的 `prev_tag` 取上一分区末 tag」的逐字落地）。校验器用一次
+// `TailTagBefore` 现查这个值，**不再读上月锚点当期望值**。
 //
-// 缺锚点（同一 P0 的另一面）：
-//   - `anchor[M-1]` 不存在 → 段首 `prev_tag` 是**未知**，不判（`VerifyFrom(..., checkFirst=false)`）；
-//   - 但若第 M 月是链的**首段**（该月之前没有任何记录），段首必须为 nil —— 仍然判。
+// 为什么必须换掉"用上月锚点当段首期望值"（这是 `audit_chain_broken_total` 每天假 +1 的根因）：
+//   - 锚点是 `StartJob` **每一拍**拍下的快照（`AnchorCurrentMonth` 写"当月链尾 tag"），
+//     而审计事实是持续的：**月末最后一拍之后再写一条**，上月锚点就落后于上月真实链尾；
+//   - 次月首条记录的 `prev_tag` 指向的是那条"封锚之后写的"记录 → 与上月锚点不等
+//     → 整个次月**每一拍**都报 `prev_tag_mismatch`（`audit_anchor_age` 停住、真断链被噪声淹没）。
+//     实测复现见 `TestAnchorHeadUsesRealPredecessor`（`anchor_head_serial_db_test.go`）。
+//
+// 换掉之后判据反而更强：上月尾部被删 → 本段首条 `prev_tag` 指向**已不存在的 tag**
+// → 与真实前驱不等 → 照样报 `prev_tag_mismatch`（不再有"快照滞后"这个假阳性来源）。
+//
+// 锚点仍管两件事，语义各自独立：
+//   - **封条（段尾）**：`anchor[M]` = 第 M 月某次复核时的链尾 tag（`AnchorCurrentMonth` 写）。
+//     **只做存在性判定**：整月区间内必须还能找到这条记录，否则 `anchor_mismatch`
+//     （整月尾部/整月被清空时链内仍自洽，只有封条能发现）。
+//   - **断点锚（段首兜底）**：仅当"前驱所在分区已被 DROP"（D4-C(2) 的 365 天归档，
+//     M1 未启用）时，才用 `anchor[M-1]` 顶上段首期望值。
+//
+// 缺段首期望值（既无前驱、也无断点锚）：只有"该段就是链的首段"才可判（应为 nil）；
+// 否则段首 `prev_tag` 属**未知**，不判（`VerifyFrom(..., checkFirst=false)`）。
 func (v *Verifier) RunRange(ctx context.Context, from, to time.Time) (VerifyResult, error) {
 	res := VerifyResult{From: from.UTC(), To: to.UTC()}
 	month := monthOf(from)
 
-	// ① 段首期望值 = **上个月**的锚点（P0 根因：旧实现误用了本月锚点）。
-	prevAnchor, err := v.anchors.Get(ctx, month.AddDate(0, -1, 0))
-	if err != nil {
-		return res, fmt.Errorf("audit: load prev-month anchor: %w", err)
-	}
-	// ② 本月锚点（若已封锚）用于段尾一致性校验。
+	// ① 本月封条（段尾用；可能为空 = 该月还没封锚）。
 	selfAnchor, err := v.anchors.Get(ctx, month)
 	if err != nil {
 		return res, fmt.Errorf("audit: load anchor: %w", err)
 	}
-	// 字段含义：**本月封条**（`anchor[M]`）。段首实际用的是 `anchor[M-1]`，
-	// 两者不是同一个值——这里保留本月封条，因为它是"本段复核完成度"的凭据。
-	res.AnchorUsed = selfAnchor
 
 	records, err := v.chain.Load(ctx, v.db, from, to)
 	if err != nil {
@@ -140,8 +148,33 @@ func (v *Verifier) RunRange(ctx context.Context, from, to time.Time) (VerifyResu
 	}
 	res.Checked = len(records)
 
-	// ③ 段首是否可判：有上月锚点 → 可判；否则只有"该月是首段"才可判（应为 nil）。
-	checkFirst := len(prevAnchor) > 0
+	// ② 段首期望值 = **真实前驱**的 tag（口径见函数注释）。
+	var headAnchor []byte
+	hasHead := false
+	if len(records) > 0 {
+		tag, found, err := v.chain.TailTagBefore(ctx, v.db, from, to)
+		if err != nil {
+			return res, err
+		}
+		if found {
+			headAnchor, hasHead = tag, true
+		}
+	}
+	if !hasHead {
+		// ②′ 兜底 = 断点锚（上月锚点）。只在"前驱分区已被 DROP"时才会走到，
+		// M1 不做归档删除，因此这里通常取不到值。
+		prevAnchor, err := v.anchors.Get(ctx, month.AddDate(0, -1, 0))
+		if err != nil {
+			return res, fmt.Errorf("audit: load prev-month anchor: %w", err)
+		}
+		if len(prevAnchor) > 0 {
+			headAnchor, hasHead = prevAnchor, true
+		}
+	}
+	res.AnchorUsed = headAnchor
+
+	// ③ 段首是否可判：有前驱/断点锚 → 可判；否则只有"该段是链首"才可判（应为 nil）。
+	checkFirst := hasHead
 	if !checkFirst && len(records) > 0 {
 		var before int64
 		// `EXISTS … LIMIT 1` 而不是 `count(*)`：只需回答"之前有没有"，精确计数在
@@ -154,7 +187,7 @@ func (v *Verifier) RunRange(ctx context.Context, from, to time.Time) (VerifyResu
 		checkFirst = before == 0
 	}
 
-	broken, err := v.chain.VerifyFrom(records, prevAnchor, checkFirst)
+	broken, err := v.chain.VerifyFrom(records, headAnchor, checkFirst)
 	if err != nil {
 		return res, err
 	}
@@ -209,8 +242,9 @@ func (v *Verifier) RunRange(ctx context.Context, from, to time.Time) (VerifyResu
 
 // AnchorCurrentMonth 把"当月链尾"写成锚点（供 Job 在整链通过后调用）。
 //
-// 写锚点的意义：下个月复核时以它为分段起点，且**尾部被整段删除**时能被发现
-// （那时链内每一对 prev/tag 仍然自洽，只有锚点对不上）。
+// 写锚点的意义：它是**封条**——整月尾部（或整月）被删时，链内每一对 prev/tag 仍然自洽，
+// 只有"封条在本段里再也找不到对应记录"能发现。它**不再**充当下一段段首的期望值
+// （那个值改由真实前驱提供，见 `RunRange` 的口径注）。
 func (v *Verifier) AnchorCurrentMonth(ctx context.Context) error {
 	now := v.now().UTC()
 	from := monthOf(now)
