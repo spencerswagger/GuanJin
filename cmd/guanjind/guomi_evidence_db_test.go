@@ -117,10 +117,12 @@ func TestAC_AUD_12_FullChainGuomi(t *testing.T) {
 		t.Fatalf("①验签后 claim 不对：%v", got["sub"])
 	}
 	// 算法降级必须被拒（改动 header 的 alg 后签名对不上）。
+	// 下面这条是**攻击载荷**：alg 被换成 RSA 家族标识，用来证明"换算法"这条路走不通。
+	// NEGATIVE-SHA-TEST（负向用例：不是使用 RSA，而是断言 RSA 家族标识必被拒；等价正向校验见上面 alg==SM3withSM2）
 	tampered := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"RS256","kid":"x","typ":"JWT"}`)) +
 		"." + parts[1] + "." + parts[2]
 	if _, err := signing.VerifyJWT(&priv.PublicKey, tampered); err == nil {
-		t.Fatal("①把 alg 改成 RS256 后仍验签通过 —— 算法降级没被拒")
+		t.Fatal("①把 alg 换成 RSA 家族标识后仍验签通过 —— 算法降级没被拒")
 	}
 
 	// ===== ② 审计完整性：HMAC-SM3（密钥 + 前一条 tag + 内容都在输入里）=====
