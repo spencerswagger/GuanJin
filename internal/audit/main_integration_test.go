@@ -48,6 +48,14 @@ func TestMain(m *testing.M) {
 	// 会把链尾推到未来月份，导致任何用真实 `now()` 写审计的其它套件撞下界守卫。
 	// 这里先把 public 里历史残留清掉（幂等），再切到独立 schema `audit_test` 跑本包用例。
 	if base, err := store.Open(context.Background(), store.Options{DSN: dsn}); err == nil {
+		// ① **自家隔离 schema 默认清空**（无风险、不需要任何开关）：
+		//    `audit_test` 是本包独占的，残留行会把链尾推到未来月份、导致共享月落在链尾之前
+		//    （实测 `occurred_at 2026-12 < tail 2027-01`，8 条用例直接红）。
+		// ② **共享/public 库的清理**仍受 `GUANJIN_ALLOW_TEST_CLEANUP=1` + `_test` 库名双护栏约束
+		//    （那才是有风险的那一半，不能因为①而放宽）。
+		if err := truncateIsolatedSchema(base); err != nil {
+			fmt.Fprintf(os.Stderr, "[audit.TestMain] truncate isolated schema: %v\n", err)
+		}
 		if b, a, perr := purgeSharedFutureRows(base); perr != nil {
 			fmt.Fprintf(os.Stderr, "[audit.TestMain] purge future rows: %v\n", perr)
 		} else {

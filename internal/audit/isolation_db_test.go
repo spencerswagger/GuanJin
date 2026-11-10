@@ -152,6 +152,31 @@ func purgeSharedFutureRows(db *gorm.DB) (before, after string, err error) {
 	return before, after, nil
 }
 
+// truncateIsolatedSchema 清空**本包独占的** `audit_test` schema（不需要任何开关）。
+//
+// 与 `purgeSharedFutureRows` 的分工：
+//   - 这里清的是自家地盘（`audit_test`），无风险，**默认执行**；
+//   - 共享/public 库的清理才是有风险的，必须 `GUANJIN_ALLOW_TEST_CLEANUP=1` + 库名 `_test`。
+//
+// 之所以要拆：两者曾被同一把开关管，默认路径就留下残留未来行 → 链尾漂到未来月 →
+// 用例里的"共享写入月"落在链尾之前（实测 8 条红）。
+func truncateIsolatedSchema(db *gorm.DB) error {
+	if !auditIsolationEnabled() {
+		return nil
+	}
+	ctx := context.Background()
+	// `TRUNCATE` 会连带清空所有分区（分区是父表的子表），且不受 append-only 触发器限制。
+	if err := db.WithContext(ctx).Exec(
+		fmt.Sprintf(`TRUNCATE TABLE %s.audit_logs`, isolatedSchema)).Error; err != nil {
+		return fmt.Errorf("truncate %s.audit_logs: %w", isolatedSchema, err)
+	}
+	if err := db.WithContext(ctx).Exec(
+		fmt.Sprintf(`DELETE FROM %s.runtime_config`, isolatedSchema)).Error; err != nil {
+		return fmt.Errorf("clear %s.runtime_config: %w", isolatedSchema, err)
+	}
+	return nil
+}
+
 // auditSchemaForTests 是测试写入的目标 schema（隔离开启时 `audit_test`，否则 `public`）。
 // 供 `allowMutationForTest` 等需要**限定 schema** 的删改动作使用，避免依赖 search_path。
 var auditSchemaForTests = "public"
