@@ -31,6 +31,33 @@ func TestMain(m *testing.M) {
 		// 没有 DSN 时本包的 integration 用例本就该红（不许 Skip）：让 m.Run 去报。
 		os.Exit(m.Run())
 	}
+
+	// **schema 隔离**：本包的用例必须往"链尾之后的月份"写，若落在共享库 `public` 的全局链上，
+	// 会把链尾推到未来月份，导致任何用真实 `now()` 写审计的其它套件撞下界守卫。
+	// 这里先把 public 里历史残留清掉（幂等），再切到独立 schema `audit_test` 跑本包用例。
+	if base, err := store.Open(context.Background(), store.Options{DSN: dsn}); err == nil {
+		if b, a, perr := purgeSharedFutureRows(base); perr != nil {
+			fmt.Fprintf(os.Stderr, "[audit.TestMain] purge future rows: %v\n", perr)
+		} else {
+			fmt.Fprintf(os.Stderr, "[audit.TestMain] shared max(occurred_at): before=%q after=%q\n", b, a)
+		}
+		_ = store.Close(base)
+	}
+	if auditIsolationEnabled() {
+		if base, err := store.Open(context.Background(), store.Options{DSN: dsn}); err == nil {
+			if err := ensureIsolatedSchema(base); err != nil {
+				fmt.Fprintf(os.Stderr, "[audit.TestMain] %v\n", err)
+				_ = store.Close(base)
+				os.Exit(1)
+			}
+			_ = store.Close(base)
+		}
+		dsn = isolatedDSN(dsn)
+		if err := os.Setenv("GUANJIN_TEST_DSN", dsn); err != nil {
+			fmt.Fprintf(os.Stderr, "[audit.TestMain] setenv: %v\n", err)
+			os.Exit(1)
+		}
+	}
 	db, err := store.Open(context.Background(), store.Options{DSN: dsn})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "[audit.TestMain] open db: %v\n", err)
