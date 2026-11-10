@@ -53,6 +53,9 @@ jobs:
           # AC-DP-11：数据面不越界（TLS/WAF/LB/灰度/熔断/服务发现）+ 依赖清单；
           # --self-test 自带"注入必红"，脚本存在不算通过。
           ./scripts/check-dataplane-boundaries.sh --self-test
+          # AC-AUD-12⑤：全仓算法扫描（SHA 系/RSA 零使用，唯一白名单 PKCE S256）。
+          # --self-test 会在临时树里注入五类违规，每一次都必须被点名检出（脚本存在 ≠ 门禁存在）。
+          ./scripts/check-guomi-algorithms.sh --self-test
 
   race:
     # 独立的竞态检测 job：-race 需要 cgo，故这里显式 CGO_ENABLED=1；

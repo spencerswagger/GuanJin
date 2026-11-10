@@ -98,6 +98,8 @@ gates: ## 工程红线门禁（禁 AutoMigrate / 禁废弃错误码 / 数据面�
 	@./scripts/check-no-automigrate.sh
 	@./scripts/check-forbidden-error-codes.sh
 	@./scripts/check-dataplane-boundaries.sh --self-test
+	@# AC-AUD-12⑤：全仓不得用 SHA 系 / RSA（唯一白名单 PKCE S256）。--self-test 自带五类注入必红。
+	@./scripts/check-guomi-algorithms.sh --self-test
 	@# 审计并发/探针敏感性用例**必须**在 CI 里真的跑：它们需要稳定链尾，故单列串行
 	@# （`-p 1`）；漏跑等于把 AC-AUD-04 的判据藏起来。
 	@$(MAKE) --no-print-directory test-audit-serial

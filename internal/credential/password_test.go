@@ -97,7 +97,7 @@ func TestPasswordEnvelopeValidateRejects(t *testing.T) {
 		mut  func(*PasswordEnvelope)
 		want error
 	}{
-		{"算法不是 PBKDF2-SM3", func(e *PasswordEnvelope) { e.Algo = "SHA256" }, ErrUnknownAlgo},
+		{"算法不是 PBKDF2-SM3", func(e *PasswordEnvelope) { e.Algo = "SHA256" }, ErrUnknownAlgo}, // NEGATIVE-SHA-TEST（负向用例：断言这些算法必须被拒；扫描器只在测试文件认这个标记）
 		{"算法为空", func(e *PasswordEnvelope) { e.Algo = "" }, ErrUnknownAlgo},
 		{"迭代被降到 1000", func(e *PasswordEnvelope) { e.Iterations = 1000 }, ErrWeakParams},
 		{"key_len 低于下限", func(e *PasswordEnvelope) { e.KeyLen = 16 }, ErrWeakParams},

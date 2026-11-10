@@ -132,7 +132,7 @@ func TestTOTPEnvelopeValidateRejects(t *testing.T) {
 		want error
 	}{
 		// 合规硬约束：SHA 系 HMAC 一律不许（索引 §2）。
-		{"hash 用 SHA1", func(e *TOTPEnvelope) { e.Hash = "SHA1" }, ErrUnknownAlgo},
+		{"hash 用 SHA1", func(e *TOTPEnvelope) { e.Hash = "SHA1" }, ErrUnknownAlgo}, // NEGATIVE-SHA-TEST（负向用例：断言这些算法必须被拒；扫描器只在测试文件认这个标记）
 		{"hash 为空", func(e *TOTPEnvelope) { e.Hash = "" }, ErrUnknownAlgo},
 		{"algo 不对", func(e *TOTPEnvelope) { e.Algo = "HOTP" }, ErrUnknownAlgo},
 		{"位数太少", func(e *TOTPEnvelope) { e.Digits = 5 }, ErrInvalidOptions},
@@ -154,7 +154,7 @@ func TestTOTPEnvelopeValidateRejects(t *testing.T) {
 	}
 	// 解封前的坏信封也必须被拦。
 	bad := env
-	bad.Hash = "SHA256"
+	bad.Hash = "SHA256" // NEGATIVE-SHA-TEST（负向用例：断言这些算法必须被拒；扫描器只在测试文件认这个标记）
 	if _, err := bad.Open(testSM4Key(t)); !errors.Is(err, ErrUnknownAlgo) {
 		t.Fatalf("坏信封不得进入解封，实际 %v", err)
 	}
@@ -184,8 +184,8 @@ func TestTOTPMarshalParse(t *testing.T) {
 	if _, err := ParseTOTPEnvelope([]byte("nope")); !errors.Is(err, ErrMalformedEnvelope) {
 		t.Fatalf("坏 JSON 应报 ErrMalformedEnvelope，实际 %v", err)
 	}
-	if _, err := ParseTOTPEnvelope([]byte(`{"algo":"TOTP","hash":"SHA256","digits":6,"period":30,"secret_enc":"AAAA"}`)); !errors.Is(err, ErrUnknownAlgo) {
-		t.Fatalf("解析即校验：SHA256 必须被拒，实际 %v", err)
+	if _, err := ParseTOTPEnvelope([]byte(`{"algo":"TOTP","hash":"SHA256","digits":6,"period":30,"secret_enc":"AAAA"}`)); !errors.Is(err, ErrUnknownAlgo) { // NEGATIVE-SHA-TEST（负向用例：断言这些算法必须被拒；扫描器只在测试文件认这个标记）
+		t.Fatalf("解析即校验：SHA256 必须被拒，实际 %v", err) // NEGATIVE-SHA-TEST（负向用例：断言这些算法必须被拒；扫描器只在测试文件认这个标记）
 	}
 }
 

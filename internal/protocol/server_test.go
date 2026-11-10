@@ -2,7 +2,7 @@ package protocol
 
 import (
 	"context"
-	"crypto/sha256"
+	"crypto/sha256" // PKCE-S256（AC-AUD-12 唯一白名单，R5）
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -408,7 +408,7 @@ func TestNewRequiresDeps(t *testing.T) {
 }
 
 func pkceChallenge(verifier string) string {
-	sum := sha256.Sum256([]byte(verifier))
+	sum := sha256.Sum256([]byte(verifier)) // PKCE-S256（AC-AUD-12 唯一白名单，R5）
 	return base64.RawURLEncoding.EncodeToString(sum[:])
 }
 
