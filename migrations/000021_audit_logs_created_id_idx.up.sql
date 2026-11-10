@@ -1,0 +1,22 @@
+-- 000021 audit_logs 的**链序索引**（口径：decisions.md D20，2026-11-11 裁定「加，现在就加」）
+--
+-- 服务哪两条查询（都是"按链序定位一条"，都 `ORDER BY created_at DESC, id DESC LIMIT 1`）：
+--   ① `Chain.Append` 的链尾读（每次写审计都跑，而且**在 advisory 锁内**——扫描越久锁持越久）；
+--   ② `Chain.TailTagBefore` 的段首前驱（整链复核每拍一次）。
+-- 没有本索引时两者都是「全分区 Seq Scan + Sort」。
+--
+-- 定义照抄 D20，不增不减：`(created_at, id)`，单列在前、无 DESC、无 partial、无 occurred_at 前缀。
+--   - 不加 DESC：btree 可双向反扫（Backward Index Scan），DESC 只是镜像，多一条索引没有收益；
+--   - 不加 occurred_at / 月份前缀：`occurred_at` 是分区键，前导列服务不了"无谓词"的链尾读；
+--   - 不做 partial：链尾读没有可用的稳定谓词；
+--   - 不 `CONCURRENTLY`：它不能进事务块，golang-migrate 默认把迁移包在事务里会当场失败；
+--     将来大表上线走运维脚本，**不进 `migrations/`**。
+--
+-- **在父表上建**：PG 会自动为每个现有分区建同名子索引，并把它当作模板套给新分区
+-- （`EnsurePartitions` 建出来的月分区自动带上）→ `Append` / `TailTagBefore` **零代码改动**，
+-- 链序口径也不因此改变（`(created_at, id)` 本来就是它们排序用的两列）。
+--
+-- 编号说明：D20 正文最初写 `000019`，后按「取 `ls migrations/` 最大号 + 1」**修订为 `000021`**
+-- （`000019` = D21 阈值 seed、`000020` = D22 平台级禁用集 seed 已先落地）。预写死编号会撞号。
+
+CREATE INDEX audit_logs_created_id_idx ON audit_logs (created_at, id);

@@ -69,7 +69,12 @@ func TestDBPlatformFactorConcurrentSetEnabledIsSerialized(t *testing.T) {
 	}
 	restore := func() {
 		if prev == "" {
-			_ = db.Exec(`DELETE FROM runtime_config WHERE "key" = ?`, KeyFactorsDisabled).Error
+			// D22（迁移 000020）要求这一行**存在**且是 jsonb []。
+			// 早先这里写的是 DELETE —— 那会把 seed 行删掉，让后续用例又回到"行不存在"的竞态前提，
+			// 也是别的包偶发红的一个来源（快照到"不存在"就删掉了别人的 seed）。
+			_ = db.Exec(`INSERT INTO runtime_config ("key", value, value_type, description, is_secret)
+				VALUES (?, '[]'::jsonb, 'json', 'D22 seed 行（用例还原）', false)
+				ON CONFLICT ("key") DO UPDATE SET value = '[]'::jsonb`, KeyFactorsDisabled).Error
 			return
 		}
 		_ = db.Exec(`UPDATE runtime_config SET value = ?::jsonb WHERE "key" = ?`,
@@ -87,6 +92,11 @@ func TestDBPlatformFactorConcurrentSetEnabledIsSerialized(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewPlatformFactorRepo: %v", err)
 	}
+
+	// **用探针因子类型**，不要用 `password`：`factors.disabled` 是**全局状态**，而 `-p 8` 下
+	// 别的包正在算 ACR（`password` 被停 → `current_acr` 变空 → `TestE2E_AC_FLOW_02_10` 会红）。
+	// 探针类型只进这一个字符串数组，不影响任何真实因子的能力断言。
+	const probeType = "s11-probe-factor"
 
 	// 20 个并发交替 enable/disable 同一个因子。
 	const n = 20
@@ -133,7 +143,7 @@ func TestDBPlatformFactorConcurrentSetEnabledIsSerialized(t *testing.T) {
 		go func(i int) {
 			defer wg.Done()
 			errs <- repo.SetEnabled(ctx, SetFactorEnabledInput{
-				Type:        "password",
+				Type:        probeType,
 				Enabled:     i%2 == 0,
 				Reason:      "concurrency",
 				ActorUserID: uuid.Nil, // 存储层不校验 actor；HTTP 层才要求登录
@@ -181,7 +191,7 @@ func TestDBPlatformFactorConcurrentSetEnabledIsSerialized(t *testing.T) {
 	}
 	inStore := false
 	for _, typ := range disabled {
-		if typ == "password" {
+		if typ == probeType {
 			inStore = true
 		}
 	}
