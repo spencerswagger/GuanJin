@@ -217,12 +217,63 @@ func canonical(r Record) ([]byte, error) {
 	return b.buf, nil
 }
 
-// formatFloat64 把 float64 写成**与整型分支一致**的确定串：整数值 → 定点整数，非整数 → 最短可逆。
-func formatFloat64(v float64) string {
-	if v == math.Trunc(v) && math.Abs(v) < 1<<53 {
-		return strconv.FormatInt(int64(v), 10)
+// numberText 把 Go 数值转成**与读侧（`encoding/json`）完全一致**的文本。
+//
+// 返回 ok=false 表示"不是数字"，交给调用方走其它分支。
+func numberText(v any) (string, bool, error) {
+	switch t := v.(type) {
+	case json.Number:
+		return t.String(), true, nil
+	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64, float32, float64:
+		raw, err := json.Marshal(t)
+		if err != nil {
+			return "", false, fmt.Errorf("audit: canonical number: %w", err)
+		}
+		return string(raw), true, nil
 	}
-	return strconv.FormatFloat(v, 'g', -1, 64)
+	return "", false, nil
+}
+
+// canonicalNumber 是**数字的唯一规范口径**：读（JSON 文本）写（Go 值转出的文本）共用同一个函数。
+//
+// 入参是"最像 JSON 的文本"——写侧负责把 Go 值转成这种文本（整型用 `FormatInt/FormatUint`，
+// `float32` 用 `bitsize=32` 的最短表示，`float64` 用 `bitsize=64`），读侧给 JSON 原文。
+// 输出规则按序：
+//
+//  1. 能 `ParseInt` → 定点十进制（保精度，雪花 ID / 毫秒时间戳不会被抹平）；
+//  2. 能 `ParseUint` → 定点十进制；
+//  3. 解析不出数（如 `1e400`）→ 原文（仍然确定）；
+//  4. `float` 值是整数值且在 int64 范围内 → 定点十进制
+//     （`float64(1e18)` 的文本 `1e+18` 与读侧文本 `1000000000000000000` 因此归到同一串）；
+//  5. 非负且在 uint64 范围内 → 定点十进制（覆盖 `2^63..2^64` 那段）；
+//  6. 其余 → 最短可逆浮点 `'g'`（`1e21` 两侧都停在 `1e+21`）。
+//
+// **边界不是 2^53**：`v == math.Trunc(v)` 在任何量级都精确；真正的边界是 int64/uint64 的取值域。
+// （上两轮把边界写成 `|v| < 2^53` 是错的：`2^53` 本身被排除在外，而它用 `FormatInt` 完全精确，
+// 于是 `float64(2^53)`、`1e18` 这类整数在写侧走 `'g'`、读侧走十进制 → 链自断。）
+func canonicalNumber(txt string) string {
+	if n, err := strconv.ParseInt(txt, 10, 64); err == nil {
+		return strconv.FormatInt(n, 10)
+	}
+	if u, err := strconv.ParseUint(txt, 10, 64); err == nil {
+		return strconv.FormatUint(u, 10)
+	}
+	f, err := strconv.ParseFloat(txt, 64)
+	if err != nil {
+		return txt // 既不是整型也超出 float64 范围：退回原文（确定性由调用方输入决定）
+	}
+	if f == math.Trunc(f) {
+		// `float64(1<<63)` 已经超出 int64 上界，必须用 `<` 而不是 `<=`（否则转换是未定义行为）。
+		const maxInt64AsFloat = float64(1 << 63)
+		if f >= -maxInt64AsFloat && f < maxInt64AsFloat {
+			return strconv.FormatInt(int64(f), 10)
+		}
+		const maxUint64AsFloat = float64(1 << 64)
+		if f >= 0 && f < maxUint64AsFloat {
+			return strconv.FormatUint(uint64(f), 10)
+		}
+	}
+	return strconv.FormatFloat(f, 'g', -1, 64)
 }
 
 // enc 是"长度前缀 + presence 标记"的小编码器（不引序列化库：要的是**确定**，不是通用）。
@@ -266,6 +317,20 @@ func (e *enc) json(v map[string]any) error {
 
 // value 递归编码 JSON 值：对象按键名排序、数组保序、数字统一成 `json.Number` 的规范串。
 func (e *enc) value(v any) error {
+	// 数字：写侧与读侧**用同一个编码器产出文本**（`encoding/json`），再走同一个 `canonicalNumber`。
+	//
+	// 为什么要借 `json.Marshal` 而不是自己拼 `FormatFloat`：读回来的文本是 `encoding/json`
+	// 给的（例如 `float64(7.0888e16)` → `70888282338495940`，而 `FormatFloat('g')` 是
+	// `7.088828233849594e+16`）。两侧文本不同就会算出不同 tag —— 自己写的链自己验不过。
+	// 借同一个编码器后，"写侧的值"与"读回的文本"天然一致，只剩跨类型归一化要做。
+	if txt, ok, err := numberText(v); err != nil {
+		return err
+	} else if ok {
+		e.str("n")
+		e.str(canonicalNumber(txt))
+		return nil
+	}
+
 	switch t := v.(type) {
 	case map[string]any:
 		keys := make([]string, 0, len(t))
@@ -305,71 +370,6 @@ func (e *enc) value(v any) error {
 		return nil
 	case nil:
 		e.str("null")
-		return nil
-	case json.Number:
-		// 数字统一口径：**整型先按整型保精度**，再退到 float64，最后才退回原文。
-		//
-		// 为什么不能一律 `Float64()` 中转（Owl II P1）：>2^53 的整数会丢精度，
-		// `9007199254740993` 与 `…992` 会算出同一个 tag —— "改 ID 不改 tag"也能验过，
-		// 防篡改强度被静默削弱。整型走 `FormatInt` 既保精度，又保住
-		// `1` == `int64(1)` == `float64(1)` == `json.Number("1")` == `json.Number("1.0")`。
-		if n, err := strconv.ParseInt(t.String(), 10, 64); err == nil {
-			e.str("n")
-			e.str(strconv.FormatInt(n, 10))
-			return nil
-		}
-		if u, err := strconv.ParseUint(t.String(), 10, 64); err == nil {
-			e.str("n")
-			e.str(strconv.FormatUint(u, 10))
-			return nil
-		}
-		f, err := t.Float64()
-		if err != nil {
-			// 既不是整型也超出 float64 范围（如 `1e400`）：退回原文（仍然确定）。
-			e.str("n")
-			e.str(t.String())
-			return nil
-		}
-		e.str("n")
-		e.str(strconv.FormatFloat(f, 'g', -1, 64))
-		return nil
-	case int:
-		e.str("n")
-		e.str(strconv.FormatInt(int64(t), 10))
-		return nil
-	case int64:
-		e.str("n")
-		e.str(strconv.FormatInt(t, 10))
-		return nil
-	case uint:
-		e.str("n")
-		e.str(strconv.FormatUint(uint64(t), 10))
-		return nil
-	case uint64:
-		e.str("n")
-		e.str(strconv.FormatUint(t, 10))
-		return nil
-	case float32:
-		e.str("n")
-		e.str(formatFloat64(float64(t)))
-		return nil
-	case int32:
-		e.str("n")
-		e.str(strconv.FormatInt(int64(t), 10))
-		return nil
-	case uint32:
-		e.str("n")
-		e.str(strconv.FormatUint(uint64(t), 10))
-		return nil
-	case float64:
-		// **与其他数字类型统一口径**（Owl II P2 ②）：整数值按定点整数写，非整数写最短可逆浮点。
-		//
-		// 这里不能一律 `FormatFloat('g')`：`1234567` 会变成 `1.234567e+06`，与写入方传 `int`
-		// 时算出的 `1234567` 不同 → 同一条记录写进去再读回来验不过（链自断）。
-		// 也不能一律 `FormatInt`：`1.5` 会被截断。边界取 `|v| < 2^53`：再大就不能保证
-		// `float64` 的整数性判断是精确的（那种量级必须用整型传入，见 int/int64/uint/uint64 分支）。
-		e.str("n")
-		e.str(formatFloat64(t))
 		return nil
 	default:
 		// 未知类型：用 JSON 兜底（仍然确定，因为 encoding/json 对同一 Go 值是确定的）。

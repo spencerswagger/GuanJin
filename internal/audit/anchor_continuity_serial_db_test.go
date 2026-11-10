@@ -320,6 +320,10 @@ func TestCanonicalSurvivesDBRoundTrip(t *testing.T) {
 			"big":    int64(9007199254740993), // >2^53：float64 会抹平
 			"ratio":  1.5,                     // 真小数：不许被整型分支截断
 			"small":  uint32(7),               // 其它整型宽度
+			"bigf":   float64(1e18),           // ≥2^53 的整数型 float（旧 2^53 阈值下写侧走 'g' → 自断）
+			"pow53":  float64(1 << 53),        // 2^53 本身（旧阈值 `|v| < 2^53` 的 off-by-one）
+			"f32":    float32(0.1),            // float32 非整值（64 位展开会变 0.10000000149…）
+			"odd":    7.088828233849594e16,    // json 文本 ...95940 与 'g' 文本 ...e+16 不同
 			"flag":   true,                    // 非数字：不受影响
 		},
 		After:      map[string]any{"amount": int(1234568)},

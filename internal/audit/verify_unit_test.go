@@ -1,10 +1,13 @@
 package audit
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
 	"log/slog"
+	"math"
+	"math/rand"
 	"strconv"
 	"strings"
 	"testing"
@@ -205,5 +208,61 @@ func TestCanonicalBigIntegersKeepPrecision(t *testing.T) {
 	// 非整数必须保持小数语义（不许被整型分支截断）。
 	if bytesEqual(tagOf(1.5), tagOf(1)) {
 		t.Fatal("1.5 与 1 编出了同一个 tag —— 小数被截断")
+	}
+}
+
+// TestCanonicalWriteReadAgree —— 属性断言：**写侧的值**与**读回来的 JSON 值**必须算同一个 tag。
+//
+// 这条是前三轮来回的收口：单点用例总会漏掉某个量级。这里把"写侧 Go 值"与"读侧
+// `json.Marshal` → `UseNumber` 解码"的结果直接比 canonical，覆盖边界值与随机值。
+func TestCanonicalWriteReadAgree(t *testing.T) {
+	c := testChain(t)
+	base := Record{ID: uuid.New(), Action: "canon", Result: "success", OccurredAt: time.Unix(0, 0).UTC()}
+	tagOf := func(v any) []byte {
+		rec := base
+		rec.Before = map[string]any{"n": v}
+		tag, err := c.Tag(nil, rec)
+		if err != nil {
+			t.Fatalf("Tag(%#v): %v", v, err)
+		}
+		return tag
+	}
+	// 模拟"落库后再读回"：`json.Marshal` + `UseNumber` 解码（与 `decodeJSON` 同口径）。
+	readBack := func(v any) any {
+		raw, err := json.Marshal(map[string]any{"n": v})
+		if err != nil {
+			t.Fatalf("Marshal(%#v): %v", v, err)
+		}
+		var m map[string]any
+		dec := json.NewDecoder(bytes.NewReader(raw))
+		dec.UseNumber()
+		if err := dec.Decode(&m); err != nil {
+			t.Fatalf("Decode(%#v): %v", v, err)
+		}
+		return m["n"]
+	}
+
+	values := []any{
+		int(0), int(1), int(-1), int64(1), uint64(0), uint32(7), int32(-7),
+		float64(1), float32(1), json.Number("1"), json.Number("1.0"), json.Number("1.00"),
+		float64(1e6), float64(1234567), float64(-1234567),
+		float64(1 << 53), float64(1<<53 + 2), float64(-(1 << 53)),
+		float64(1e15), float64(1e16), float64(1e18), float64(-1e18), float64(1e21), float64(-1e21),
+		float64(1e-6), float64(1e-7), float64(1.5), float64(-0.5),
+		float32(0.1), float32(1e7), float32(-0.25),
+		int64(9007199254740993), uint64(math.MaxUint64), json.Number("12345678901234567890"),
+	}
+	// 随机值：指数铺开，覆盖"整数值 / 非整数值 / 极大 / 极小"。
+	rnd := rand.New(rand.NewSource(20261110))
+	for i := 0; i < 200; i++ {
+		exp := rnd.Intn(60) - 30
+		values = append(values, rnd.Float64()*math.Pow10(exp))
+	}
+
+	for _, v := range values {
+		want, got := tagOf(v), tagOf(readBack(v))
+		if !bytesEqual(want, got) {
+			t.Fatalf("写侧 %#v 与读回来的值 %#v 算出不同 tag（链自断）", v, readBack(v))
+		}
 	}
 }
