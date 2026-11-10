@@ -11,6 +11,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
 	"gorm.io/gorm"
+
+	"github.com/spencerswagger/guanjin/internal/testdb"
 )
 
 // 本文件补 `AC-AUD-02` 的真库行为证据：`audit_logs` 的 `forbid_mutation()` 触发器**官有**，
@@ -83,6 +85,9 @@ func TestDBAuditLogsRejectsUpdateAndDelete(t *testing.T) {
 	updErr := db.WithContext(ctx).Exec(`UPDATE audit_logs SET action = 'tampered' WHERE id = ?`, id).Error
 	assertRestrictViolation(t, updErr, "UPDATE")
 
+	// 注意：这里的 UPDATE/DELETE 是**故意要被数据库拒绝**的（验证 append-only 触发器），
+	// 不是清理动作，所以**不加** testdb 护栏、也不加 schema 限定之外的处理——
+	// 它失败才是判据 AC-AUD-02 的通过条件。
 	delErr := db.WithContext(ctx).Exec(`DELETE FROM audit_logs WHERE id = ?`, id).Error
 	assertRestrictViolation(t, delErr, "DELETE")
 
@@ -119,11 +124,27 @@ func assertRestrictViolation(t *testing.T, err error, op string) {
 // 临时禁触发器，删完立刻恢复（owner 即可，不需要超级用户）。
 func cleanupAuditRow(t *testing.T, db *gorm.DB, id uuid.UUID) {
 	t.Helper()
+	// **安全护栏**：这段会临时关 append-only 触发器并删审计行，必须确认是测试库
+	// （把 DSN 指到非测试库时直接失败，而不是删真数据）。
+	testdb.RequireTestDB(t, db)
 	var partition string
 	if err := db.Raw(`SELECT tableoid::regclass::text FROM audit_logs WHERE id = ?`, id).Scan(&partition).Error; err != nil || partition == "" {
 		return // 行没写进去（前面的用例已失败），无需清理
 	}
-	_ = db.Exec(fmt.Sprintf(`ALTER TABLE %q DISABLE TRIGGER audit_logs_append_only`, partition)).Error
-	_ = db.Exec(`DELETE FROM audit_logs WHERE id = ?`, id).Error
-	_ = db.Exec(fmt.Sprintf(`ALTER TABLE %q ENABLE TRIGGER audit_logs_append_only`, partition)).Error
+	// 关触发器 → 删行 → 开触发器**必须在同一事务里**：PG 的触发器开关是持久化表属性，
+	// 分开提交时若中途失败（panic/杀进程）会让 append-only 保护长期失效。
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Exec(fmt.Sprintf(`ALTER TABLE %s DISABLE TRIGGER audit_logs_append_only`, partition)).Error; err != nil {
+			return err
+		}
+		if err := tx.Exec(`DELETE FROM public.audit_logs WHERE id = ?`, id).Error; err != nil {
+			return err
+		}
+		if err := tx.Exec(fmt.Sprintf(`ALTER TABLE %s ENABLE TRIGGER audit_logs_append_only`, partition)).Error; err != nil {
+			return err
+		}
+		return nil
+	}); err != nil {
+		t.Logf("cleanupAuditRow: %v（行可能已随用例失败残留）", err)
+	}
 }

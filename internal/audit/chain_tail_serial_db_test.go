@@ -14,6 +14,8 @@ import (
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+
+	"github.com/spencerswagger/guanjin/internal/testdb"
 )
 
 var _ = context.Background
@@ -54,7 +56,8 @@ func TestAC_AUD_03_DeletedMiddleRecordIsDetected(t *testing.T) {
 	allowMutationForTest(t, db, month)
 	// **按 id 删**（不是按 `occurred_at`）：后者会连带删掉同一时刻的另一条（如果存在），
 	// 造成"应有 4 条、实际 3 条"的假红（已在 `-p 8` 多轮里出现过）。
-	if err := db.Exec(`DELETE FROM audit_logs WHERE id = ?`, beforeDelete[2].ID).Error; err != nil {
+	testdb.RequireTestDB(t, db) // 删改类动作的入口护栏
+	if err := db.Exec(fmt.Sprintf(`DELETE FROM %s.audit_logs WHERE id = ?`, auditSchemaForTests), beforeDelete[2].ID).Error; err != nil {
 		t.Fatalf("delete middle: %v", err)
 	}
 
@@ -184,7 +187,8 @@ func TestAC_AUD_11_JobRunsOnTickerAndSkipsEmptyMonth(t *testing.T) {
 	verifier.now = func() time.Time { return month }
 
 	// 前置：把这一段可能残留的锚清掉（跨运行复用月份时会有），再断言"空月不写锚"。
-	if err := db.Exec(`DELETE FROM runtime_config WHERE key = ?`, AnchorKey(month)).Error; err != nil {
+	testdb.RequireTestDB(t, db)
+	if err := db.Exec(fmt.Sprintf(`DELETE FROM %s.runtime_config WHERE key = ?`, auditSchemaForTests), AnchorKey(month)).Error; err != nil {
 		t.Fatalf("clear anchor: %v", err)
 	}
 	// 空月份：复核 0 条、不报错，且**不写锚点**（空锚会让"空月"与"锚点丢失"混淆）。
@@ -255,7 +259,8 @@ func TestChainRealPathsForCoverage(t *testing.T) {
 	verifier.now = func() time.Time { return month }
 
 	// **清掉跨运行残留的锚**：不断言的话，"空月不写锚"会读到上一次运行留下的值 → 假红。
-	if err := db.Exec(`DELETE FROM runtime_config WHERE key = ?`, AnchorKey(month)).Error; err != nil {
+	testdb.RequireTestDB(t, db)
+	if err := db.Exec(fmt.Sprintf(`DELETE FROM %s.runtime_config WHERE key = ?`, auditSchemaForTests), AnchorKey(month)).Error; err != nil {
 		t.Fatalf("clear anchor: %v", err)
 	}
 

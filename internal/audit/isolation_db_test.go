@@ -152,5 +152,15 @@ func purgeSharedFutureRows(db *gorm.DB) (before, after string, err error) {
 	return before, after, nil
 }
 
+// auditSchemaForTests 是测试写入的目标 schema（隔离开启时 `audit_test`，否则 `public`）。
+// 供 `allowMutationForTest` 等需要**限定 schema** 的删改动作使用，避免依赖 search_path。
+var auditSchemaForTests = "public"
+
+func init() {
+	if auditIsolationEnabled() {
+		auditSchemaForTests = isolatedSchema
+	}
+}
+
 // auditIsolationEnabled 是否启用隔离（默认启用；`GUANJIN_AUDIT_NO_ISOLATION=1` 可关，便于排查）。
 func auditIsolationEnabled() bool { return os.Getenv("GUANJIN_AUDIT_NO_ISOLATION") != "1" }
