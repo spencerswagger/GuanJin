@@ -68,10 +68,27 @@ func main() {
 		os.Exit(2)
 	}
 
-	skew, err := durationEnv("GUANJIN_GATEWAY_CLOCK_SKEW", 0)
+	// 时钟宽容偏移：`GUANJIN_GW_CLOCK_SKEW`。
+	//
+	// **2026-11-11 改名**（原 `GUANJIN_GATEWAY_CLOCK_SKEW`）：旧名与 SDK 契约键
+	// `guanjin.gateway.clock-skew`（#10）的机械映射名**撞车**——同一个名字两个所有者、
+	// 语义不同（网关对上游断言/令牌的**宽容偏移** vs SDK 的 `exp/iat` 窗口）。SDK 那 29 个
+	// 映射名是契约（别名即违约），所以改网关侧；新名不在基线 §7.2 表内、只此一处使用 → 零基线改动。
+	//
+	// **口径：未设置就用默认 `0`（不容忍偏移）并打一行日志**，不 fail-fast ——
+	// "不容忍偏移"本来就是安全默认。但必须把**实际生效值**写进启动日志：
+	// 旧名现在**不再被读取**，运维改完名若没生效，日志会明确点名新键 + 默认值，
+	// 不会出现"以为配了、其实没生效"的静默。
+	skew, err := durationEnv("GUANJIN_GW_CLOCK_SKEW", 0)
 	if err != nil {
 		logger.Error("startup failed", "error", err)
 		os.Exit(2)
+	}
+	if strings.TrimSpace(os.Getenv("GUANJIN_GW_CLOCK_SKEW")) == "" {
+		logger.Warn("clock skew: 未设置 GUANJIN_GW_CLOCK_SKEW，使用默认 0ms（不容忍时钟偏移）",
+			"effective_ms", skew.Milliseconds())
+	} else {
+		logger.Info("clock skew: 取自 GUANJIN_GW_CLOCK_SKEW", "effective_ms", skew.Milliseconds())
 	}
 
 	// 数据库：准入判定（会话/角色/门槛）与访问记录都直读直写库——
