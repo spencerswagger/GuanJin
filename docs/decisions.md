@@ -476,7 +476,7 @@
 
 ---
 
-## D20 `audit_logs` 补一条链序索引：**加**，现在加（`(created_at, id)`，迁移 `000020`，零代码改动）
+## D20 `audit_logs` 补一条链序索引：**加**，现在加（`(created_at, id)`，迁移 `000021`，零代码改动）
 
 > **触发**：Edge 修「跨月锚点被当接续判据」的误报（PR #88 / main `6ffa21f`）时发现——`audit_logs` **没有任何 `created_at` 索引**，而 `Append` 的链尾读（`internal/audit/repo.go` 的 `tailSQL`：`ORDER BY created_at DESC, id DESC LIMIT 1 FOR UPDATE`）与新增的 `TailTagBefore`（`repo.go:224`）都按 `created_at` 排序。他按约束没擅自加迁移，要裁定。**本条只给决议与索引定义，迁移由 Edge 落；不在本 PR 写 SQL 文件、不改代码。**
 
@@ -484,7 +484,7 @@
   ```sql
   CREATE INDEX audit_logs_created_id_idx ON audit_logs (created_at, id);
   ```
-  迁移 **`000020_audit_logs_created_id_idx.{up,down}.sql`**（**编号修订 2026-11-11**：D21 的阈值 seed 占 `000019`，本条顺延 `000020`，避免出现编号空洞——库若先到 20，后补的 19 永远不会被 `migrate up` 应用；`000016` 是"索引单开一条"的先例）：`up` = 上面那句，`down` = `DROP INDEX IF EXISTS audit_logs_created_id_idx;`。**在父表上建**，PG 会自动在每个现有分区上建同名子索引，并作为**分区索引模板**自动套用到 `EnsurePartitions` 将来新建的分区 → **`EnsurePartitions` 不用改、`Append`/`TailTagBefore` 一行代码都不用改**（两句 SQL 已经按 `(created_at DESC, id DESC)` / `(created_at DESC, id DESC)` 写好了，规划器自己会改走索引）。
+  迁移 **`000021_audit_logs_created_id_idx.{up,down}.sql`**（**编号修订二 2026-11-11**：`000019` = D21 阈值 seed、`000020` = D22 平台级禁用集 seed，本条顺延 `000021`。**新规则（本条记账）**：裁定里只写「取 `ls migrations/` 最大号 +1」，**不预写死编号**——预写会与别人抢先落地时撞号，或留编号空洞（库若先到 21，后补的 20 永远不会被 `migrate up` 应用）；`000016` 是"索引单开一条"的先例）：`up` = 上面那句，`down` = `DROP INDEX IF EXISTS audit_logs_created_id_idx;`。**在父表上建**，PG 会自动在每个现有分区上建同名子索引，并作为**分区索引模板**自动套用到 `EnsurePartitions` 将来新建的分区 → **`EnsurePartitions` 不用改、`Append`/`TailTagBefore` 一行代码都不用改**（两句 SQL 已经按 `(created_at DESC, id DESC)` / `(created_at DESC, id DESC)` 写好了，规划器自己会改走索引）。
 
 - **理由落在「锁内路径的写放大与尾延迟」，不是泛泛性能**：`Append` 的链尾读在 **`pg_advisory_xact_lock(chainLockKey)` 之内**——它是**全局串行点**，同一时刻只有一个审计写者，锁持有时长 = 全局审计写吞吐的倒数。当前这条读没有任何可用索引 → 规划器只能 `Seq Scan`（无 `occurred_at` 谓词 ⇒ **不剪枝，扫全部存活分区**）+ `Sort`（top-N 也必须吃完全部输入行）+ `Limit 1`，于是**每写一条审计，都要把留存期内（365 天）的全部审计行读一遍，且全程持锁**。代价随留存天数**线性**增长，不是常数：今天表小看不出，M1 之后每个月都比上个月慢一档，而这是"事后无法补"的写法——索引能补，但补的时机越晚、锁窗口越长。加上索引后该读变成**每分区一次 btree 反向下降 + `LIMIT 1`**（分区数由留存决定，12–13 个封顶），锁内只留 O(log n)。附带：`FOR UPDATE` 的语义不变（仍是"先 advisory、后行锁"，只锁命中那一行），**断电顺序/链序口径一个字未动**。
 
@@ -496,9 +496,9 @@
 
 - **否决的替代方案（两次被提出的两个）**：①**链尾 tag 缓存 / 落 `runtime_config`**——把"链尾"变成**第二份真源**：事务回滚、进程在"写锚点后、插入前"崩、或别名写入路径漏更新，都会让缓存与真实链尾分叉，而**分叉的表现是"链看着正常、事后整链复核才发现断"**（这类错误没有即时信号）→ 用安全换性能，不采纳；且它救不了 `TailTagBefore` / `Load` 的排序路径。②**只在内存/进程内缓存**——多副本各有一份，advisory 锁下的"链尾"必须是**库里的**那一行，否则分叉。**若不加，先劣化的路径**（写进本条备查）：先是**审计写 p99**（全局串行点），随后是 `audit_anchor_age_seconds`（锚点任务与写入抢同一把锁排队）。
 
-- **账目/契约面：零改动**。纯性能索引，不改表/列/约束/错误码/端点 → **不进 CH**（按 P8③ 判据：不让业务方多出任何一种配置方式）；`acceptance-criteria.md` 一字未动，`AC-AUD-*` 的判据口径不变。**举证归 Gate**：Edge 落 `000020` 后，用 `EXPLAIN (ANALYZE, BUFFERS)` **前后对照**贴 plan，断言「锁内链尾读 = Index Scan（Backward）/ Merge Append，不再是 Seq Scan + Sort」；`FOR UPDATE` 仍在、并发分叉反证（`disableChainLock`/`disableRowLock` 两个注入点）仍应红。
+- **账目/契约面：零改动**。纯性能索引，不改表/列/约束/错误码/端点 → **不进 CH**（按 P8③ 判据：不让业务方多出任何一种配置方式）；`acceptance-criteria.md` 一字未动，`AC-AUD-*` 的判据口径不变。**举证归 Gate**：Edge 落 `000021` 后，用 `EXPLAIN (ANALYZE, BUFFERS)` **前后对照**贴 plan，断言「锁内链尾读 = Index Scan（Backward）/ Merge Append，不再是 Seq Scan + Sort」；`FOR UPDATE` 仍在、并发分叉反证（`disableChainLock`/`disableRowLock` 两个注入点）仍应红。
 
-- **归属与顺序**：**Edge** 落 `000020`（up/down 各一份，注释写清"服务哪条 SQL、为什么单开一条、为什么不用 CONCURRENTLY"）；**Gate** 出 plan 前后对照；**Core 不参与**（`Append` 零改动）。本条与 D19 同批回传、**分属两条 DEC**。
+- **归属与顺序**：**Edge** 落 `000021`（up/down 各一份，注释写清"服务哪条 SQL、为什么单开一条、为什么不用 CONCURRENTLY"）；**Gate** 出 plan 前后对照；**Core 不参与**（`Append` 零改动）。本条与 D19 同批回传、**分属两条 DEC**。
 
 ---
 
@@ -528,6 +528,31 @@
   - **CI**：`integration` job 的 schema 断言补一项 `register_timing_key=50`（与 `challenge.*` 两键同款真断言，不等即 `[FAIL]` + `exit 1`），防"迁移在但 seed 丢"。
 
 - **⑤ 边界（不做的事）**：本条不定义"账号存在性"的**其它**防枚举面（`recover/*` 的响应结构与耗时属基线原文，另论）；不给 `/auth/register/*` 新增任何对外字段（`attempts_left` 是 CH-8，另一条）；**不进 CH**（对外契约面零变化，纯补一个内部判据参数）。
+
+---
+
+## D22 平台级因子禁用集的载体：`runtime_config.factors.disabled` = jsonb **`[]`**，seed 落行 + 启动期校验（迁移 `000020`）
+
+> **触发**：`SetEnabled` 的并发安全靠 `SELECT … WHERE key='factors.disabled' FOR UPDATE` 锁住那一行；**行不存在时 `FOR UPDATE` 锁不到任何东西** → 两个并发 `PATCH /api/v1/factors/{type}` 都读到"空集" → 后写覆盖先写（丢更新）且两条审计的 before/after 都算错 = **一条真实变更记两条审计**（Core #92 的红证据；锁修复归 Edge）。本文只裁定**载体形态与落法**，不修锁。
+>
+> **前提校正（谁为准）**：基线 `数据模型:1071` 只给了**示例**——「写一行开关（如 `factors.webauthn.enabled=true`）」，是"新增因子零 DDL"的举例，**没有冻结键名**；`runtime_config` 是内部配置表、不是对外契约面（F0 名单未列其键）。因此**实现用单行聚合键 `factors.disabled` 是合法的**，但必须由本条**冻结形态**，且**不得再出现第二个键名**（`factors.disabled` 唯一；谁再写 `factors.<type>.enabled` 就是自造第二套）。
+
+- **① 载体形态：`jsonb` **空数组 `[]`**（`value_type='json'`、`is_secret=false`）**
+  - **不用 `null`**：`jsonb 'null'` 与"空集"在语义上不可区分（读侧要么写 `raw=="null"` 特判、要么判 `jsonb_typeof`），且 `jsonb_array_elements('null'::jsonb)` 直接报错——SQL 侧任何聚合/展开都要再兜一层。
+  - **不用 `{}`**：对象不是集合；同样会让 `jsonb_array_elements` 报错，且与"按因子类型字符串列表"的语义不符。
+  - **非空时**：元素 = 因子类型字符串（`["sms"]`）；**集合语义 = 无序、无重复**（写入侧去重 + 排序后落库，便于断言与稳定输出）。
+  - **"平台级禁用集为空"的唯一表达 = 行存在且值为 `[]`**（不是缺行、不是 `null`）。并集语义下"空集"就是并集里的单位元，`AC-FLOW-05` 的两级并集不受影响。
+
+- **② 落法：**migration seed **（否决"读路径自愈"）**
+  - **自愈堵不住缺陷本体**：建行必须 `INSERT`，而 `INSERT` 与"锁行"是两件事——两个并发 `INSERT` 只有一个成功，另一个 23505；吞掉 23505 再重读就是**隐式回退**（违反"不许有隐性逻辑"），不吞就是 5xx 把并发缺陷暴露成用户可见错误。**行必须在写入路径之前就存在**，这是 `FOR UPDATE` 能生效的前提。
+  - **自愈会掩盖"迁移没跑"**：参考数据由 `migrate` 管、应用不自动迁移（P1），"缺行自己建"等于给"忘了跑迁移"开一条静默成功路径——与 D14① 里 `DROP DEFAULT` 同一个理由。
+  - **迁移 `000020_seed_factors_disabled.{up,down}.sql`**：`up` = `INSERT … ON CONFLICT (key) DO NOTHING`（运维已改过的禁用集**不被覆盖**）；`down` = `DELETE … WHERE key='factors.disabled'`（精确删本键）。**编号**：`000019` = D21 阈值 seed，本条 `000020`，D20 的审计索引顺延 `000021`。
+  - **配套（归 Edge，一行 spec + 一个校验器）**：把 `factors.disabled` 加进 `internal/store/runtimeconfig.go` 的 `startupSpecs`，新增一种 kind（存在 + `value_type='json'` + `jsonb_typeof(value)='array'` + 元素均为非空字符串）→ **缺键/类型不对/坏值 = 启动非 0 退出并点名键**（与 `flow.ttl_seconds` 同款）。**运行期**读到缺行 = 配置缺陷 → **500 `INTERNAL_ERROR`**，**不得**再"静默按空集"（那正是缺陷复现路径）；举证归 Gate/Edge：手动删行 → 平台级启停 500 + 日志点名键名。
+  - **回滚注意**：`down` 删行后 concurrent PATCH 又回到"锁不到行"的窗口，且启动期校验会 fail-fast → **回滚须与回滚应用版本一起做**，这是 fail-closed 的期望行为，不是副作用。
+
+- **③ 「第一天就有行」谁保证**：seed 在 `migrate up` 里 → **CI 每次重建库只跑 up 就自动带上**（`guanjin_test` / 本地三库 / 预发 / 生产一致，无环境差异、无初始化脚本）。唯一漏网 = 有人手工删行、或环境停在旧版本 → **启动期 fail-fast 点名 `factors.disabled`**（不会带病上线）。**测试夹具纪律**：不得"临时插一行再删"来绕过（会与 seed 打架、并掩盖"缺行"分支）；要测缺行分支用独立库或整体事务回滚。
+
+- **④ 与 D21 的关系**：两条同类（`runtime_config` 里该有的载体不存在），但**键不同、迁移不同、不互相等**——D21 的 `000019` 已合入 main，本条 `000020` 独立落地。**下发顺序按优先级：本条先合**（它卡着一条并发缺陷的验收），D21 已不受影响。
 
 ---
 
@@ -632,8 +657,9 @@
 | `D4-C(5)` | D4 裁定 C 的第 (5) 条 | 链序 = `created_at`；`occurred_at` 原样并**参与 `integrity_tag`**；二者不同不算缺陷；下界守卫防跨月破链（完整裁定 `notes/audit-chain-order-2026-11-10.md`） |
 | `D17` | §**D17** | 能力矩阵与 AC 账目的计数单位：`GJ-CAP-17/20/21` **无 AC 条目**、能力矩阵记 `DEFERRED(M5)`/`N/A(M2)`、与 `AC-AGENT-01~03` **不得双计**、22 能力与 90 判据**不得换算**；`90 = 83/0/0/6/0/1` 不受影响 |
 | `D19` | §**D19** | `disabled_factors` 的物理落点 = `login_policies`（client 级 `client_override`、回落 `tier_default`），`clients` 无此列；`接口清单:211`/`页面规格:533` 的"来自 clients"是笔误、只改措辞不进 CH；**有效禁用集 = 平台级 `runtime_config`（`factors.<type>.enabled`，逐因子一键）∪ client 级，互不覆盖** |
+| `D22` | §**D22** | 平台级禁用集载体 = `runtime_config.factors.disabled`（jsonb **`[]`**、唯一键名，废除基线示例式的 `factors.<type>.enabled`）；**seed 落行**（迁移 `000020`，`ON CONFLICT DO NOTHING`）+ 启动期校验（缺键/坏值 fail-fast）；运行期缺行 = 500 不静默空集；否决读路径自愈 |
 | `D21` | §**D21** | `AC-REG-04` 的耗时阈值 = `runtime_config.register.timing.max_diff_ms`（int，默认 **50**，迁移 `000019`）；口径 = `register/start` 两条路径耗时中位数之差的**绝对值**上界，时钟源 = 进程单调钟；**超阈值 = 红**；键是**判据参数、服务不读、不进 `StartupKeys()`**、零代码改动 |
-| `D20` | §**D20** | `audit_logs` 加 `audit_logs_created_id_idx (created_at, id)`（迁移 **`000020`**，父表建、自动套用新分区、零代码改动）；不加 DESC/`occurred_at` 前缀/`CONCURRENTLY`/partial；否决"链尾 tag 落 `runtime_config`"缓存方案；不进 CH、判据不动 |
+| `D20` | §**D20** | `audit_logs` 加 `audit_logs_created_id_idx (created_at, id)`（迁移 **`000021`**，父表建、自动套用新分区、零代码改动）；不加 DESC/`occurred_at` 前缀/`CONCURRENTLY`/partial；否决"链尾 tag 落 `runtime_config`"缓存方案；不进 CH、判据不动 |
 | `D16①②③④⑤` | §**D16** | 数据面 S8 收口：断言 claim 逐项来源（`aud`=路由命中 client、`roles`=活跃 `role_bindings`、`exp=iat+60`、`jti`=UUIDv7）、准入基准=`login_policies.min_acr`、路由规则冻结（R11①）、SLO 通知与 `details.flow` 字段集登记 R12/R13 |
 | `CH-8` | 契约变更清单 | `§3.3.1` 响应新增 `attempts_left`（纯加字段，**待追认**；追认前不作判据依据） |
 | `D6(1)(6)` + `F0-5` | D6 裁定 (1)/(6) + F0 第 5 条 | SDK 配置 **29 键**（缺号 #7/#16/#17 不补）+ 环境变量逐段机械转换 |
