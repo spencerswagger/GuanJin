@@ -47,7 +47,8 @@ import sys
 root = sys.argv[1]
 
 SKIP_DIRS = {'.git', 'node_modules', 'target', 'vendor', 'dist', 'build', 'artifacts', '.octop', '.cache'}
-EXTS = {'.go': 'go', '.java': 'java', '.ts': 'js', '.tsx': 'js', '.js': 'js', '.mjs': 'js', '.vue': 'js'}
+EXTS = {'.go': 'go', '.java': 'java', '.kt': 'java', '.kts': 'java',
+        '.ts': 'js', '.tsx': 'js', '.js': 'js', '.jsx': 'js', '.mjs': 'js', '.cjs': 'js', '.vue': 'js'}
 
 # ---- 第 1 层：语言无关裸词（同一条规则，换 API 也躲不掉）----
 BARE = [
@@ -97,37 +98,84 @@ def is_test_file(rel):
     return bool(TEST_FILE.search(rel))
 
 
-def strip_comment(line):
-    """字符级剥行尾注释：三种引号 + 反斜杠转义；`//` 与未闭合的 `/*` 都截断。"""
+def strip_comments(raw_lines, lang):
+    """整文件剥离注释，**保留行号**（块注释跨行维护状态）。
+
+    为什么不能按行剥（Owl II P1）：`/* harmless */ MessageDigest.getInstance("SHA-256")`
+    这种同一行"注释在前、违规在后"会被整段截掉 → 漏检；
+    反过来 Java 多行 javadoc 里写"本类不使用 SHA-256"→ 假红。
+    两个方向都靠"跨行维护 in_block"一次修掉。
+
+    三种引号（`'` `"` `` ` ``）+ 反斜杠转义；`.vue` 额外处理 HTML 注释 `<!-- -->`。
+    """
     out = []
-    quote = None
+    in_block = False
+    html = lang == 'js' and False  # 由调用方按扩展名传；见下方 scan_file
+    i = 0
+    while i < len(raw_lines):
+        line = raw_lines[i]
+        res = []
+        quote = None
+        j = 0
+        while j < len(line):
+            ch = line[j]
+            if in_block:
+                if ch == '*' and j + 1 < len(line) and line[j + 1] == '/':
+                    in_block = False
+                    j += 2
+                    continue
+                j += 1
+                continue
+            if quote:
+                res.append(ch)
+                if ch == '\\' and j + 1 < len(line):
+                    res.append(line[j + 1])
+                    j += 2
+                    continue
+                if ch == quote:
+                    quote = None
+                j += 1
+                continue
+            if ch in '\'"`':
+                quote = ch
+                res.append(ch)
+                j += 1
+                continue
+            if ch == '/' and j + 1 < len(line):
+                nxt = line[j + 1]
+                if nxt == '/':
+                    break
+                if nxt == '*':
+                    in_block = True
+                    j += 2
+                    continue
+            res.append(ch)
+            j += 1
+        out.append(''.join(res))
+        i += 1
+    return out
+
+
+def _strip_html_comments(line, in_html):
+    """`.vue` 的模板注释：`<!-- ... -->`（可跨行）。"""
+    out = []
     i = 0
     while i < len(line):
-        ch = line[i]
-        if quote:
-            out.append(ch)
-            if ch == '\\' and i + 1 < len(line):
-                out.append(line[i + 1])
-                i += 2
-                continue
-            if ch == quote:
-                quote = None
-            i += 1
+        if in_html:
+            end = line.find('-->', i)
+            if end < 0:
+                return ''.join(out), True
+            i = end + 3
+            in_html = False
             continue
-        if ch in '\'"`':
-            quote = ch
-            out.append(ch)
-            i += 1
-            continue
-        if ch == '/' and i + 1 < len(line):
-            nxt = line[i + 1]
-            if nxt == '/':
-                break
-            if nxt == '*':
-                break
-        out.append(ch)
-        i += 1
-    return ''.join(out)
+        start = line.find('<!--', i)
+        if start < 0:
+            out.append(line[i:])
+            break
+        out.append(line[i:start])
+        i = start + 4
+        in_html = True
+    return ''.join(out), in_html
 
 
 def logical_lines(lines):
@@ -136,43 +184,72 @@ def logical_lines(lines):
     n = len(lines)
     while i < n:
         start = i
-        merged = strip_comment(lines[i])
+        merged = lines[i].strip()
         depth = merged.count('(') - merged.count(')')
         while i + 1 < n and (depth > 0 or merged.rstrip().endswith(('.', ',', '+')) or
                              lines[i + 1].lstrip().startswith('.')):
             i += 1
-            nxt = strip_comment(lines[i])
+            nxt = lines[i]
             merged += ' ' + nxt.strip()
             depth += nxt.count('(') - nxt.count(')')
-        yield start + 1, merged, lines[start:i + 1]
+        yield start + 1, merged, start, i
         i += 1
 
 
-def scan_file(path, lang):
+def _span_marker(allow, orig_lines, start, end):
+    """白名单标记 `PKCE-S256`：写在逻辑行覆盖的任意一行、或紧邻上一行都算。"""
+    marker = allow['marker']
+    if any(marker in l for l in orig_lines[start:end + 1]):
+        return True
+    return start >= 1 and marker in orig_lines[start - 1]
+
+
+def _hit_line(code_lines, start, end, text):
+    """命中行号：优先取 span 内**真正出现命中文本**的那一行（合并导入块时不会指到 `import (`）。"""
+    for k in range(start, end + 1):
+        if text and text in code_lines[k]:
+            return k + 1
+    return start + 1
+
+
+def scan_file(path, lang, is_vue=False):
     with open(path, encoding='utf-8', errors='replace') as f:
         raw_lines = f.read().splitlines()
+    orig_lines = list(raw_lines)  # 标记写在注释里，剥注释后看不到 → 判定标记时用原文
+    if is_vue:
+        stripped = []
+        in_html = False
+        for line in raw_lines:
+            code, in_html = _strip_html_comments(line, in_html)
+            stripped.append(code)
+        raw_lines = stripped
+    code_lines = strip_comments(raw_lines, lang)
     rel = os.path.relpath(path, root).replace(os.sep, '/')
     allow = ALLOW.get(rel)
     test_file = is_test_file(rel)
     hits = []
-    for lineno, code, span in logical_lines(raw_lines):
-        blob = '\n'.join(span)
-        # 负向用例的显式豁免：只在测试文件 + 标记所在的行生效。
-        if test_file and 'NEGATIVE-SHA-TEST' in blob:
+    for lineno, code, start, end in logical_lines(code_lines):
+        # 负向用例的显式豁免：只在测试文件生效；标记写在命中行或**紧邻上一行**都算
+        # （与 `PKCE-S256` 的口径一致）。
+        span_orig = orig_lines[start:end + 1]
+        prev_orig = orig_lines[start - 1] if start >= 1 else ''
+        marker_here = any('NEGATIVE-SHA-TEST' in l for l in span_orig)
+        marker_prev = 'NEGATIVE-SHA-TEST' in prev_orig
+        if test_file and (marker_here or marker_prev):
             continue
         for pat, reason in BARE:
             m = re.search(pat, code)
             if m:
-                if allow and allow['algo'] in code and allow['marker'] in blob:
+                if allow and allow['algo'] in code and _span_marker(allow, orig_lines, start, end):
                     continue
-                hits.append((lineno, m.group(0), '裸词/' + reason, rel))
+                hits.append((_hit_line(code_lines, start, end, m.group(0)), m.group(0), '裸词/' + reason, rel))
         for pat, reason in PATTERNS[lang]:
             m = re.search(pat, code)
             if not m:
                 continue
-            if allow and allow['algo'] in code and allow['marker'] in blob:
+            if allow and allow['algo'] in code and _span_marker(allow, orig_lines, start, end):
                 continue
-            hits.append((lineno, m.group(0), '调用/' + reason, rel))
+            hits.append((_hit_line(code_lines, start, end, m.group(0)), m.group(0), '调用/' + reason, rel))
     return hits
 
 
@@ -184,7 +261,7 @@ for dirpath, dirnames, filenames in os.walk(root):
         if not lang:
             continue
         full = os.path.join(dirpath, name)
-        violations.extend(scan_file(full, lang))
+        violations.extend(scan_file(full, lang, is_vue=name.endswith('.vue')))
 
 if violations:
     print('[FAIL] 发现 SHA/RSA 系算法使用（AC-AUD-12⑤：只允许 PKCE S256 白名单）')
@@ -206,7 +283,7 @@ if [ "${1:-}" != "--self-test" ]; then
   exit 0
 fi
 
-echo "== 2/2 自检：八类注入必须逐个被点名检出（规则名 + 算法）=="
+echo "== 2/2 自检：14 条注入必须逐个被点名检出（规则名 + 算法），另 2 条不误伤 =="
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
@@ -224,6 +301,19 @@ if ! scan "$tmp/base" >/dev/null; then
   exit 1
 fi
 echo "  [OK] 基线（白名单 + 标记）判绿"
+
+expect_green() { # expect_green <名字> <相对路径> <内容>
+  local name="$1" rel="$2" body="$3"
+  local dir="$tmp/$name"
+  mkdir -p "$dir/$(dirname "$rel")"
+  printf '%s\n' "$body" >"$dir/$rel"
+  if ! scan "$dir" >/dev/null 2>&1; then
+    echo "  [FAIL] 「$name」应判绿，实际判红（假阳性会把第一个撞上的人逼去改白名单）："
+    scan "$dir" 2>&1 | sed 's/^/        /'
+    return 1
+  fi
+  echo "  [OK] 「$name」判绿（不误伤）"
+}
 
 inject() { # inject <名字> <相对路径> <内容> <期望输出里必须同时出现的关键字1> [关键字2]
   local name="$1" rel="$2" body="$3" want="$4" want2="${5:-}"
@@ -258,6 +348,14 @@ inject() { # inject <名字> <相对路径> <内容> <期望输出里必须同�
 }
 
 rc=0
+# 假阳性方向：多行 javadoc 里写"不使用 SHA-256/RSA"必须绿；测试文件里上一行写豁免标记必须绿。
+expect_green javadoc-mention sdk/java/core/src/main/java/Doc.java '/**
+ * 本类不使用 SHA-256 / RSA，全部走 SM3 / SM2。
+ */
+class Doc { int x = 1; }' || rc=1
+expect_green marker-prev-line-test internal/credential/foo_test.go '// NEGATIVE-SHA-TEST（负向用例：断言 SHA256 必须被拒）
+var bad = "SHA256"' || rc=1
+
 inject go-rsa internal/crypto/bad.go 'package crypto
 
 import "crypto/rsa"
@@ -289,6 +387,13 @@ inject whitelist-without-marker internal/protocol/server.go 'package protocol
 import "crypto/sha256"
 
 func challenge(v string) []byte { s := sha256.Sum256([]byte(v)); return s[:] }' 'server.go' 'sha256' || rc=1
+inject block-comment-bypass sdk/java/core/src/main/java/BadTwo.java 'class BadTwo {
+  void f() { /* harmless */ java.security.MessageDigest.getInstance("SHA-256"); }
+}' 'MessageDigest' 'SHA-256' || rc=1
+inject kt-sha sdk/kotlin/src/Bad.kt 'import java.security.MessageDigest
+val d = MessageDigest.getInstance("SHA-256")' 'MessageDigest' 'SHA-256' || rc=1
+inject cjs-hash sdk/node/src/bad.cjs "const { createHash } = require('crypto');
+module.exports = () => createHash('sha1');" 'createHash' 'sha1' || rc=1
 inject marker-in-production internal/crypto/bad4.go 'package crypto
 // NEGATIVE-SHA-TEST 生产文件不许用这个豁免
 import "crypto/sha1"
@@ -299,4 +404,4 @@ if [ "$rc" -ne 0 ]; then
   echo "[FAIL] 自检未通过：有注入没被检出（脚本存在 ≠ 门禁存在）"
   exit 1
 fi
-echo "[OK] 自检通过：八类注入（含跨行、HmacSHA、JWT RS256、注释绕过、白名单缺标记、生产文件伪造豁免）全部被点名检出，基线判绿"
+echo "[OK] 自检通过：14 条注入（含跨行、HmacSHA、JWT RS256、行内块注释绕过、.kt/.cjs、白名单缺标记、生产文件伪造豁免）全部被点名检出；javadoc 提及与测试文件豁免 2 条不误伤；基线判绿"
