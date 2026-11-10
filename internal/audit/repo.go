@@ -26,6 +26,20 @@ import (
 // 换它等于让新旧进程用两把锁，是**静默断链**级别的错误，故写成常量并加注释）。
 const chainLockKey int64 = 2026111001
 
+// occurredAtUpperBound 返回 `occurred_at` 的**右开上界**（`>= limit` 一律拒）。
+//
+// 规则：允许写到「链尾月 + 1」个月（含）；链为空时以"当月"代替链尾。
+// 所以右开界 = 那个月 + 1 个月 = `max(链尾月, 当月) + 2 个月`——写成右开是为了让"当月+1"合法。
+func occurredAtUpperBound(tail *time.Time, now time.Time) time.Time {
+	base := monthOf(now)
+	if tail != nil && !tail.IsZero() {
+		if tm := monthOf(*tail); tm.After(base) {
+			base = tm
+		}
+	}
+	return base.AddDate(0, 2, 0)
+}
+
 // ErrOccurredAtTooNew 表示 `occurred_at` 太靠未来（超过"链尾月份 + 1 个月"）。
 //
 // 为什么要上界（Owl II P2 ①）：链按自然月分段、每月复核后封锚。若允许随意往未来月写，
@@ -120,11 +134,7 @@ func (c *Chain) Append(ctx context.Context, db *gorm.DB, rec Record) ([]byte, er
 		// （哈希覆盖原值，才是"证据原样"）。
 		// ②‴ 上界守卫：`occurred_at` 不得晚于"链尾月份 + 1 个月"（链为空时取当月 + 1）。
 		{
-			// 链空时：允许写到"当月 + 1"个月（含），所以上界取"当月 + 2"的开区间。
-			limit := monthOf(time.Now().UTC()).AddDate(0, 2, 0)
-			if tailTime != nil {
-				limit = monthOf(*tailTime).AddDate(0, 2, 0) // 链尾月 + 1 个月（右开）
-			}
+			limit := occurredAtUpperBound(tailTime, time.Now().UTC())
 			if !rec.OccurredAt.UTC().Before(limit) {
 				return fmt.Errorf("%w: occurred_at %s >= %s",
 					ErrOccurredAtTooNew, rec.OccurredAt.UTC().Format(time.RFC3339), limit.Format("2006-01"))

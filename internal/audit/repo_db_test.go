@@ -210,8 +210,12 @@ func writeMonthBase(db *gorm.DB) (time.Time, error) {
 }
 
 // sharedMonth 是进程内共享的当前写入月（一次算出、复用）：每条用例各领一个月会让
-// `-count=3` 把 120 个月窗口耗尽（实测 53 条 FAIL）。只有三条跨月用例调 `freshNextMonth`：
-// TestOccurredAtUpperBoundGuard / TestSameMonthMicrosecondRollbackIsAccepted / TestAnchorContinuitySameMonth。
+// `-count=3` 把 120 个月窗口耗尽（实测 53 条 FAIL）。
+//
+// **所有用例共用同一个月**；需要"跨月/未来月"语义的三条用例
+// （`TestOccurredAtUpperBoundGuard`、`TestSameMonthMicrosecondRollbackIsAccepted`、
+// `TestAnchorContinuitySameMonth`）都在**同一个月内**用 `month.AddDate(0, ±n, 0)` 自行构造，
+// 不需要额外领月——所以本文件没有 `freshNextMonth`（曾经有过、但零调用点，已删）。
 var sharedMonth atomic.Value // time.Time
 
 func freshMonth(t *testing.T, db *gorm.DB) time.Time {
@@ -228,15 +232,6 @@ func freshMonth(t *testing.T, db *gorm.DB) time.Time {
 	sharedMonth.Store(m)
 	assertInWindow(t, db, m)
 	return m
-}
-
-// freshNextMonth 领下一个月——仅限上面注释里的三条跨月用例。
-func freshNextMonth(t *testing.T, db *gorm.DB) time.Time {
-	t.Helper()
-	next := freshMonth(t, db).AddDate(0, 1, 0)
-	sharedMonth.Store(next)
-	assertInWindow(t, db, next)
-	return next
 }
 
 // assertInWindow 断言月份落在预建窗口内且分区存在（越界当场失败并打出链尾）。

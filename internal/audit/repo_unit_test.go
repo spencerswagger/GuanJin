@@ -313,3 +313,36 @@ func TestErrorBranchesReach(t *testing.T) {
 		t.Fatal("库不可达时 DropPartitions 必须报错")
 	}
 }
+
+// 上界守卫的**链空分支**（Gate 要求补：此前"链空"只有代码没有测试）。
+//
+// 规则：允许写到「max(链尾月, 当月) + 1」个月（含），右开界 = 那个月 + 2。
+func TestOccurredAtUpperBoundBothBranches(t *testing.T) {
+	now := time.Date(2026, 11, 15, 10, 0, 0, 0, time.UTC)
+
+	// 链空：允许 2026-12（当月+1），拒绝 2027-01（当月+2）。
+	limit := occurredAtUpperBound(nil, now)
+	if want := time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC); !limit.Equal(want) {
+		t.Fatalf("链空时上界应为 %s（右开），实际 %s", want.Format("2006-01"), limit.Format("2006-01"))
+	}
+	if !time.Date(2026, 12, 20, 0, 0, 0, 0, time.UTC).Before(limit) {
+		t.Fatal("当月+1 必须被允许（它早于右开界）")
+	}
+	if time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC).Before(limit) {
+		t.Fatal("当月+2 必须被拒绝（不早于右开界）")
+	}
+
+	// 链非空且链尾在未来：以链尾月为基。
+	tail := time.Date(2027, 3, 5, 0, 0, 0, 0, time.UTC)
+	limit = occurredAtUpperBound(&tail, now)
+	if want := time.Date(2027, 5, 1, 0, 0, 0, 0, time.UTC); !limit.Equal(want) {
+		t.Fatalf("链尾 2027-03 时上界应为 2027-05（右开），实际 %s", limit.Format("2006-01"))
+	}
+
+	// 链尾在过去（正常情形）：以当月为基。
+	past := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
+	limit = occurredAtUpperBound(&past, now)
+	if want := time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC); !limit.Equal(want) {
+		t.Fatalf("链尾在过去时上界应以当月为基（2027-01 右开），实际 %s", limit.Format("2006-01"))
+	}
+}
