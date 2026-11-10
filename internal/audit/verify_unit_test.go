@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"log/slog"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -173,11 +174,36 @@ func TestCanonicalBigIntegersKeepPrecision(t *testing.T) {
 	}
 
 	// 但"同值不同写法"必须仍然归一到同一个 tag（P2 ② 的原始目的）。
-	same := []any{int(1), int64(1), uint(1), uint64(1), float64(1), json.Number("1"), json.Number("1.0"), json.Number("1.00")}
-	first := tagOf(same[0])
-	for _, v := range same[1:] {
-		if !bytesEqual(first, tagOf(v)) {
-			t.Fatalf("同值不同写法 %#v 与 1 的 canonical 不一致（链会自断）", v)
+	//
+	// 取值刻意**跨过 `1e6` 分界**（Owl II 复审指出：只测 1 会掩盖方向——
+	// 1 在 `FormatInt` 与 `FormatFloat('g')` 下恰好同串，`1234567` 才是分水岭）。
+	for _, v := range []float64{1, 1000000, 1234567, 1e8, 1762900000000} {
+		i := int(v)
+		i64 := int64(v)
+		u64 := uint64(v)
+		j := json.Number(strconv.FormatFloat(v, 'f', -1, 64)) // "1000000" / "1234567"
+		ref := tagOf(i)
+		for _, one := range []struct {
+			name string
+			v    any
+		}{
+			{"int64", i64}, {"uint", uint(v)}, {"uint64", u64}, {"float64", v},
+			{"json.Number 定点", j},
+		} {
+			if !bytesEqual(ref, tagOf(one.v)) {
+				t.Fatalf("同值不同写法 %s(%v) 与 int(%d) 的 canonical 不一致（写入/读回会自断）",
+					one.name, one.v, i)
+			}
 		}
+	}
+	// 小值那几种也照旧（`1`、`1.0`、`1.00`）。
+	for _, v := range []any{int(1), int64(1), uint(1), uint64(1), float64(1), json.Number("1"), json.Number("1.0"), json.Number("1.00")} {
+		if !bytesEqual(tagOf(int(1)), tagOf(v)) {
+			t.Fatalf("同值不同写法 %#v 与 1 的 canonical 不一致", v)
+		}
+	}
+	// 非整数必须保持小数语义（不许被整型分支截断）。
+	if bytesEqual(tagOf(1.5), tagOf(1)) {
+		t.Fatal("1.5 与 1 编出了同一个 tag —— 小数被截断")
 	}
 }

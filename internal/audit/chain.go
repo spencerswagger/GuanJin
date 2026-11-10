@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"sort"
 	"strconv"
 	"time"
@@ -216,6 +217,14 @@ func canonical(r Record) ([]byte, error) {
 	return b.buf, nil
 }
 
+// formatFloat64 把 float64 写成**与整型分支一致**的确定串：整数值 → 定点整数，非整数 → 最短可逆。
+func formatFloat64(v float64) string {
+	if v == math.Trunc(v) && math.Abs(v) < 1<<53 {
+		return strconv.FormatInt(int64(v), 10)
+	}
+	return strconv.FormatFloat(v, 'g', -1, 64)
+}
+
 // enc 是"长度前缀 + presence 标记"的小编码器（不引序列化库：要的是**确定**，不是通用）。
 type enc struct{ buf []byte }
 
@@ -340,13 +349,27 @@ func (e *enc) value(v any) error {
 		e.str("n")
 		e.str(strconv.FormatUint(t, 10))
 		return nil
-	case float64:
-		// **与其他数字类型统一口径**（Owl II P2 ②）：一律用最短可逆十进制表示
-		// （`strconv.FormatFloat(v,'g',-1,64)`），所以 `1`、`int64(1)`、`json.Number("1")`、
-		// `float64(1)` 编码结果**完全相同**；`1.5` 也只有一个写法。
-		// 之前用 `%v` 会得到 `1` 与 `1e+06` 这类与 `json.Number` 不一致的串，接首个生产写入方就自断。
+	case float32:
 		e.str("n")
-		e.str(strconv.FormatFloat(t, 'g', -1, 64))
+		e.str(formatFloat64(float64(t)))
+		return nil
+	case int32:
+		e.str("n")
+		e.str(strconv.FormatInt(int64(t), 10))
+		return nil
+	case uint32:
+		e.str("n")
+		e.str(strconv.FormatUint(uint64(t), 10))
+		return nil
+	case float64:
+		// **与其他数字类型统一口径**（Owl II P2 ②）：整数值按定点整数写，非整数写最短可逆浮点。
+		//
+		// 这里不能一律 `FormatFloat('g')`：`1234567` 会变成 `1.234567e+06`，与写入方传 `int`
+		// 时算出的 `1234567` 不同 → 同一条记录写进去再读回来验不过（链自断）。
+		// 也不能一律 `FormatInt`：`1.5` 会被截断。边界取 `|v| < 2^53`：再大就不能保证
+		// `float64` 的整数性判断是精确的（那种量级必须用整型传入，见 int/int64/uint/uint64 分支）。
+		e.str("n")
+		e.str(formatFloat64(t))
 		return nil
 	default:
 		// 未知类型：用 JSON 兜底（仍然确定，因为 encoding/json 对同一 Go 值是确定的）。

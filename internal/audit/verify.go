@@ -8,6 +8,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
@@ -168,20 +169,26 @@ func (v *Verifier) RunRange(ctx context.Context, from, to time.Time) (VerifyResu
 	//
 	// 只在**整月区间**（`to == 下月 1 号`）启用：`RunRange` 也支持取证用的子区间，
 	// 那种区间里本来就不含封条对应的记录。
-	if broken == nil && len(selfAnchor) > 0 && len(records) > 0 &&
-		to.UTC().Equal(month.AddDate(0, 1, 0)) {
-		found := false
-		for i := range records {
-			if bytesEqual(records[i].IntegrityTag, selfAnchor) {
-				found = true
-				break
+	if broken == nil && len(selfAnchor) > 0 && to.UTC().Equal(month.AddDate(0, 1, 0)) {
+		if len(records) == 0 {
+			// 已封锚、整月却一条不剩：这是尾部截断的**最极端形态**（整月被清空）。
+			// `AnchorCurrentMonth` 对空月不写锚，所以"锚在、记录为零"必然是异常，
+			// 不能走"没记录就不判"（那会把清空整月显示成"刚验过"，`anchor_age` 还会被刷新）。
+			broken = &BrokenPoint{Index: 0, RecordID: uuid.Nil, Reason: ReasonAnchorMismatch}
+		} else {
+			found := false
+			for i := range records {
+				if bytesEqual(records[i].IntegrityTag, selfAnchor) {
+					found = true
+					break
+				}
 			}
-		}
-		if !found {
-			// 指到段内最后一条（便于人查"从哪之后没了"），但原因码单列 `anchor_mismatch`，
-			// 别让运维以为最后那条记录的内容被改过。
-			last := records[len(records)-1]
-			broken = &BrokenPoint{Index: len(records) - 1, RecordID: last.ID, Reason: ReasonAnchorMismatch}
+			if !found {
+				// 指到段内最后一条（便于人查"从哪之后没了"），但原因码单列 `anchor_mismatch`，
+				// 别让运维以为最后那条记录的内容被改过。
+				last := records[len(records)-1]
+				broken = &BrokenPoint{Index: len(records) - 1, RecordID: last.ID, Reason: ReasonAnchorMismatch}
+			}
 		}
 	}
 	res.Broken = broken

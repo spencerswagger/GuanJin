@@ -246,3 +246,117 @@ func TestSealedMonthTailDeletedIsDetected(t *testing.T) {
 		t.Fatal("断链时不许刷新 anchor_age 基准（否则指标会把'没验过'显示成'刚验过'）")
 	}
 }
+
+// TestSealedMonthEmptiedIsDetected —— 尾部截断的最极端形态：整月被清空。
+//
+// `AnchorCurrentMonth` 对空月不写锚，所以"锚还在、记录一条不剩"必然是异常。
+// 旧实现有 `len(records) > 0` 守卫 → 这种形态 `checked=0` 判绿，
+// 而且还会刷新 `anchor_age`，把"整月被清空"显示成"刚验过"（Owl II P1）。
+func TestSealedMonthEmptiedIsDetected(t *testing.T) {
+	db := openAuditTestDB(t)
+	chain := auditTestChain(t)
+	month := freshMonth(t, db)
+	cleanupMonth(t, db, month)
+
+	ctx := context.Background()
+	appendN(t, chain, db, month, 2)
+
+	anchors := NewAnchorStore(db)
+	verifier, err := NewVerifier(chain, db, anchors, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatalf("NewVerifier: %v", err)
+	}
+	verifier.now = func() time.Time { return month.Add(10 * time.Minute) }
+	if err := verifier.AnchorCurrentMonth(ctx); err != nil {
+		t.Fatalf("AnchorCurrentMonth: %v", err)
+	}
+	// 整月清空（锚点保留）。
+	if err := db.Exec(
+		`DELETE FROM audit_logs WHERE occurred_at >= ? AND occurred_at < ?`,
+		month, month.AddDate(0, 1, 0)).Error; err != nil {
+		t.Fatalf("清空整月: %v", err)
+	}
+
+	ResetMetricsForTest()
+	res, err := verifier.RunOnce(ctx)
+	if err != nil {
+		t.Fatalf("RunOnce: %v", err)
+	}
+	if res.Checked != 0 {
+		t.Fatalf("前置：本月应已被清空，实际 checked=%d", res.Checked)
+	}
+	if res.Broken == nil || res.Broken.Reason != ReasonAnchorMismatch {
+		t.Fatalf("整月被清空必须报 anchor_mismatch，实际 %+v", res.Broken)
+	}
+	if ChainBrokenTotal() == 0 {
+		t.Fatal("必须让 audit_chain_broken_total 递增")
+	}
+	if lastVerifiedUnixSec.Load() != 0 {
+		t.Fatal("断链时不许刷新 anchor_age 基准")
+	}
+}
+
+// TestCanonicalSurvivesDBRoundTrip —— 写进去的 tag，读回来必须还能对上（Owl II 复审的 P0）。
+//
+// 缺陷形态：写侧对 `int(1234567)` 算的是 `"1234567"`；读侧 `json.Unmarshal` 把整数解码成
+// `float64`，`'g'` 给出 `"1.234567e+06"` → 重算 tag 与落库 tag 不同 → **自己写的链自己验不过**
+// （`index=N reason=integrity_tag_mismatch`，`broken_total` 天天 +1）。
+//
+// 修法两侧都要动：写侧整数值定点化（`formatFloat64`），读侧 `decoder.UseNumber()` 保留原文。
+// 本用例刻意覆盖跨 `1e6` 的整数、毫秒时间戳、>2^53 的大整数与真小数。
+func TestCanonicalSurvivesDBRoundTrip(t *testing.T) {
+	db := openAuditTestDB(t)
+	chain := auditTestChain(t)
+	month := freshMonth(t, db)
+	cleanupMonth(t, db, month)
+	ctx := context.Background()
+
+	rec := Record{
+		Action: "roundtrip", Result: "success",
+		TargetID: "rt-" + uuid.NewString()[:8],
+		Before: map[string]any{
+			"amount": int(1234567),            // 跨 1e6：'g' 会变 1.234567e+06
+			"ts":     int64(1762900000000),    // 毫秒时间戳：'g' 会变 1.7629e+12
+			"big":    int64(9007199254740993), // >2^53：float64 会抹平
+			"ratio":  1.5,                     // 真小数：不许被整型分支截断
+			"small":  uint32(7),               // 其它整型宽度
+			"flag":   true,                    // 非数字：不受影响
+		},
+		After:      map[string]any{"amount": int(1234568)},
+		OccurredAt: month.Add(time.Minute),
+	}
+	if _, err := chain.Append(ctx, db, rec); err != nil {
+		t.Fatalf("Append: %v", err)
+	}
+
+	records, err := chain.Load(ctx, db, month, month.AddDate(0, 1, 0))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(records) != 1 {
+		t.Fatalf("本月应恰好 1 条（freshMonth 独占），实际 %d", len(records))
+	}
+	loaded := records[0]
+
+	// ① 读回来的内容重算 tag 必须等于落库 tag（写/读口径一致）。
+	want, err := chain.Tag(loaded.PrevTag, loaded)
+	if err != nil {
+		t.Fatalf("Tag: %v", err)
+	}
+	if !bytesEqual(want, loaded.IntegrityTag) {
+		t.Fatalf("写进去的 tag 读回来对不上：落库=%x 重算=%x —— canonical 读写口径不一致（链自断）",
+			loaded.IntegrityTag, want)
+	}
+	// ② 大整数在解码后仍是精确值（不许已经变成 float64 的近似）。
+	before, ok := loaded.Before["big"]
+	if !ok {
+		t.Fatalf("Before 丢了 big 字段：%#v", loaded.Before)
+	}
+	if s := fmt.Sprintf("%v", before); s != "9007199254740993" {
+		t.Fatalf(">2^53 的整数读回后不再精确：%s", s)
+	}
+	// ③ 整段链校验通过（不是只看单条）。
+	if bp, err := chain.VerifyFrom(records, loaded.PrevTag, true); err != nil || bp != nil {
+		t.Fatalf("整段校验应通过，实际 bp=%+v err=%v", bp, err)
+	}
+}
