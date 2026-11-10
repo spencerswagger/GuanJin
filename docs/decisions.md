@@ -466,7 +466,7 @@
 
 - **平台级 ≠ 本条（顺手纠正一处转述）**：`AC-FLOW-05` 里的「平台级开关」**不在** `login_policies`——基线把它落在 **`runtime_config`**（`数据模型:1071`：`factors.<type>.enabled=true`），与 client 级禁用**互不覆盖、效果取并集**；`login_policies` 只承载 **client 级**（含 `tier_default` 回落）。此前群聊里「平台级开关 = `login_policies`」的转述应更正为「**平台级 = `runtime_config`，client 级 = `login_policies`**」。附事实：`/api/v1/factors/{type}` 端点当前 main **未实现**（`cmd/guanjind/main.go` 未挂 `/api/v1/factors`），`AC-FLOW-05` 的实现侧仍依赖该端点与 `factors.<type>.enabled` 键；**本条不改变它的账目状态**。
 - **有效禁用集 = 两个物理来源的并集（后来者只需记这一句）**：`effective_disabled = 平台级(runtime_config) ∪ client/tier 级(login_policies.disabled_factors)`；**两侧互不覆盖、互不改写**，任一侧新增禁用只会让有效集变大（方向恒为"只能增加禁用"，预设档位 §三 E 组）。`AC-FLOW-05` 的「两级不互相覆盖」正是这个并集语义——**它与本条争论的物理落点无关**（落点只决定 client 级那一半存在哪张表）。举例：client 级禁 `otp` + 平台级停 `sms` ⇒ 有效集 `{otp, sms}`，两者都不进 `available_factors`、都不计入 `current_acr`。
-- **平台级那一半的键形态（以 D22 为准，别自造）**：基线只给了**示例**——`factors.<type>.enabled=true`（`数据模型:1071`，是"新增因子零 DDL"的举例，**未冻结键名**）；实现在 `runtime_config` 里只有**唯一一个聚合键 `factors.disabled`**（jsonb 字符串数组，常量 `store.KeyFactorsDisabled`），由 **D22** 冻结形态与 seed（迁移 `000020`）。**旧文本曾写"按逐因子 `enabled` 键落地"，已作废**——代码里从未有过逐因子键（全仓非测试代码零处 `factors.<type>.enabled` 读写），且 D22 明写"废除基线示例式的 `factors.<type>.enabled`"。改键形态 = D22 翻案（同时改台账 + 迁移 + 读写路径），**不得在代码里先造一个再用**。
+- **平台级那一半的键形态（以 D22 为准，别自造）**：基线只给了**示例**——`factors.<type>.enabled=true`（`数据模型:1071`，是"新增因子零 DDL"的举例，**未冻结键名**）；实现在 `runtime_config` 里只有**唯一一个聚合键 `factors.disabled`**（jsonb 字符串数组，常量 `store.KeyFactorsDisabled`），由 **D22** 冻结形态与 seed（迁移 `000020`）。**旧文本曾写"按逐因子 `enabled` 键落地"，已作废**——代码里从未有过逐因子键（全仓非测试代码零处 `factors.<type>.enabled` 读写），且 D22 明写"废除基线示例式的 `factors.<type>.enabled`"。改键形态 = D22 翻案（同时改台账 + **迁移** + 读写路径 + **断言**），**不得在代码里先造一个再用**。
 
 - **已知行为（只登记，不改）**：现实现是**整行胜出**——`client_override` 存在即整份取它的 `disabled_factors`，**不与 `tier_default` 合并**。当前 `000017` 三档 seed 都是 `{}`，故今日无差异；一旦某档 `tier_default` 设了非空禁用集，`client_override` 会遮蔽它。要不要改成并集属**行为变更**，另开裁定（不在本条）。
 
@@ -556,7 +556,8 @@
   - **存储态 = 唯一真值**：`factors.disabled` 的数组就是平台级全部事实，**`enabled=false` ⇔ 该类型 ∈ 数组**，`enabled=true` ⇔ 不在数组里。**不设** `factors.<type>.enabled` 之类的逐因子真值，也**不设**"缺省行 = 默认启用"（没有逐因子行可缺）——默认启用就是"不在集合里"，不需要任何行。
   - **因此**：`GET /api/v1/factors` 的 `enabled` 是**计算值**（`!contains(disabled, type)`），不是存储值；任何"两处各存一份计划"的实现都是第二套口径（与 D15③ 用途域、D14① TTL 同一条原则）。
   - **并发写该键的锁粒度 = 单行 + 一把更宽的 advisory 锁**：①`pg_advisory_xact_lock(platformFactorLockKey)` 串行化"平台级因子启停"这一类写入（与键形态无关，天然覆盖"行不存在"）；②`SELECT … FOR UPDATE` 锁 `factors.disabled` 那一行作为第二道防线（防"将来有人删掉 advisory 锁"）。**不做逐因子行锁**——没有逐因子行，且"改一个因子"本质是**改整份集合**（读-改-写必须整体串行，逐行锁反而会丢更新）。
-  - **数组里出现未知因子类型**（因子已从注册表移除 / 拼写错）：**写入侧拒绝**（`PATCH` 未知类型 → 400 `INVALID_PARAMETER`，调用方错）；**读取侧保留原样、不静默丢弃**（丢弃会改变有效禁用集语义、可能让某类型意外可用），并在**启动期打一条 WARN 点名未知类型**（不 fail-fast：遗留项不该把进程卡死）；未知类型对并集无实际效果（没有 Provider 就没有验证路径）。
+  - **数组里出现未知因子类型**（因子已从注册表移除 / 拼写错）：**写入侧拒绝**（`PATCH` 未知类型 → 400 `INVALID_PARAMETER`，调用方错）；**读取侧保留原样、不静默丢弃**；**启动期 fail-fast**（非 0 退出并点名"禁用集里有未知因子类型 X"）、**运行期读到 → 500 `INTERNAL_ERROR`**（2026-11-11 **压紧一级**，原口径是"只打 WARN"）。理由：数组里出现未知类型（尤其把 `totp` 写成 `TOtp`）意味着**本该禁用的那个因子实际没被禁用**，系统照常跑只留一行 warning，没人会看——这是安全方向的静默降级，和 D15④「键未装配 → 503」、D22② 「缺键 → 启动失败」同一条 fail-closed 原则。代价（确实存在）：从注册表移除某个因子而忘了清禁用集 = 启动即失败——这是**想要**的，配置与代码必须同步演进。
+  - **夹具纪律（本次实证）**：`t.Cleanup` 里 `DELETE FROM runtime_config WHERE key='factors.disabled'` 一旦没恢复（或删在断言之后），**启动期校验会把整个测试进程带挂**（Edge 本地就撞到"此刻这行是缺的"）。要求：要么删完必须写回 `[]`，要么用事务回滚；**禁止把 seed 行当可自由删除的测试数据**。
   - **基线依据**：`数据模型:1071` 的 `factors.<type>.enabled=true` 是"新增因子零 DDL"的**举例**，**不作为键形态依据**；本条是与实现一致后的**唯一出处**（实现即权威，因为 `runtime_config` 的键不在 F0 不可动名单、也不属对外契约面）。
 
 - **④ 「第一天就有行」谁保证**：seed 在 `migrate up` 里 → **CI 每次重建库只跑 up 就自动带上**（`guanjin_test` / 本地三库 / 预发 / 生产一致，无环境差异、无初始化脚本）。唯一漏网 = 有人手工删行、或环境停在旧版本 → **启动期 fail-fast 点名 `factors.disabled`**（不会带病上线）。**测试夹具纪律**：不得"临时插一行再删"来绕过（会与 seed 打架、并掩盖"缺行"分支）；要测缺行分支用独立库或整体事务回滚。
@@ -600,6 +601,23 @@
 | ① | **Ark** 改 `go.mod` + **Gate** 删 10 条 stdlib 白名单并复跑 `vuln` | spencer 追认（一句话即可） | 2026-11-25 前完成（否则白名单按 30 天上限重新定到期日） |
 | ② | **Vue** 升 vue 3.5.42+ 并出回归；**Gate** 删 `.trivyignore.yaml` 那 1 条 | 无（可并行） | 2026-11-25 前 |
 | ③ | **Gate** 先加 `[UNCOVERED]` 行（立即）；**Nova** 出 SBOM artifact + **Gate** 判红 | 无 | 2026-12-10 前上 SBOM |
+
+---
+
+## D24 §5.4 错误分层口径：解码 / 缺字段 / 值语义三层，顺序固定（400 不得先于 401/403）
+
+> **触发**：多个 handler 各自 `json.Decode`（`internal/admin/factors.go:165`、`internal/identity/me_http.go:90` 已开 `DisallowUnknownFields`，其余手写），同一个"坏请求"在不同端点会落成 `INVALID_REQUEST` / `MISSING_PARAMETER` / `INVALID_PARAMETER` 三种码之一，前端与 SDK 映射表无法一次写对。Spec 已裁三层口径，本条落台账（**依据**：`接口清单:713`「HTTP 状态由分级前缀决定，**接口可覆盖**」+ `:726` 完整枚举 + `:730` 的 E1 组 + D3-B / D3-B′ / D3-B″）。
+
+- **三层与映射（唯一口径）**
+  | 层 | 触发条件 | 对外码 | HTTP |
+  |---|---|---|---|
+  | **① 解码层** | 请求体不是合法 JSON / 有未知字段（`DisallowUnknownFields` 命中）/ 超体积 / 字段类型不符（`"enabled": "yes"`） | **`INVALID_REQUEST`** | 400 |
+  | **② 缺字段层** | **能解码**但必填字段缺失或为 `null` | **`MISSING_PARAMETER`** | 400 |
+  | **③ 值 / 语义层** | 键在、类型对，但值越界 / 引用不存在（`enabled` 给了但不是布尔外的合法值、`tier` 不在 `L1/L2/L3`、`client_id` 不存在…） | **`INVALID_PARAMETER`**；**有专职码的必须用专职码**（`INVALID_CLIENT`、`TIER_UNKNOWN`、`UNKNOWN_FACTOR` 类 → 按 §5.4 枚举/D3-B″ 表，不许拿 `INVALID_PARAMETER` 兜） | 400（或该码规定的 403/404/409/422） |
+- **`*bool` 的用途（② 与 ③ 的分界线）**：可空布尔**必须**用 `*bool`（`nil` = 没给 → `MISSING_PARAMETER`；`false` = 给了 false → 合法值）。反例：`PATCH /api/v1/factors/{type}` 的 `{enabled}` 若用 `bool`，`{"reason":"x"}` 会被静默当成 `enabled=false`——**关掉一个因子却没有任何人说要关**，属安全事故级误判。**禁止**用"零值即未给"的隐式约定（= 隐性逻辑）。
+- **顺序固定（不许按实现方便重排）**：**鉴权 401/403 → ① 解码 → ② 缺字段 → ③ 值校验 → 业务语义（409/422 等）**。两条硬约束：①**400 不得先于 401/403**——未认证的调用方不该拿到"你的参数哪里错"（信息泄露 + 可用来探测端点形状）；②**不得为消灭 400 而放宽 `DisallowUnknownFields`**：未知字段必须拒绝（拼错的键被静默忽略 = 用户以为改了、其实没改）。若某端点确需宽松解析（如上游 SDK 携带新字段），走 **D9 口径 + 本条修订**，不得在 handler 里私自 `dec.DisallowUnknownFields()` 删掉。
+- **归属与落地节奏**：**后端 handler 层**（Core 的 `internal/identity`、Edge/Gate 共用的 `internal/admin`、`internal/flow`）。**不要求一次性重构**——新代码 + 被顺手碰到的 handler 按此分层；建议抽一个 `httpx` 的统一解码助手（`DecodeInto(w,r,dst)` → 三层错误一次判全），但**不是本条的前置**。**判据面**：`acceptance-criteria.md` 一字未动；既有码表（D3-B / D3-B′ / D3-B″）不变，本条只定"什么时候用哪个码"。
+- **与 `F0` / CH 的关系**：**不新增码、不改 HTTP 状态、不改对外契约面** → **不进 CH**；`接口清单:713` 的「接口可覆盖」本就是这种覆盖的授权条款。
 
 ---
 
@@ -704,6 +722,7 @@
 | `D4-C(5)` | D4 裁定 C 的第 (5) 条 | 链序 = `created_at`；`occurred_at` 原样并**参与 `integrity_tag`**；二者不同不算缺陷；下界守卫防跨月破链（完整裁定 `notes/audit-chain-order-2026-11-10.md`） |
 | `D17` | §**D17** | 能力矩阵与 AC 账目的计数单位：`GJ-CAP-17/20/21` **无 AC 条目**、能力矩阵记 `DEFERRED(M5)`/`N/A(M2)`、与 `AC-AGENT-01~03` **不得双计**、22 能力与 90 判据**不得换算**；`90 = 83/0/0/6/0/1` 不受影响 |
 | `D19` | §**D19** | `disabled_factors` 的物理落点 = `login_policies`（client 级 `client_override`、回落 `tier_default`），`clients` 无此列；`接口清单:211`/`页面规格:533` 的"来自 clients"是笔误、只改措辞不进 CH；**有效禁用集 = 平台级 `runtime_config.factors.disabled`（唯一聚合键，jsonb 数组，见 D22）∪ client 级，互不覆盖** |
+| `D24` | §**D24** | §5.4 错误分层：**解码层**→`INVALID_REQUEST`、**缺字段层**→`MISSING_PARAMETER`（可空布尔用 `*bool`，禁"零值即未给"）、**值语义层**→`INVALID_PARAMETER`（有专职码用专职码）；顺序固定 **401/403 → 解码 → 缺字段 → 值 → 业务语义**，400 不得先于 401/403，不得为消灭 400 放宽 `DisallowUnknownFields`；不新增码、不进 CH |
 | `D23①②③` | §**D23** | `AC-ENG-07` 三笔账：①**升 Go 1.26**（`go.mod` 是锁定权威、基线版本是建议值）+ **stdlib 一律不得进白名单**（只能升）；②**vue 3.5.42+ 升**（不留豁免，Vue 出回归）；③`sdk/java` **显式打 `[UNCOVERED]`**（立即）+ 一个迭代内改**离线 SBOM**（Nova 产 / Gate 判，2026-12-10 前），逾期则账目降级 |
 | `D22` | §**D22** | 平台级禁用集载体 = `runtime_config.factors.disabled`（jsonb **`[]`**、唯一键名，废除基线示例式的 `factors.<type>.enabled`）；**seed 落行**（迁移 `000020`，`ON CONFLICT DO NOTHING`）+ 启动期校验（缺键/坏值 fail-fast）；运行期缺行 = 500 不静默空集；否决读路径自愈；**`enabled` 是计算值（`enabled=false` ⇔ 在数组里）、无逐因子真值、锁粒度 = 单行 + advisory**；未知类型写入拒 400 / 读取保留 + 启动 WARN |
 | `D21` | §**D21** | `AC-REG-04` 的耗时阈值 = `runtime_config.register.timing.max_diff_ms`（int，默认 **50**，迁移 `000019`）；口径 = `register/start` 两条路径耗时中位数之差的**绝对值**上界，时钟源 = 进程单调钟；**超阈值 = 红**；键是**判据参数、服务不读、不进 `StartupKeys()`**、零代码改动 |
