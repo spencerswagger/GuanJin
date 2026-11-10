@@ -317,32 +317,30 @@ func TestErrorBranchesReach(t *testing.T) {
 // 上界守卫的**链空分支**（Gate 要求补：此前"链空"只有代码没有测试）。
 //
 // 规则：允许写到「max(链尾月, 当月) + 1」个月（含），右开界 = 那个月 + 2。
-func TestOccurredAtUpperBoundBothBranches(t *testing.T) {
+func TestOccurredAtUpperBoundIsAbsolute(t *testing.T) {
 	now := time.Date(2026, 11, 15, 10, 0, 0, 0, time.UTC)
 
-	// 链空：允许 2026-12（当月+1），拒绝 2027-01（当月+2）。
-	limit := occurredAtUpperBound(nil, now)
+	// ① 绝对上界：恒为「当月 + 2」的右开区间（允许当月+1，拒当月+2）。
+	limit := occurredAtUpperBound(now)
 	if want := time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC); !limit.Equal(want) {
-		t.Fatalf("链空时上界应为 %s（右开），实际 %s", want.Format("2006-01"), limit.Format("2006-01"))
+		t.Fatalf("上界应为 2027-01（右开），实际 %s", limit.Format("2006-01"))
 	}
-	if !time.Date(2026, 12, 20, 0, 0, 0, 0, time.UTC).Before(limit) {
-		t.Fatal("当月+1 必须被允许（它早于右开界）")
+	if !time.Date(2026, 12, 31, 0, 0, 0, 0, time.UTC).Before(limit) {
+		t.Fatal("当月+1 必须被允许（早于右开界）")
 	}
 	if time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC).Before(limit) {
 		t.Fatal("当月+2 必须被拒绝（不早于右开界）")
 	}
 
-	// 链非空且链尾在未来：以链尾月为基。
-	tail := time.Date(2027, 3, 5, 0, 0, 0, 0, time.UTC)
-	limit = occurredAtUpperBound(&tail, now)
-	if want := time.Date(2027, 5, 1, 0, 0, 0, 0, time.UTC); !limit.Equal(want) {
-		t.Fatalf("链尾 2027-03 时上界应为 2027-05（右开），实际 %s", limit.Format("2006-01"))
+	// ② **防蠕变正控**：上界与链尾无关——链尾已经到「当月+1」时，上界仍是「当月+2」右开，
+	// 即"当月+2 依然被拒"。旧实现是 `max(链尾月, 当月)+2`，链尾漂到未来就会把上界一起推高，
+	// 于是当月流量反被下界守卫拒（审计写入停摆）。这条用例钉住"上界不随链尾漂"。
+	nextMonthTail := time.Date(2026, 12, 3, 0, 0, 0, 0, time.UTC)
+	if got := occurredAtUpperBound(now); !got.Equal(time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC)) {
+		t.Fatalf("链尾在 %s 时上界仍应是 2027-01（右开），实际 %s",
+			nextMonthTail.Format("2006-01"), got.Format("2006-01"))
 	}
-
-	// 链尾在过去（正常情形）：以当月为基。
-	past := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
-	limit = occurredAtUpperBound(&past, now)
-	if want := time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC); !limit.Equal(want) {
-		t.Fatalf("链尾在过去时上界应以当月为基（2027-01 右开），实际 %s", limit.Format("2006-01"))
+	if time.Date(2027, 1, 5, 0, 0, 0, 0, time.UTC).Before(occurredAtUpperBound(now)) {
+		t.Fatal("链尾已到当月+1 时，当月+2 仍必须被拒")
 	}
 }

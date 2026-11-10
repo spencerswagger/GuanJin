@@ -26,21 +26,24 @@ import (
 // 换它等于让新旧进程用两把锁，是**静默断链**级别的错误，故写成常量并加注释）。
 const chainLockKey int64 = 2026111001
 
-// occurredAtUpperBound 返回 `occurred_at` 的**右开上界**（`>= limit` 一律拒）。
+// occurredAtUpperBound 返回 `occurred_at` 的**绝对右开上界**（`>= limit` 一律拒）。
 //
-// 规则：允许写到「链尾月 + 1」个月（含）；链为空时以"当月"代替链尾。
-// 所以右开界 = 那个月 + 1 个月 = `max(链尾月, 当月) + 2 个月`——写成右开是为了让"当月+1"合法。
-func occurredAtUpperBound(tail *time.Time, now time.Time) time.Time {
-	base := monthOf(now)
-	if tail != nil && !tail.IsZero() {
-		if tm := monthOf(*tail); tm.After(base) {
-			base = tm
-		}
-	}
-	return base.AddDate(0, 2, 0)
+// **上界与链尾无关**：恒为「当月 + 2」的右开区间，即允许写到「当月 + 1」（含）。
+//
+// 为什么是绝对上界（Spec 裁定，2026-11-10）：
+//   - **防缺陷守卫，不是"允许写未来"的窗口**：生产的 `occurred_at` 只能来自 `now()`；
+//   - 若上界随链尾漂移（旧实现是 `max(链尾月, 当月) + 2`），链尾一旦被推到未来月，
+//     **当月正常流量会被下界守卫拒**（`predates the tail partition month`）→ **审计写入停摆**；
+//   - `AC-AUD-06` 要求跨分区首条 `prev_tag` 只能取"上一分区末条 tag 或断点锚"，而本设计是
+//     **单全局链 + 插入序**：一条"今天写入但 `occurred_at` 落进上月分区"的行会让上月分区同时含
+//     旧链尾与新链尾两个节点，`AC-AUD-06` 描述不了 → 按分区复核必断。故上界必须独立于链尾。
+//
+// 基线对 `occurred_at` 的合法区间**没有规定**：这是本实现的推荐口径，不是引用既有条款。
+func occurredAtUpperBound(now time.Time) time.Time {
+	return monthOf(now).AddDate(0, 2, 0)
 }
 
-// ErrOccurredAtTooNew 表示 `occurred_at` 太靠未来（超过"链尾月份 + 1 个月"）。
+// ErrOccurredAtTooNew 表示 `occurred_at` 超出**绝对上界**（当月 + 1 之外）。
 //
 // 为什么要上界（Owl II P2 ①）：链按自然月分段、每月复核后封锚。若允许随意往未来月写，
 // 那个未来月会在**被封锚之前**就掺入记录，等它被复核时锚点与实际链尾对不上，
@@ -134,7 +137,7 @@ func (c *Chain) Append(ctx context.Context, db *gorm.DB, rec Record) ([]byte, er
 		// （哈希覆盖原值，才是"证据原样"）。
 		// ②‴ 上界守卫：`occurred_at` 不得晚于"链尾月份 + 1 个月"（链为空时取当月 + 1）。
 		{
-			limit := occurredAtUpperBound(tailTime, time.Now().UTC())
+			limit := occurredAtUpperBound(time.Now().UTC())
 			if !rec.OccurredAt.UTC().Before(limit) {
 				return fmt.Errorf("%w: occurred_at %s >= %s",
 					ErrOccurredAtTooNew, rec.OccurredAt.UTC().Format(time.RFC3339), limit.Format("2006-01"))
