@@ -257,13 +257,26 @@ func TestAC_FC_02_AuthEndpointDBUnavailable(t *testing.T) {
 }
 
 // fcClientID 取一个真实存在的业务系统（用 seed 的档位默认策略，避免依赖夹具）。
+// fcClientID 建一个**自己的**业务系统（uuid 后缀）并登记清理。
+//
+// 为什么不能再用 `SELECT client_id FROM clients WHERE status='active' LIMIT 1`：
+// integration 是**跨包并行**（`-p 8`），这样挑到的是**别的包的夹具行**；对方 test 结束的
+// cleanup 会把它删掉，而本用例已经把 id 拿去写 `flows` → `flows_client_id_fkey` 23503。
+// 实测红：`failclosed_db_test.go:214: insert flow: ... flows_client_id_fkey`（3 次跑红 1 次）。
+//
+// 改成自建自删：仍然走真 DB（判据要真库），但不再与任何其它包的夹具共享生命周期。
 func fcClientID(t *testing.T) string {
 	t.Helper()
 	db := openTestDB(t)
-	var id string
-	if err := db.Raw(`SELECT client_id FROM clients WHERE status = 'active' LIMIT 1`).Scan(&id).Error; err != nil || id == "" {
-		t.Fatalf("测试库里没有可用 client（先跑迁移/夹具）：%v", err)
+	id := "fc-" + uuid.NewString()
+	if err := db.Exec(`INSERT INTO clients (client_id, name, tier, status) VALUES (?, ?, 'L2', 'active')`,
+		id, "fc fixture client").Error; err != nil {
+		t.Fatalf("insert client: %v", err)
 	}
+	t.Cleanup(func() {
+		_ = db.Exec(`DELETE FROM flows WHERE client_id = ?`, id).Error
+		_ = db.Exec(`DELETE FROM clients WHERE client_id = ?`, id).Error
+	})
 	return id
 }
 
