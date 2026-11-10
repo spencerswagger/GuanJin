@@ -474,7 +474,7 @@
 
 ---
 
-## D20 `audit_logs` 补一条链序索引：**加**，现在加（`(created_at, id)`，迁移 `000019`，零代码改动）
+## D20 `audit_logs` 补一条链序索引：**加**，现在加（`(created_at, id)`，迁移 `000020`，零代码改动）
 
 > **触发**：Edge 修「跨月锚点被当接续判据」的误报（PR #88 / main `6ffa21f`）时发现——`audit_logs` **没有任何 `created_at` 索引**，而 `Append` 的链尾读（`internal/audit/repo.go` 的 `tailSQL`：`ORDER BY created_at DESC, id DESC LIMIT 1 FOR UPDATE`）与新增的 `TailTagBefore`（`repo.go:224`）都按 `created_at` 排序。他按约束没擅自加迁移，要裁定。**本条只给决议与索引定义，迁移由 Edge 落；不在本 PR 写 SQL 文件、不改代码。**
 
@@ -482,7 +482,7 @@
   ```sql
   CREATE INDEX audit_logs_created_id_idx ON audit_logs (created_at, id);
   ```
-  迁移 **`000019_audit_logs_created_id_idx.{up,down}.sql`**（现最大 `000018`；`000016` 是"索引单开一条"的先例）：`up` = 上面那句，`down` = `DROP INDEX IF EXISTS audit_logs_created_id_idx;`。**在父表上建**，PG 会自动在每个现有分区上建同名子索引，并作为**分区索引模板**自动套用到 `EnsurePartitions` 将来新建的分区 → **`EnsurePartitions` 不用改、`Append`/`TailTagBefore` 一行代码都不用改**（两句 SQL 已经按 `(created_at DESC, id DESC)` / `(created_at DESC, id DESC)` 写好了，规划器自己会改走索引）。
+  迁移 **`000020_audit_logs_created_id_idx.{up,down}.sql`**（**编号修订 2026-11-11**：D21 的阈值 seed 占 `000019`，本条顺延 `000020`，避免出现编号空洞——库若先到 20，后补的 19 永远不会被 `migrate up` 应用；`000016` 是"索引单开一条"的先例）：`up` = 上面那句，`down` = `DROP INDEX IF EXISTS audit_logs_created_id_idx;`。**在父表上建**，PG 会自动在每个现有分区上建同名子索引，并作为**分区索引模板**自动套用到 `EnsurePartitions` 将来新建的分区 → **`EnsurePartitions` 不用改、`Append`/`TailTagBefore` 一行代码都不用改**（两句 SQL 已经按 `(created_at DESC, id DESC)` / `(created_at DESC, id DESC)` 写好了，规划器自己会改走索引）。
 
 - **理由落在「锁内路径的写放大与尾延迟」，不是泛泛性能**：`Append` 的链尾读在 **`pg_advisory_xact_lock(chainLockKey)` 之内**——它是**全局串行点**，同一时刻只有一个审计写者，锁持有时长 = 全局审计写吞吐的倒数。当前这条读没有任何可用索引 → 规划器只能 `Seq Scan`（无 `occurred_at` 谓词 ⇒ **不剪枝，扫全部存活分区**）+ `Sort`（top-N 也必须吃完全部输入行）+ `Limit 1`，于是**每写一条审计，都要把留存期内（365 天）的全部审计行读一遍，且全程持锁**。代价随留存天数**线性**增长，不是常数：今天表小看不出，M1 之后每个月都比上个月慢一档，而这是"事后无法补"的写法——索引能补，但补的时机越晚、锁窗口越长。加上索引后该读变成**每分区一次 btree 反向下降 + `LIMIT 1`**（分区数由留存决定，12–13 个封顶），锁内只留 O(log n)。附带：`FOR UPDATE` 的语义不变（仍是"先 advisory、后行锁"，只锁命中那一行），**断电顺序/链序口径一个字未动**。
 
@@ -494,9 +494,38 @@
 
 - **否决的替代方案（两次被提出的两个）**：①**链尾 tag 缓存 / 落 `runtime_config`**——把"链尾"变成**第二份真源**：事务回滚、进程在"写锚点后、插入前"崩、或别名写入路径漏更新，都会让缓存与真实链尾分叉，而**分叉的表现是"链看着正常、事后整链复核才发现断"**（这类错误没有即时信号）→ 用安全换性能，不采纳；且它救不了 `TailTagBefore` / `Load` 的排序路径。②**只在内存/进程内缓存**——多副本各有一份，advisory 锁下的"链尾"必须是**库里的**那一行，否则分叉。**若不加，先劣化的路径**（写进本条备查）：先是**审计写 p99**（全局串行点），随后是 `audit_anchor_age_seconds`（锚点任务与写入抢同一把锁排队）。
 
-- **账目/契约面：零改动**。纯性能索引，不改表/列/约束/错误码/端点 → **不进 CH**（按 P8③ 判据：不让业务方多出任何一种配置方式）；`acceptance-criteria.md` 一字未动，`AC-AUD-*` 的判据口径不变。**举证归 Gate**：Edge 落 `000019` 后，用 `EXPLAIN (ANALYZE, BUFFERS)` **前后对照**贴 plan，断言「锁内链尾读 = Index Scan（Backward）/ Merge Append，不再是 Seq Scan + Sort」；`FOR UPDATE` 仍在、并发分叉反证（`disableChainLock`/`disableRowLock` 两个注入点）仍应红。
+- **账目/契约面：零改动**。纯性能索引，不改表/列/约束/错误码/端点 → **不进 CH**（按 P8③ 判据：不让业务方多出任何一种配置方式）；`acceptance-criteria.md` 一字未动，`AC-AUD-*` 的判据口径不变。**举证归 Gate**：Edge 落 `000020` 后，用 `EXPLAIN (ANALYZE, BUFFERS)` **前后对照**贴 plan，断言「锁内链尾读 = Index Scan（Backward）/ Merge Append，不再是 Seq Scan + Sort」；`FOR UPDATE` 仍在、并发分叉反证（`disableChainLock`/`disableRowLock` 两个注入点）仍应红。
 
-- **归属与顺序**：**Edge** 落 `000019`（up/down 各一份，注释写清"服务哪条 SQL、为什么单开一条、为什么不用 CONCURRENTLY"）；**Gate** 出 plan 前后对照；**Core 不参与**（`Append` 零改动）。本条与 D19 同批回传、**分属两条 DEC**。
+- **归属与顺序**：**Edge** 落 `000020`（up/down 各一份，注释写清"服务哪条 SQL、为什么单开一条、为什么不用 CONCURRENTLY"）；**Gate** 出 plan 前后对照；**Core 不参与**（`Append` 零改动）。本条与 D19 同批回传、**分属两条 DEC**。
+
+---
+
+## D21 `AC-REG-04` 的「耗时差异阈值」= `register.timing.max_diff_ms`（判据参数，非运行时参数；迁移 `000019`）
+
+> **触发**：Core 在 #86 里如实标注——`AC-REG-04` 判据（`acceptance-criteria.md:99`）要求「耗时与不存在账号差异 ≤ 阈值（**阈值取自 `runtime_config`**）」，但**库里没有这个键**，于是这条 AC 只能记「码与状态已证 / 时序不可判」。基线只有定性要求、**无数字**：`技术栈:1556`「注册的『账号是否存在』绝不通过 message/状态码/**耗时**泄露」、`页面规格:232`/`:250`「响应耗时保持一致」。数字只能由本条裁定，**不得由实现或测试自造魔法数**。
+
+- **① 键名与语义（冻结）**
+  - 键：**`register.timing.max_diff_ms`**，`value_type = 'int'`，默认 **`50`**（毫秒）。
+  - 测**哪两段**：**同一端点、同一请求体形状、只换 `value`** 的两次 `POST /auth/register/start`——
+    **A = 标识符已存在**（返回 `IDENTIFIER_ALREADY_BOUND`）、**B = 标识符不存在**（走正常 `need_challenge`/skip 分支）。
+    **不做跨端点比较**（`register/complete` 的 TOCTOU 复查另有口令派生，量级不同，**不混进这条**）。
+  - **口径是谁减谁**：两条路径各自耗时取中位数，判据 = **`|median(A) − median(B)| ≤ 阈值`**（**绝对值，不设方向**——快了慢了都算泄露）。
+  - **时钟源 = 应用/测试进程的单调钟**（`time.Since`），**不用 DB `now()`**：DB 钟只用于跨节点/跨行的判定（`flows`/`challenges` 过期），此处测的是"同一个 handler 的处理时长"，走 DB 会把**网络往返 + 两钟偏差**当信号。判据用 e2e 侧（回环、黑盒）的 elapsed；服务端若打点只作**诊断**，不对外暴露字段。
+
+- **② 允许值 = 50 ms，依据与不确定性（如实说）**
+  - 依据只有一条硬约束 + 一条量级判断：**硬约束**＝必须远大于回环 e2e 的抖动（毫秒级，取 9 次中位数后更稳），否则判据自己 flaky；**量级判断**＝必须小于"结构性差异"的量级——口令派生 `PBKDF2 ≥ 100000` 次（`internal/crypto/pwdcrypto.go:19` 的 `MinPBKDF2Iterations`）在数十毫秒级，拒绝路径若**跳过派生**或**多打一次外部调用**（发码），差值会明显超过 50 ms。
+  - **诚实标注（必须留）**：这是**经验值，不是观测分布**——沙盒/本地都没有可用 PG（本地无集群），拿不到真跑直方图。样本口径 = CI `integration` job 里 Gate 那条 e2e 的 3 次 `-count=3` 真跑；若实测抖动 > 20 ms，**改键即可**（判据本身要求"改键值要跟着变"），不改代码。
+  - **反作弊**：**禁止在实现里 `sleep` 凑时长**（那等于用可用性换"判据绿"）；若某条路径天然差 > 阈值，正确解法是把外部调用（发码）移出同步路径，**不是放宽键**。
+
+- **③ 超阈值 = fail（红），不是 warn**：它是判据的一部分（判据原文就是"≤ 阈值"），且是安全属性（侧信道）——`warn` 等于允许静默回归。**防 flake 口径（判据用法，归 Gate）**：每条路径 **9 次、丢前 2 次预热、取中位数**；失败信息必须打印**两组原始样本**（便于一眼看出是抖动还是结构性差异）；该用例只在 `integration` job 跑（**不进 `-race`**，race 会放大抖动）。
+
+- **④ 落地（谁改哪里）**
+  - **迁移 = 本条（Ark）**：`migrations/000019_seed_register_timing_config.{up,down}.sql` —— `up` 插一行 `ON CONFLICT (key) DO NOTHING`，`down` 按 key 精确删；**不改 000014/000018**（技术栈 §6.2 编号只增不改）。
+  - **服务代码：零改动（比"改一行读取处"更省）**。该键是**判据参数**——由 **e2e 测试直接查库**读取（`SELECT value FROM runtime_config WHERE key='register.timing.max_diff_ms'`，`value_type` 必须是 `int`、值 > 0，否则用例直接红），**服务不读它、也不得据此改变任何对外行为**；因此**不进 `StartupKeys()`**（不给生产加一条与安全无关的启动硬依赖）：缺键 = 判据不可执行（红），不是启动失败。
+  - **判据侧（Gate）**：`AC-REG-04` 由「码与状态已证 / 时序不可判」升为**可判**——前半句已由 #86 的 `TestE2E_AC_REG_04_DuplicateEmailIs409AlreadyBound` 证；后半句新写一条计时用例（按 ③ 的 9 次中位数口径）；`acceptance-criteria.md` **一字不改**（判据文本本来就要求"取自 `runtime_config`"，本条只是把缺失的键补上）。
+  - **CI**：`integration` job 的 schema 断言补一项 `register_timing_key=50`（与 `challenge.*` 两键同款真断言，不等即 `[FAIL]` + `exit 1`），防"迁移在但 seed 丢"。
+
+- **⑤ 边界（不做的事）**：本条不定义"账号存在性"的**其它**防枚举面（`recover/*` 的响应结构与耗时属基线原文，另论）；不给 `/auth/register/*` 新增任何对外字段（`attempts_left` 是 CH-8，另一条）；**不进 CH**（对外契约面零变化，纯补一个内部判据参数）。
 
 ---
 
@@ -601,7 +630,8 @@
 | `D4-C(5)` | D4 裁定 C 的第 (5) 条 | 链序 = `created_at`；`occurred_at` 原样并**参与 `integrity_tag`**；二者不同不算缺陷；下界守卫防跨月破链（完整裁定 `notes/audit-chain-order-2026-11-10.md`） |
 | `D17` | §**D17** | 能力矩阵与 AC 账目的计数单位：`GJ-CAP-17/20/21` **无 AC 条目**、能力矩阵记 `DEFERRED(M5)`/`N/A(M2)`、与 `AC-AGENT-01~03` **不得双计**、22 能力与 90 判据**不得换算**；`90 = 83/0/0/6/0/1` 不受影响 |
 | `D19` | §**D19** | `disabled_factors` 的物理落点 = `login_policies`（client 级 `client_override`、回落 `tier_default`），`clients` 无此列；`接口清单:211`/`页面规格:533` 的"来自 clients"是笔误、只改措辞不进 CH；平台级开关在 `runtime_config` |
-| `D20` | §**D20** | `audit_logs` 加 `audit_logs_created_id_idx (created_at, id)`（迁移 `000019`，父表建、自动套用新分区、零代码改动）；不加 DESC/`occurred_at` 前缀/`CONCURRENTLY`/partial；否决"链尾 tag 落 `runtime_config`"缓存方案；不进 CH、判据不动 |
+| `D21` | §**D21** | `AC-REG-04` 的耗时阈值 = `runtime_config.register.timing.max_diff_ms`（int，默认 **50**，迁移 `000019`）；口径 = `register/start` 两条路径耗时中位数之差的**绝对值**上界，时钟源 = 进程单调钟；**超阈值 = 红**；键是**判据参数、服务不读、不进 `StartupKeys()`**、零代码改动 |
+| `D20` | §**D20** | `audit_logs` 加 `audit_logs_created_id_idx (created_at, id)`（迁移 **`000020`**，父表建、自动套用新分区、零代码改动）；不加 DESC/`occurred_at` 前缀/`CONCURRENTLY`/partial；否决"链尾 tag 落 `runtime_config`"缓存方案；不进 CH、判据不动 |
 | `D16①②③④⑤` | §**D16** | 数据面 S8 收口：断言 claim 逐项来源（`aud`=路由命中 client、`roles`=活跃 `role_bindings`、`exp=iat+60`、`jti`=UUIDv7）、准入基准=`login_policies.min_acr`、路由规则冻结（R11①）、SLO 通知与 `details.flow` 字段集登记 R12/R13 |
 | `CH-8` | 契约变更清单 | `§3.3.1` 响应新增 `attempts_left`（纯加字段，**待追认**；追认前不作判据依据） |
 | `D6(1)(6)` + `F0-5` | D6 裁定 (1)/(6) + F0 第 5 条 | SDK 配置 **29 键**（缺号 #7/#16/#17 不补）+ 环境变量逐段机械转换 |

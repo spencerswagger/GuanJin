@@ -167,6 +167,12 @@ jobs:
           echo "challenge_max_attempts_seed=$cmax"; [ "$cmax" = "5" ] || { echo "[FAIL] challenge.max_attempts seed 期望 5，实际 $cmax"; exit 1; }
           cdef=$(q "SELECT coalesce(column_default,'<NULL>') FROM information_schema.columns WHERE table_schema='public' AND table_name='challenges' AND column_name='max_attempts';")
           echo "challenges_max_attempts_default=$cdef"; [ "$cdef" = "<NULL>" ] || { echo "[FAIL] challenges.max_attempts 不得有 DB 默认值（D14①），实际 $cdef"; exit 1; }
+          # D21：AC-REG-04 的耗时阈值键（判据参数；服务不读、由 e2e 查库读取）
+          rtim=$(q "SELECT value FROM runtime_config WHERE key='register.timing.max_diff_ms';")
+          rtyp=$(q "SELECT value_type FROM runtime_config WHERE key='register.timing.max_diff_ms';")
+          echo "register_timing_key=$rtim type=$rtyp"
+          [ "$rtim" = "50" ] || { echo "[FAIL] register.timing.max_diff_ms seed 期望 50（D21，迁移 000019），实际 '$rtim'"; exit 1; }
+          [ "$rtyp" = "int" ] || { echo "[FAIL] register.timing.max_diff_ms 的 value_type 必须是 int（D21），实际 '$rtyp'"; exit 1; }
       - name: 迁移往返（AC-ENG-02 的 down 半边：up → down -all → up → down -all）
         # 判据原文「migrate up 全绿、down 可回滚」——此前只跑了 up，「可回滚」无证据。
         # 用**专用库**（本步自建自删），不碰 guanjin_test，故不影响上面的 schema 断言与下面的集成用例。
