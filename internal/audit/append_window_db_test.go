@@ -87,7 +87,7 @@ func TestAppendConcurrentSerializedNoFork(t *testing.T) {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			if _, err := chain.Append(context.Background(), db, Record{
+			if _, err := appendWithReanchor(chain, db, Record{
 				Action: "delay", Result: "success", TargetID: fmt.Sprintf("%s-%d", marker, i),
 				OccurredAt: month.Add(time.Duration(i) * time.Millisecond),
 			}); err != nil {

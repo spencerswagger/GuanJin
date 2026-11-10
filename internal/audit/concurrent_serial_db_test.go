@@ -34,7 +34,7 @@ func TestAC_AUD_04_Concurrent100AppendsKeepChainIntact(t *testing.T) {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			if _, err := chain.Append(context.Background(), db, Record{
+			if _, err := appendWithReanchor(chain, db, Record{
 				Action: "user.disable", Result: "success", TargetType: "user",
 				TargetID: fmt.Sprintf("%s-%d", marker, i), ClientID: "s10-audit",
 				After:      map[string]any{"i": fmt.Sprintf("%d", i)},
@@ -49,6 +49,7 @@ func TestAC_AUD_04_Concurrent100AppendsKeepChainIntact(t *testing.T) {
 	for err := range errs {
 		t.Fatalf("并发写入失败：%v", err)
 	}
+	t.Logf("retries_total=%d（重锚重试次数；> 总写入 10%% 说明结构性问题仍在）", retriesTotal.Load())
 
 	all, err := chain.Load(context.Background(), db, month, month.AddDate(0, 1, 0))
 	if err != nil {

@@ -12,6 +12,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -133,6 +134,53 @@ func cleanMonth(t *testing.T) time.Time {
 	return base.AddDate(0, int(n), 0)
 }
 
+// retriesTotal 记录"重锚重试"的累计次数（Gate 要看这个数：> 总写入 10% 说明结构性问题仍在）。
+var retriesTotal atomic.Int64
+
+// appendWithReanchor 写一条记录；命中 `ErrOccurredAtTooOld` / 23514 时**重锚**（重取链尾 → 新月份）
+// 后重试，最多 3 次，并把次数累加到 `retriesTotal`。
+//
+// 为什么需要它：「选月 → INSERT」之间别的写者会把链尾推前（全局单链），这一步在 `-count>1`
+// 与 `-p 8` 下必然偶发；重锚是唯一不依赖"赌没撞上"的做法（同事务内取尾 → INSERT 需要改产品签名，
+// 已作为后续项记录）。
+func appendWithReanchor(chain *Chain, db *gorm.DB, rec Record) ([]byte, error) {
+	cur := rec
+	var lastErr error
+	for attempt := 0; attempt < 3; attempt++ {
+		saved, err := chain.Append(context.Background(), db, cur)
+		if err == nil {
+			return saved, nil
+		}
+		lastErr = err
+		if !errors.Is(err, ErrOccurredAtTooOld) && !strings.Contains(err.Error(), "23514") {
+			return nil, err
+		}
+		retriesTotal.Add(1)
+		m := freshMonthNoTest(chain, db)
+		cur.OccurredAt = m.Add(time.Duration(cur.OccurredAt.UnixNano()%1000) * time.Millisecond)
+	}
+	return nil, lastErr
+}
+
+// freshMonthNoTest 给非 *testing.T 场景取一个"晚于当前链尾"的月份（供重锚使用）。
+func freshMonthNoTest(_ *Chain, db *gorm.DB) time.Time {
+	lo := time.Date(partitionStartYear, 1, 1, 0, 0, 0, 0, time.UTC)
+	var tail sql.NullTime
+	_ = db.Raw(`SELECT max(occurred_at) FROM audit_logs`).Scan(&tail).Error
+	month := lo
+	if tail.Valid && !tail.Time.IsZero() {
+		tm := time.Date(tail.Time.UTC().Year(), tail.Time.UTC().Month(), 1, 0, 0, 0, 0, time.UTC).AddDate(0, 1, 0)
+		if tm.After(month) {
+			month = tm
+		}
+	}
+	if last, ok := lastUsedMonth.Load().(time.Time); ok && !last.IsZero() && !month.After(last) {
+		month = last.AddDate(0, 1, 0)
+	}
+	lastUsedMonth.Store(month)
+	return month
+}
+
 // lastUsedMonth 记录本进程已分配过的最大月份（保证不重复）。
 var lastUsedMonth atomic.Value // time.Time
 
@@ -148,7 +196,12 @@ func freshMonth(t *testing.T, db *gorm.DB) time.Time {
 	if err := db.Raw(`SELECT max(occurred_at) FROM audit_logs`).Scan(&tail).Error; err != nil {
 		t.Fatalf("read tail: %v", err)
 	}
+	// 预建范围以 `TestMain` 里按 `max(occurred_at)+1` 算出的基准月为准（不是硬编码 2040-01）：
+	// 多轮跑下来链尾会漂移到 2043+，硬编码下界会把"其实已预建"的月份判成越界。
 	lo := time.Date(partitionStartYear, 1, 1, 0, 0, 0, 0, time.UTC)
+	if base, ok := poolBaseMonth.Load().(time.Time); ok && !base.IsZero() {
+		lo = base
+	}
 	hi := lo.AddDate(0, partitionMonthCount-1, 0) // 最后一个**已预建**月份
 	month := lo
 	if tail.Valid && !tail.Time.IsZero() {
@@ -241,17 +294,18 @@ func seedSegmentAnchor(t *testing.T, chain *Chain, db *gorm.DB, anchors *AnchorS
 func appendN(t *testing.T, chain *Chain, db *gorm.DB, month time.Time, n int) []Record {
 	t.Helper()
 	out := make([]Record, 0, n)
+	marker := "appendn-" + uuid.NewString()[:8]
 	for i := 0; i < n; i++ {
 		rec := Record{
 			ActorRole: "sec_admin", Action: "policy.update", Result: "success",
-			TargetType: "client", TargetID: fmt.Sprintf("c-%d", i), ClientID: "s10-audit",
+			TargetType: "client", TargetID: fmt.Sprintf("%s-%d", marker, i), ClientID: "s10-audit",
 			Before:     map[string]any{"n": fmt.Sprintf("%d", i)},
 			After:      map[string]any{"n": fmt.Sprintf("%d", i+1)},
 			TraceID:    "trace-" + uuid.NewString()[:8],
 			OccurredAt: month.Add(time.Duration(i) * time.Second),
 		}
-		if _, err := chain.Append(context.Background(), db, rec); err != nil {
-			t.Fatalf("Append #%d: %v", i, err)
+		if _, err := appendWithReanchor(chain, db, rec); err != nil {
+			t.Fatalf("Append #%d（月份=%s）: %v", i, month.Format("200601"), err)
 		}
 		out = append(out, rec)
 	}
