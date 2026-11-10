@@ -26,6 +26,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/spencerswagger/guanjin/internal/httpx"
 	"github.com/spencerswagger/guanjin/internal/store"
 )
 
@@ -39,26 +40,71 @@ func TestACFLOW05_04_ConcurrentPatches(t *testing.T) {
 	concurrentPatchesBody(t, e)
 }
 
-// TestACFLOW05_04b_ConcurrentPatchesWithMissingRow：与 #92 同逻辑，唯一区别是开跑前**删掉**
-// runtime_config[factors.disabled] 那一行（模拟 D22 seed 之前的旧库 / 夹具删了行没写回 / 人工删行）。
-func TestACFLOW05_04b_ConcurrentPatchesWithMissingRow(t *testing.T) {
-	db := openTestDB(t)
-	e := newACFLOW05Env(t, db) // env 快照原值，t.Cleanup 负责还原（含本用例删掉的那一行）
+// TestACFLOW05_04b_MissingRowIsFailClosed：**缺行必须 500，不得静默当空集放行**。
+//
+// 这一条替代原来「删行再并发」的版本 —— 后者在新口径下前提已不成立：
+//   - `factors.disabled` 现在是 **required 启动键**（`ValidateStartup` 缺它就报
+//     `required runtime_config key is missing`），删行会让**同包后续所有夹具**起不来；
+//   - 运行期缺行按定稿口径就是 **500 `INTERNAL_ERROR`**（不再静默空集）。
+//
+// 所以这里断言的是**fail-closed 行为本身**，并且删行窗口只覆盖**一次请求**，随即还原。
+func TestACFLOW05_04b_MissingRowIsFailClosed(t *testing.T) {
+	e := newACFLOW05Env(t, openTestDB(t))
 
-	if err := db.Exec(`DELETE FROM runtime_config WHERE "key" = ?`, store.KeyFactorsDisabled).Error; err != nil {
-		t.Fatalf("删除 factors.disabled 行：%v", err)
+	// 正控①：删之前行在（否则"删掉"这一步毫无意义）。
+	var before int64
+	if err := e.db.Raw(`SELECT count(*) FROM runtime_config WHERE "key" = ?`,
+		store.KeyFactorsDisabled).Scan(&before).Error; err != nil {
+		t.Fatalf("数行：%v", err)
 	}
-	var n int64
-	if err := db.Raw(`SELECT count(*) FROM runtime_config WHERE "key" = ?`,
-		store.KeyFactorsDisabled).Scan(&n).Error; err != nil {
+	if before != 1 {
+		t.Fatalf("正控①失败：factors.disabled 应恰好 1 行，实际 %d", before)
+	}
+
+	if err := e.db.Exec(`DELETE FROM runtime_config WHERE "key" = ?`,
+		store.KeyFactorsDisabled).Error; err != nil {
+		t.Fatalf("删行：%v", err)
+	}
+	trace := "trace-acflow05-04b-" + uuid.NewString()[:8]
+	defer func() {
+		// 立刻还原（upsert：UPDATE 对"行不存在"是 0 行，静默不还原 —— 首版就栽在这）。
+		if err := e.db.Exec(`INSERT INTO runtime_config ("key", value, value_type)
+			VALUES (?, '[]'::jsonb, 'json')
+			ON CONFLICT ("key") DO UPDATE SET value = '[]'::jsonb`, store.KeyFactorsDisabled).Error; err != nil {
+			t.Errorf("还原 factors.disabled 失败（后续用例会读不到启动键）：%v", err)
+		}
+	}()
+
+	// 正控②：确实缺行。
+	var gone int64
+	if err := e.db.Raw(`SELECT count(*) FROM runtime_config WHERE "key" = ?`,
+		store.KeyFactorsDisabled).Scan(&gone).Error; err != nil {
 		t.Fatalf("确认缺行：%v", err)
 	}
-	if n != 0 {
-		t.Fatalf("正控失败：行应已删除，实际仍有 %d 行", n)
+	if gone != 0 {
+		t.Fatalf("正控②失败：行应已删除，实际仍有 %d 行", gone)
 	}
-	t.Logf("已注入缺行条件：runtime_config[factors.disabled] 不存在")
 
-	concurrentPatchesBody(t, e)
+	// 缺行 → 5xx `INTERNAL_ERROR`（fail-closed）；**不得**2xx（那等于静默按空集放行）。
+	status, raw, env := e.patch(t, "totp", `{"enabled":false,"reason":"缺行 fail-closed"}`,
+		trace)
+	if status < 500 {
+		t.Fatalf("缺行时必须 5xx（fail-closed），实际 %d / %q（body=%s）—— 2xx 意味着「平台禁用集」被静默当成空集",
+			status, env.Code, raw)
+	}
+	if env.Code != httpx.CodeInternalError {
+		t.Fatalf("缺行时对外码应为 %s，实际 %q（body=%s）", httpx.CodeInternalError, env.Code, raw)
+	}
+
+	// 且不得留下"半条审计"：缺行时事务应当整体失败。
+	var audits int64
+	if err := e.db.Raw(`SELECT count(*) FROM audit_logs WHERE actor_user_id = ? AND trace_id = ?`,
+		e.actorID, trace).Scan(&audits).Error; err != nil {
+		t.Fatalf("数审计：%v", err)
+	}
+	if audits != 0 {
+		t.Fatalf("缺行失败路径不得写审计，实际 %d 条", audits)
+	}
 }
 
 func concurrentPatchesBody(t *testing.T, e *acflow05Env) {

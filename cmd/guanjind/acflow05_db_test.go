@@ -125,12 +125,18 @@ func newACFLOW05Env(t *testing.T, db *gorm.DB) *acflow05Env {
 		if env.prev == nil {
 			// **不得 DELETE**：这一行是 D22 的 seed 载体，删掉会让后续用例读到"缺行"，
 			// 把"平台级禁用集"变成静默空集（Ark 的夹具纪律：删了 seed 行必须写回 `[]`）。
-			_ = db.Exec(`UPDATE runtime_config SET value = '[]'::jsonb WHERE "key" = ?`,
+			// **必须 upsert**：UPDATE 对"行不存在"是 0 行、静默不还原，
+			// 而这一行现在是 `ValidateStartup` 的 required 键 —— 没还原会让同包后续夹具起不来。
+			_ = db.Exec(`INSERT INTO runtime_config ("key", value, value_type)
+				VALUES (?, '[]'::jsonb, 'json')
+				ON CONFLICT ("key") DO UPDATE SET value = '[]'::jsonb`,
 				store.KeyFactorsDisabled).Error
 			return
 		}
-		_ = db.Exec(`UPDATE runtime_config SET value = ?::jsonb WHERE "key" = ?`,
-			*env.prev, store.KeyFactorsDisabled).Error
+		_ = db.Exec(`INSERT INTO runtime_config ("key", value, value_type)
+			VALUES (?, ?::jsonb, 'json')
+			ON CONFLICT ("key") DO UPDATE SET value = EXCLUDED.value`,
+			store.KeyFactorsDisabled, *env.prev).Error
 	})
 	return env
 }
