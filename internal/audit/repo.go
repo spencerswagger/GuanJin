@@ -207,6 +207,40 @@ func (c *Chain) Load(ctx context.Context, db *gorm.DB, from, to time.Time) ([]Re
 	return out, nil
 }
 
+// TailTagBefore 返回"链上紧邻 `[from, to)` 段首之前那条记录"的 `integrity_tag`。
+//
+// 为什么校验器需要它：段首的 `prev_tag` 应当等于**链上上一条记录**的 `integrity_tag`
+// （D4-C(2)「跨分区首条的 `prev_tag` 取上一分区末 tag」的逐字落地）。
+// 早先用"上月锚点"当这个期望值——锚点是**每一拍拍下的快照**，月末封锚后只要再写一条，
+// 锚点就落后于真实链尾，次月复核会把正常追加误报成 `prev_tag_mismatch`
+// （`audit_chain_broken_total` 每天假 +1、`audit_anchor_age_seconds` 停住）。
+//
+// 换成"真实前驱"后判据更强：上月尾部被删 → 本段首条 `prev_tag` 指向**已不存在的 tag**
+// → 与真实前驱不等 → 照样报 `prev_tag_mismatch`；而"正常追加"不再有任何误报。
+//
+// SQL 形状：`min(created_at)` = 本段首条（与 `Load` 的 `ORDER BY created_at, id` 同序）；
+// 取它之前最近一条。`created_at` 在 `Append` 里被抬到"链尾 + 1µs"（严格单调），不存在并列。
+// 段内无记录（或整表为空）→ `found=false`。
+func (c *Chain) TailTagBefore(ctx context.Context, db *gorm.DB, from, to time.Time) ([]byte, bool, error) {
+	if db == nil {
+		return nil, false, errors.New("audit: nil db")
+	}
+	var row struct{ IntegrityTag []byte }
+	res := db.WithContext(ctx).Raw(`SELECT integrity_tag FROM audit_logs
+		WHERE created_at < COALESCE(
+			(SELECT min(created_at) FROM audit_logs WHERE occurred_at >= ? AND occurred_at < ?),
+			'infinity'::timestamptz)
+		ORDER BY created_at DESC, id DESC
+		LIMIT 1`, from.UTC(), to.UTC()).Scan(&row)
+	if res.Error != nil && !isNoRows(res.Error) {
+		return nil, false, fmt.Errorf("audit: read head predecessor: %w", res.Error)
+	}
+	if res.RowsAffected == 0 || len(row.IntegrityTag) == 0 {
+		return nil, false, nil
+	}
+	return row.IntegrityTag, true, nil
+}
+
 // AnchorStore 读写链锚点（`runtime_config`）。
 type AnchorStore struct{ db *gorm.DB }
 
