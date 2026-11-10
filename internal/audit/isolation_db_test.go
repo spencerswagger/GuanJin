@@ -69,6 +69,12 @@ func ensureIsolatedSchema(db *gorm.DB) error {
 			created_at    timestamptz NOT NULL DEFAULT now(),
 			PRIMARY KEY (id, occurred_at)
 		) PARTITION BY RANGE (occurred_at)`, isolatedSchema),
+		// `users` 被 `TestAppendHandlesOptionalColumns`（带 actor 的落库形态）用到；
+		// 隔离 schema 里给一个最小表即可（生产侧还有 FK/唯一索引，这里不影响被测逻辑）。
+		fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s.users (
+			id       uuid PRIMARY KEY,
+			username text NOT NULL
+		)`, isolatedSchema),
 		fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s.runtime_config (
 			key         text        PRIMARY KEY,
 			value       jsonb       NOT NULL,
