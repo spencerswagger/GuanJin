@@ -155,11 +155,18 @@ func freshMonth(t *testing.T, db *gorm.DB) time.Time {
 				base = tm
 			}
 		}
+		name := fmt.Sprintf("audit_logs_p%s", base.Format("200601"))
+		var exists bool
+		if err := db.Raw(`SELECT to_regclass(?) IS NOT NULL`, name).Scan(&exists).Error; err != nil {
+			t.Fatalf("check %s: %v", name, err)
+		}
+		if exists {
+			return base // **已有分区就不做 DDL**：`CREATE TABLE … PARTITION OF` 会对父表取
+			// ACCESS EXCLUSIVE，与并发 INSERT 的 ROW EXCLUSIVE 互撞 → 40P01（Gate 的 `-p 8` 里 deadlock=1）。
+		}
 		if err := EnsurePartitions(context.Background(), db, []time.Time{base}); err != nil {
 			t.Fatalf("EnsurePartitions(%s): %v", base.Format("200601"), err)
 		}
-		var exists bool
-		name := fmt.Sprintf("audit_logs_p%s", base.Format("200601"))
 		if err := db.Raw(`SELECT to_regclass(?) IS NOT NULL`, name).Scan(&exists).Error; err != nil {
 			t.Fatalf("check %s: %v", name, err)
 		}
@@ -351,27 +358,29 @@ func TestAC_AUD_04_Concurrent100AppendsKeepChainIntact(t *testing.T) {
 	// **按本次写入的标记过滤**，不按月份统计：全局链里可能混入其它包/其它用例的记录
 	// （Gate 实测按月份数到 55 条，形同"期望 20 实际 55"）。标记用唯一 `TargetID` 前缀。
 	marker := "ac-aud-04-" + uuid.NewString()[:8]
+	// 注意：**不在这里逐 goroutine 重锚**——重锚会把链尾不断推高（M→M+1→M+2…），
+	// 反而让同批写者互相判"早于链尾"（实测重试 76~123 次、最终只落 32~50 条）。
+	// 月份由 `freshMonth` 一次性取好；若真被别的写者越过，就让用例红并打印月份。
 	var wg sync.WaitGroup
 	errs := make(chan error, n)
 	for i := 0; i < n; i++ {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			_, err := chain.Append(context.Background(), db, Record{
+			if _, err := chain.Append(context.Background(), db, Record{
 				Action: "user.disable", Result: "success", TargetType: "user",
 				TargetID: fmt.Sprintf("%s-%d", marker, i), ClientID: "s10-audit",
 				After:      map[string]any{"i": fmt.Sprintf("%d", i)},
 				OccurredAt: month.Add(time.Duration(i) * time.Millisecond),
-			})
-			if err != nil {
-				errs <- err
+			}); err != nil {
+				errs <- fmt.Errorf("月份=%s i=%d: %w", month.Format("200601"), i, err)
 			}
 		}(i)
 	}
 	wg.Wait()
 	close(errs)
 	for err := range errs {
-		t.Fatalf("并发写入失败（月份=%s）：%v", month.Format("200601"), err)
+		t.Fatalf("并发写入失败：%v", err)
 	}
 
 	all, err := chain.Load(context.Background(), db, month, month.AddDate(0, 1, 0))

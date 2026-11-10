@@ -14,7 +14,11 @@ import (
 	"github.com/google/uuid"
 )
 
-// 并发防线的**受控证据**：强制把"读链尾 → 插入"的窗口张开 2ms，仍必须 0 分叉。
+// 普通并发用例：**advisory 串行下的 20 并发零分叉**（不再声称"窗口强制张开"）。
+//
+// 事实澄清（Gate 实测）：`afterTailRead` 里加并发计数后，**hook 内同时最多只有 1 个
+// goroutine**——`pg_advisory_xact_lock` 在读链尾**之前**取得，写者根本不会同时进入
+// "读→插"窗口。所以本用例证明的是"串行 + 零分叉"，**不是**"窗口并发下仍零分叉"。
 //
 // 为什么需要这条：只跑 100×20 不撞上，只能说明"概率低"，不能说明"有防线"。
 // 这里用生产代码里的注入点（`Chain.afterTailRead`，生产恒为 nil）把窗口必然打开，
@@ -23,7 +27,7 @@ import (
 // 原 Gate 要求形态：**造可控延迟让"读链尾 → 插入"的窗口必然张开**，
 // 仍必须 0 分叉。做法：并发 20 个写者，每个在读到链尾之后 `sleep 2ms` 再插入
 // （`hookedAppend` 复刻 `Append` 的同一条 SQL 序列，只在中间插 sleep）。
-func TestAppendWindowForcedOpenStillKeepsChainIntact(t *testing.T) {
+func TestAppendConcurrentSerializedNoFork(t *testing.T) {
 	db := openAuditTestDB(t)
 	chain := auditTestChain(t)
 	month := freshMonth(t, db)
