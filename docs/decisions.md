@@ -552,9 +552,16 @@
   - **配套（归 Edge，一行 spec + 一个校验器）**：把 `factors.disabled` 加进 `internal/store/runtimeconfig.go` 的 `startupSpecs`，新增一种 kind（存在 + `value_type='json'` + `jsonb_typeof(value)='array'` + 元素均为非空字符串）→ **缺键/类型不对/坏值 = 启动非 0 退出并点名键**（与 `flow.ttl_seconds` 同款）。**运行期**读到缺行 = 配置缺陷 → **500 `INTERNAL_ERROR`**，**不得**再"静默按空集"（那正是缺陷复现路径）；举证归 Gate/Edge：手动删行 → 平台级启停 500 + 日志点名键名。
   - **回滚注意**：`down` 删行后 concurrent PATCH 又回到"锁不到行"的窗口，且启动期校验会 fail-fast → **回滚须与回滚应用版本一起做**，这是 fail-closed 的期望行为，不是副作用。
 
-- **③ 「第一天就有行」谁保证**：seed 在 `migrate up` 里 → **CI 每次重建库只跑 up 就自动带上**（`guanjin_test` / 本地三库 / 预发 / 生产一致，无环境差异、无初始化脚本）。唯一漏网 = 有人手工删行、或环境停在旧版本 → **启动期 fail-fast 点名 `factors.disabled`**（不会带病上线）。**测试夹具纪律**：不得"临时插一行再删"来绕过（会与 seed 打架、并掩盖"缺行"分支）；要测缺行分支用独立库或整体事务回滚。
+- **③ `enabled` 的语义表达：只有一个真值"禁用集"，不存在每个因子的独立开关（2026-11-11 补裁）**
+  - **存储态 = 唯一真值**：`factors.disabled` 的数组就是平台级全部事实，**`enabled=false` ⇔ 该类型 ∈ 数组**，`enabled=true` ⇔ 不在数组里。**不设** `factors.<type>.enabled` 之类的逐因子真值，也**不设**"缺省行 = 默认启用"（没有逐因子行可缺）——默认启用就是"不在集合里"，不需要任何行。
+  - **因此**：`GET /api/v1/factors` 的 `enabled` 是**计算值**（`!contains(disabled, type)`），不是存储值；任何"两处各存一份计划"的实现都是第二套口径（与 D15③ 用途域、D14① TTL 同一条原则）。
+  - **并发写该键的锁粒度 = 单行 + 一把更宽的 advisory 锁**：①`pg_advisory_xact_lock(platformFactorLockKey)` 串行化"平台级因子启停"这一类写入（与键形态无关，天然覆盖"行不存在"）；②`SELECT … FOR UPDATE` 锁 `factors.disabled` 那一行作为第二道防线（防"将来有人删掉 advisory 锁"）。**不做逐因子行锁**——没有逐因子行，且"改一个因子"本质是**改整份集合**（读-改-写必须整体串行，逐行锁反而会丢更新）。
+  - **数组里出现未知因子类型**（因子已从注册表移除 / 拼写错）：**写入侧拒绝**（`PATCH` 未知类型 → 400 `INVALID_PARAMETER`，调用方错）；**读取侧保留原样、不静默丢弃**（丢弃会改变有效禁用集语义、可能让某类型意外可用），并在**启动期打一条 WARN 点名未知类型**（不 fail-fast：遗留项不该把进程卡死）；未知类型对并集无实际效果（没有 Provider 就没有验证路径）。
+  - **基线依据**：`数据模型:1071` 的 `factors.<type>.enabled=true` 是"新增因子零 DDL"的**举例**，**不作为键形态依据**；本条是与实现一致后的**唯一出处**（实现即权威，因为 `runtime_config` 的键不在 F0 不可动名单、也不属对外契约面）。
 
-- **④ 与 D21 的关系**：两条同类（`runtime_config` 里该有的载体不存在），但**键不同、迁移不同、不互相等**——D21 的 `000019` 已合入 main，本条 `000020` 独立落地。**下发顺序按优先级：本条先合**（它卡着一条并发缺陷的验收），D21 已不受影响。
+- **④ 「第一天就有行」谁保证**：seed 在 `migrate up` 里 → **CI 每次重建库只跑 up 就自动带上**（`guanjin_test` / 本地三库 / 预发 / 生产一致，无环境差异、无初始化脚本）。唯一漏网 = 有人手工删行、或环境停在旧版本 → **启动期 fail-fast 点名 `factors.disabled`**（不会带病上线）。**测试夹具纪律**：不得"临时插一行再删"来绕过（会与 seed 打架、并掩盖"缺行"分支）；要测缺行分支用独立库或整体事务回滚。
+
+- **⑤ 与 D21 的关系**：两条同类（`runtime_config` 里该有的载体不存在），但**键不同、迁移不同、不互相等**——D21 的 `000019` 已合入 main，本条 `000020` 独立落地。**下发顺序按优先级：本条先合**（它卡着一条并发缺陷的验收），D21 已不受影响。
 
 ---
 
@@ -698,7 +705,7 @@
 | `D17` | §**D17** | 能力矩阵与 AC 账目的计数单位：`GJ-CAP-17/20/21` **无 AC 条目**、能力矩阵记 `DEFERRED(M5)`/`N/A(M2)`、与 `AC-AGENT-01~03` **不得双计**、22 能力与 90 判据**不得换算**；`90 = 83/0/0/6/0/1` 不受影响 |
 | `D19` | §**D19** | `disabled_factors` 的物理落点 = `login_policies`（client 级 `client_override`、回落 `tier_default`），`clients` 无此列；`接口清单:211`/`页面规格:533` 的"来自 clients"是笔误、只改措辞不进 CH；**有效禁用集 = 平台级 `runtime_config.factors.disabled`（唯一聚合键，jsonb 数组，见 D22）∪ client 级，互不覆盖** |
 | `D23①②③` | §**D23** | `AC-ENG-07` 三笔账：①**升 Go 1.26**（`go.mod` 是锁定权威、基线版本是建议值）+ **stdlib 一律不得进白名单**（只能升）；②**vue 3.5.42+ 升**（不留豁免，Vue 出回归）；③`sdk/java` **显式打 `[UNCOVERED]`**（立即）+ 一个迭代内改**离线 SBOM**（Nova 产 / Gate 判，2026-12-10 前），逾期则账目降级 |
-| `D22` | §**D22** | 平台级禁用集载体 = `runtime_config.factors.disabled`（jsonb **`[]`**、唯一键名，废除基线示例式的 `factors.<type>.enabled`）；**seed 落行**（迁移 `000020`，`ON CONFLICT DO NOTHING`）+ 启动期校验（缺键/坏值 fail-fast）；运行期缺行 = 500 不静默空集；否决读路径自愈 |
+| `D22` | §**D22** | 平台级禁用集载体 = `runtime_config.factors.disabled`（jsonb **`[]`**、唯一键名，废除基线示例式的 `factors.<type>.enabled`）；**seed 落行**（迁移 `000020`，`ON CONFLICT DO NOTHING`）+ 启动期校验（缺键/坏值 fail-fast）；运行期缺行 = 500 不静默空集；否决读路径自愈；**`enabled` 是计算值（`enabled=false` ⇔ 在数组里）、无逐因子真值、锁粒度 = 单行 + advisory**；未知类型写入拒 400 / 读取保留 + 启动 WARN |
 | `D21` | §**D21** | `AC-REG-04` 的耗时阈值 = `runtime_config.register.timing.max_diff_ms`（int，默认 **50**，迁移 `000019`）；口径 = `register/start` 两条路径耗时中位数之差的**绝对值**上界，时钟源 = 进程单调钟；**超阈值 = 红**；键是**判据参数、服务不读、不进 `StartupKeys()`**、零代码改动 |
 | `D20` | §**D20** | `audit_logs` 加 `audit_logs_created_id_idx (created_at, id)`（迁移 **`000021`**，父表建、自动套用新分区、零代码改动）；不加 DESC/`occurred_at` 前缀/`CONCURRENTLY`/partial；否决"链尾 tag 落 `runtime_config`"缓存方案；不进 CH、判据不动 |
 | `D16①②③④⑤` | §**D16** | 数据面 S8 收口：断言 claim 逐项来源（`aud`=路由命中 client、`roles`=活跃 `role_bindings`、`exp=iat+60`、`jti`=UUIDv7）、准入基准=`login_policies.min_acr`、路由规则冻结（R11①）、SLO 通知与 `details.flow` 字段集登记 R12/R13 |
