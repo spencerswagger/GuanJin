@@ -26,6 +26,14 @@ import (
 // 换它等于让新旧进程用两把锁，是**静默断链**级别的错误，故写成常量并加注释）。
 const chainLockKey int64 = 2026111001
 
+// ErrOccurredAtTooNew 表示 `occurred_at` 太靠未来（超过"链尾月份 + 1 个月"）。
+//
+// 为什么要上界（Owl II P2 ①）：链按自然月分段、每月复核后封锚。若允许随意往未来月写，
+// 那个未来月会在**被封锚之前**就掺入记录，等它被复核时锚点与实际链尾对不上，
+// 表现为"已封锚段不连续/锚点不符"，与真断链混在一起。界取"链尾月 + 1"：允许自然的跨月滚动，
+// 但一次只准滚一个月。
+var ErrOccurredAtTooNew = errors.New("audit: occurred_at is beyond the next month after chain tail")
+
 // ErrOccurredAtTooOld 表示 `occurred_at` 早于链尾所在分区月初（会插进上个月分区、破链）。
 var ErrOccurredAtTooOld = errors.New("audit: occurred_at predates the tail partition month")
 
@@ -110,6 +118,17 @@ func (c *Chain) Append(ctx context.Context, db *gorm.DB, rec Record) ([]byte, er
 		//
 		// 因此：`created_at` 抬到"链尾 + 1µs"，`occurred_at` **原样入库并参与 `integrity_tag`**
 		// （哈希覆盖原值，才是"证据原样"）。
+		// ②‴ 上界守卫：`occurred_at` 不得晚于"链尾月份 + 1 个月"（链为空时取当月 + 1）。
+		{
+			limit := monthOf(time.Now().UTC()).AddDate(0, 1, 0)
+			if tailTime != nil {
+				limit = monthOf(*tailTime).AddDate(0, 2, 0) // 链尾月 + 1 个月（右开）
+			}
+			if !rec.OccurredAt.UTC().Before(limit) {
+				return fmt.Errorf("%w: occurred_at %s >= %s",
+					ErrOccurredAtTooNew, rec.OccurredAt.UTC().Format(time.RFC3339), limit.Format("2006-01"))
+			}
+		}
 		if tailTime != nil {
 			// ②″ 下界守卫：`occurred_at` 早于链尾所在分区月初 → 拒绝并留痕。
 			// 否则今天的写入会插进上个月的分区，跨分区的 `prev_tag` 链接（AC-AUD-06）就断了。

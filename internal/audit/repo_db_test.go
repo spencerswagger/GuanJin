@@ -89,7 +89,6 @@ func auditTestChain(t *testing.T) *Chain {
 // 下与并发写入撞出 **40P01 死锁**（Gate 复现：`create partition audit_logs_pXXXXXX`）。
 // 运行期 DDL 在并发测试里必然不稳；生产也不这么做（分区由月度任务建，见 000011 注释）。
 const (
-	partitionStartYear  = 2040
 	partitionMonthCount = 120 // 10 年：运行期**零 DDL**，全部由 TestMain 预建
 )
 
@@ -97,11 +96,12 @@ const (
 //
 // 基准月由 `TestMain` 按"链尾月份 + 1"设定（见 `setPoolBaseMonth`）；`TestMain` 里
 // 先设基准再建分区，所以这里读得到。若基准未设（例如单跑某个用例），退化为
-// `partitionStartYear` 起算——此时那些用例会因下界守卫而失败，属预期（不该单跑它们）。
+// "当月"起算——此时那些用例会因为月份与链尾不符而失败，属预期（不该单跑它们）。
 func partitionMonths() []time.Time {
 	base, ok := poolBaseMonth.Load().(time.Time)
 	if !ok || base.IsZero() {
-		base = time.Date(partitionStartYear, 1, 1, 0, 0, 0, 0, time.UTC)
+		now := time.Now().UTC()
+		base = time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
 	}
 	out := make([]time.Time, 0, partitionMonthCount)
 	for i := 0; i < partitionMonthCount; i++ {
@@ -171,7 +171,7 @@ func appendWithReanchor(chain *Chain, db *gorm.DB, rec Record) ([]byte, error) {
 
 // freshMonthNoTest 给非 *testing.T 场景取一个"晚于当前链尾"的月份（供重锚使用）。
 func freshMonthNoTest(_ *Chain, db *gorm.DB) time.Time {
-	lo := time.Date(partitionStartYear, 1, 1, 0, 0, 0, 0, time.UTC)
+	lo := time.Date(time.Now().UTC().Year(), time.Now().UTC().Month(), 1, 0, 0, 0, 0, time.UTC)
 	var tail sql.NullTime
 	_ = db.Raw(`SELECT max(occurred_at) FROM audit_logs`).Scan(&tail).Error
 	month := lo
@@ -187,7 +187,7 @@ func freshMonthNoTest(_ *Chain, db *gorm.DB) time.Time {
 // lastUsedMonth 记录本进程已分配过的最大月份（保证不重复）。
 var lastUsedMonth atomic.Value // time.Time
 
-// freshMonth 返回一个**保证可写**的月份：`max(链尾月份 + 1, 2040-01)`，并现场建好该月分区。
+// freshMonth 返回一个**保证可写**的月份：链尾月份 + 1（链空则当月 + 1）。
 //
 // 为什么不再用"预建池 + 顺序分配"：`-p 8` 下别的包/别的用例会把全局链尾推高，
 // 池里分配的月份可能已经**早于链尾**（撞下界守卫）或分区被别人 `DROP`（撞 23514）。
@@ -199,9 +199,8 @@ func freshMonth(t *testing.T, db *gorm.DB) time.Time {
 	if err := db.Raw(`SELECT max(occurred_at) FROM audit_logs`).Scan(&tail).Error; err != nil {
 		t.Fatalf("read tail: %v", err)
 	}
-	// 预建范围以 `TestMain` 里按 `max(occurred_at)+1` 算出的基准月为准（不是硬编码 2040-01）：
-	// 多轮跑下来链尾会漂移到 2043+，硬编码下界会把"其实已预建"的月份判成越界。
-	lo := time.Date(partitionStartYear, 1, 1, 0, 0, 0, 0, time.UTC)
+	// 预建范围以 `TestMain` 里按 `max(occurred_at)+1` 算出的基准月为准。
+	lo := time.Date(time.Now().UTC().Year(), time.Now().UTC().Month(), 1, 0, 0, 0, 0, time.UTC)
 	if base, ok := poolBaseMonth.Load().(time.Time); ok && !base.IsZero() {
 		lo = base
 	}
@@ -213,12 +212,9 @@ func freshMonth(t *testing.T, db *gorm.DB) time.Time {
 			month = tm
 		}
 	}
-	// 还要**大于本进程已用过的最大月份**：`cleanupMonth` 删行会让链尾回退，
-	// 只用 `tail+1` 会把同一个月份发给两个用例（实测"期望 3 实际 7"、锚点对不上）。
-	if last, ok := lastUsedMonth.Load().(time.Time); ok && !last.IsZero() && !month.After(last) {
-		month = last.AddDate(0, 1, 0)
-	}
-	lastUsedMonth.Store(month)
+	// **不再用"进程内最大已用月份"**：`Append` 有上界守卫（occurred_at ≤ 链尾月 + 1），
+	// 而"分配了月份但没写入"的用例会让 lastUsed 跑到链尾前面两个月 → 被守卫拒（实测 `-count=3` 必红）。
+	// 现在月份恒为 `tail+1`：该月**必然没有任何行**（否则 tail 会更新），所以不会与别的用例共用。
 	// **运行期零 DDL**：不在这里建分区（`CREATE TABLE … PARTITION OF` 取 ACCESS EXCLUSIVE，
 	// 与并发 INSERT 的 ROW EXCLUSIVE 相撞会 40P01）。分区全部由 `TestMain` 预建；
 	// 越界就当场 Fatalf 并打出范围与链尾，不等到 INSERT 抛 23514。
@@ -277,12 +273,11 @@ func requirePartition(t *testing.T, db *gorm.DB, month time.Time) time.Time {
 	return month
 }
 
-// seedSegmentAnchor 把"本段锚点"写成现存首条的 `prev_tag`。
+// seedAnchorForMonth 把该月的锚点写成**该月链尾的 `integrity_tag`**。
 //
-// 测试月份只是**全局链**里的一段（`Append` 读的是全局链尾），所以复核该段时的锚点
-// 必须是"段首那条的 `prev_tag`"，不是 nil。写进 `runtime_config` 是为了让 `Verifier`
-// （它从锚点表读）能按生产路径校验。
-func seedSegmentAnchor(t *testing.T, chain *Chain, db *gorm.DB, anchors *AnchorStore, month time.Time) {
+// 锚点语义（P0 修复后唯一口径）：`anchor[M]` = 第 M 月最后一条已复核记录的 tag（"封条"），
+// 复核第 M 月时段首期望值来自 `anchor[M-1]`、段尾必须等于 `anchor[M]`。
+func seedAnchorForMonth(t *testing.T, chain *Chain, db *gorm.DB, anchors *AnchorStore, month time.Time) {
 	t.Helper()
 	records, err := chain.Load(context.Background(), db, month, month.AddDate(0, 1, 0))
 	if err != nil {
@@ -291,8 +286,8 @@ func seedSegmentAnchor(t *testing.T, chain *Chain, db *gorm.DB, anchors *AnchorS
 	if len(records) == 0 {
 		return
 	}
-	if err := anchors.Put(context.Background(), month, records[0].PrevTag); err != nil {
-		t.Fatalf("seed segment anchor: %v", err)
+	if err := anchors.Put(context.Background(), month, records[len(records)-1].IntegrityTag); err != nil {
+		t.Fatalf("seed anchor for month: %v", err)
 	}
 }
 
