@@ -218,20 +218,31 @@ func (c *Chain) Load(ctx context.Context, db *gorm.DB, from, to time.Time) ([]Re
 // 换成"真实前驱"后判据更强：上月尾部被删 → 本段首条 `prev_tag` 指向**已不存在的 tag**
 // → 与真实前驱不等 → 照样报 `prev_tag_mismatch`；而"正常追加"不再有任何误报。
 //
-// SQL 形状：`min(created_at)` = 本段首条（与 `Load` 的 `ORDER BY created_at, id` 同序）；
-// 取它之前最近一条。`created_at` 在 `Append` 里被抬到"链尾 + 1µs"（严格单调），不存在并列。
-// 段内无记录（或整表为空）→ `found=false`。
+// SQL 形状（三点，每一点都为一个具体缺陷存在）：
+//   - **行值比较 `(created_at, id) < (head.created_at, head.id)`**：链序是 `(created_at, id)`，
+//     而 `created_at` 没有唯一约束——只要出现并列（回灌/归档恢复/导入等**非 `Append` 写入**），
+//     按 `created_at < ?` 单独比较就会把"同毫秒但 id 更小的那条"漏掉，期望值落到再前一条
+//     → 又冒出 `prev_tag_mismatch` 假告警。用两列行值比较，链序是什么就按什么取。
+//   - **CTE 取本段首条**（`ORDER BY created_at, id LIMIT 1`，与 `Load` 同序）：段内无记录时
+//     CTE 为空、连接后零行 → `found=false`，不需要 `min()` + `COALESCE` 那套 NULL 兜底。
+//   - **外层 `occurred_at < to`**：让规划器按分区裁剪（否则每次 `RunOnce` 都是全分区 Seq Scan）。
+//     正确性：链序对 `occurred_at` 单调不减（写入有下界守卫），所以前驱的 `occurred_at`
+//     必然早于本段首条、也就必然 `< to`。
 func (c *Chain) TailTagBefore(ctx context.Context, db *gorm.DB, from, to time.Time) ([]byte, bool, error) {
 	if db == nil {
 		return nil, false, errors.New("audit: nil db")
 	}
 	var row struct{ IntegrityTag []byte }
-	res := db.WithContext(ctx).Raw(`SELECT integrity_tag FROM audit_logs
-		WHERE created_at < COALESCE(
-			(SELECT min(created_at) FROM audit_logs WHERE occurred_at >= ? AND occurred_at < ?),
-			'infinity'::timestamptz)
-		ORDER BY created_at DESC, id DESC
-		LIMIT 1`, from.UTC(), to.UTC()).Scan(&row)
+	res := db.WithContext(ctx).Raw(`WITH head AS (
+			SELECT created_at, id FROM audit_logs
+			 WHERE occurred_at >= ? AND occurred_at < ?
+			 ORDER BY created_at ASC, id ASC
+			 LIMIT 1)
+		SELECT a.integrity_tag FROM audit_logs a, head
+		 WHERE a.occurred_at < ?
+		   AND (a.created_at, a.id) < (head.created_at, head.id)
+		 ORDER BY a.created_at DESC, a.id DESC
+		 LIMIT 1`, from.UTC(), to.UTC(), to.UTC()).Scan(&row)
 	if res.Error != nil && !isNoRows(res.Error) {
 		return nil, false, fmt.Errorf("audit: read head predecessor: %w", res.Error)
 	}
