@@ -43,10 +43,16 @@ func (s stubFactor) EnrollmentSpec() factor.EnrollmentSpec {
 type fakeSwitcher struct {
 	disabled []string
 	err      error
-	calls    []store.SetFactorEnabledInput
+	// readErr 只作用于 `Disabled`（读路径）。用来单独构造"写成功但读失败"的形态：
+	// 一个 err 同时卡住读写，就分不清是写路径还是读路径返回的 5xx。
+	readErr error
+	calls   []store.SetFactorEnabledInput
 }
 
 func (f *fakeSwitcher) Disabled(context.Context) ([]string, error) {
+	if f.readErr != nil {
+		return nil, f.readErr
+	}
 	if f.err != nil {
 		return nil, f.err
 	}
@@ -233,4 +239,51 @@ func TestFactorsPatchStoreFailurePropagates(t *testing.T) {
 func pathValue(r *http.Request, key, val string) *http.Request {
 	r.SetPathValue(key, val)
 	return r
+}
+
+// **D22 定稿口径（2026-11-11）**：运行期读到"缺行/坏值"必须 **500 `INTERNAL_ERROR`**，
+// **不得**静默按空集放行 —— 那会把部署缺陷（迁移没跑 / 有人删了行）变成"平台没禁用任何因子"，
+// 页面照常显示"全部可用"，没人会发现。
+//
+// 两条读路径都要验：
+//  1. `GET /api/v1/factors`（`views` 里读禁用集）；
+//  2. `PATCH /api/v1/factors/<type>` **写成功后的回读**（写路径已经落库，但响应体要先读到新集合）。
+//     第 2 条以前只验过"写失败"，回读失败这条是漏的。
+func TestFactorsRuntimeMissingOrBadRowIsInternalError(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+	}{
+		{"缺行", store.ErrFactorDisabledMissing},
+		{"坏值", store.ErrFactorDisabledStore},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name+"：GET list", func(t *testing.T) {
+			h := newFactorsHTTP(t, &fakeSwitcher{readErr: tc.err},
+				&session.Caller{UserID: uuid.New(), Roles: []string{string(RoleAuditor)}})
+			rec := httptest.NewRecorder()
+			h.list(rec, factorsReq(t, http.MethodGet, "/api/v1/factors", ""))
+			if rec.Code != http.StatusInternalServerError {
+				t.Fatalf("status = %d, want 500（不许静默按空集 200）: %s", rec.Code, rec.Body.String())
+			}
+			if env := decodeFactorErr(t, rec); env.Code != httpx.CodeInternalError {
+				t.Fatalf("code = %q, want INTERNAL_ERROR", env.Code)
+			}
+		})
+
+		t.Run(tc.name+"：PATCH 写成功后回读失败", func(t *testing.T) {
+			// 写路径成功（`err` 为空），只有回读失败（`readErr`）。
+			h := newFactorsHTTP(t, &fakeSwitcher{readErr: tc.err},
+				&session.Caller{UserID: uuid.New(), Roles: []string{string(RoleSystemAdmin)}})
+			rec := httptest.NewRecorder()
+			h.patch(rec, pathValue(factorsReq(t, http.MethodPatch, "/api/v1/factors/password",
+				`{"enabled":false,"reason":"并发停用"}`), "type", "password"))
+			if rec.Code != http.StatusInternalServerError {
+				t.Fatalf("status = %d, want 500（回读失败不许回一份空集 200）: %s", rec.Code, rec.Body.String())
+			}
+			if env := decodeFactorErr(t, rec); env.Code != httpx.CodeInternalError {
+				t.Fatalf("code = %q, want INTERNAL_ERROR", env.Code)
+			}
+		})
+	}
 }
