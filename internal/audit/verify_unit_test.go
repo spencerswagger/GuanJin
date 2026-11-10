@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm/logger"
 )
 
 // 本文件补的是 P0 修复（锚点语义）与 P2 ②（数字 canonical 统一）**新引入分支**的单元证据。
@@ -112,8 +113,9 @@ func TestCanonicalHugeNumberIsDeterministic(t *testing.T) {
 // 顺便钉住"锚点写失败也只 warn"这条分支：两个错误都不许把 ticker 打死。
 func TestStartJobSurvivesDependencyFailure(t *testing.T) {
 	c := testChain(t)
-	v, err := NewVerifier(c, unreachableDB(t), NewAnchorStore(unreachableDB(t)),
-		slog.New(slog.NewTextHandler(io.Discard, nil)))
+	dep := unreachableDB(t)
+	dep.Logger = dep.Logger.LogMode(logger.Silent)
+	v, err := NewVerifier(c, dep, NewAnchorStore(dep), slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatalf("NewVerifier: %v", err)
 	}
@@ -128,7 +130,9 @@ func TestStartJobSurvivesDependencyFailure(t *testing.T) {
 // AnchorCurrentMonth 在扫表失败时必须把错误抛出来（不许"当月没记录"与"库挂了"混为一谈）。
 func TestAnchorCurrentMonthSurfacesDBError(t *testing.T) {
 	c := testChain(t)
-	v, err := NewVerifier(c, unreachableDB(t), NewAnchorStore(unreachableDB(t)), nil)
+	dep := unreachableDB(t)
+	dep.Logger = dep.Logger.LogMode(logger.Silent)
+	v, err := NewVerifier(c, dep, NewAnchorStore(dep), nil)
 	if err != nil {
 		t.Fatalf("NewVerifier: %v", err)
 	}
