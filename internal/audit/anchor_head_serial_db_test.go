@@ -185,3 +185,161 @@ func TestSameMonthRepeatVerifyNoFalseAlarm(t *testing.T) {
 		t.Fatalf("三轮追加+复核后 audit_chain_broken_total 应为 0，实际 %d", got)
 	}
 }
+
+// TestAnchorHeadDetectsSealedTailDeletion 是 **Owl 事后审 P1-1 的守线**：
+// 补的是"新口径相对旧口径的**增益**"，而不是"不恒绿"。
+//
+// 形态（Owl A/B 里的那一种）：
+//  1. 上月写 2 条 → 复核通过 → 封锚，于是 **`anchor[M-1]` 就是上月最后一条的 tag**；
+//  2. 封锚之后**不再追加**任何上月记录（这正是旧口径的盲区条件）；
+//  3. 次月写 1 条（它的 `prev_tag` 指向上月最后一条）；
+//  4. **删掉**上月最后一条。
+//
+// 两种口径的行为分叉：
+//   - 旧口径（段首期望值取 `anchor[M-1]`）：期望值仍是那条被删记录的 tag，而次月首条的
+//     `prev_tag` 也仍指向它 → 两者**相等** → `broken=nil` → **漏检**（篡改被放过）；
+//   - 新口径（段首期望值取**链上真实前驱**）：前驱已经退化成被删记录的前一条 → 不等 →
+//     报 `prev_tag_mismatch`。
+//
+// 因此这条用例**在旧树上必红**（旧树 `RunOnce` 返回 `broken=nil`，本用例断言"必须报断链"失败）。
+// 写进 PR 是为了让后来人能复算这个增益，不必再猜"为什么段首要用真实前驱"。
+func TestAnchorHeadDetectsSealedTailDeletion(t *testing.T) {
+	db := openAuditTestDB(t)
+	chain := auditTestChain(t)
+	month := requirePartition(t, db, freshMonth(t, db))
+	cleanupMonth(t, db, month)
+	next := requirePartition(t, db, month.AddDate(0, 1, 0))
+	cleanupMonth(t, db, next)
+
+	v, anchors := newTestVerifier(t, chain, db)
+	ctx := context.Background()
+
+	// ① 上月两条 → 复核通过 → 封锚（封的就是最后一条 = `m1`）。
+	appendAt(t, chain, db, month.Add(0*time.Minute), "m0")
+	appendAt(t, chain, db, month.Add(1*time.Minute), "m1")
+	v.now = func() time.Time { return month.Add(5 * time.Minute) }
+	if res, err := v.RunOnce(ctx); err != nil || res.Broken != nil {
+		t.Fatalf("前置：上月复核应通过，实际 broken=%+v err=%v", res.Broken, err)
+	}
+	if err := v.AnchorCurrentMonth(ctx); err != nil {
+		t.Fatalf("AnchorCurrentMonth: %v", err)
+	}
+	tailOfMonth, err := chain.Load(ctx, db, month, month.AddDate(0, 1, 0))
+	if err != nil {
+		t.Fatalf("Load(month): %v", err)
+	}
+	if len(tailOfMonth) != 2 {
+		t.Fatalf("前置：上月应 2 条，实际 %d", len(tailOfMonth))
+	}
+	sealed := tailOfMonth[len(tailOfMonth)-1]
+	anchor, err := anchors.Get(ctx, month)
+	if err != nil || len(anchor) == 0 {
+		t.Fatalf("封锚失败：anchor=%x err=%v", anchor, err)
+	}
+	if string(anchor) != string(sealed.IntegrityTag) {
+		t.Fatal("前置：锚点必须等于上月最后一条的 integrity_tag（旧口径盲区的前提）")
+	}
+
+	// ② 封锚后**不追加**上月记录；次月写 1 条，`prev_tag` 指向那条被封的尾巴。
+	appendAt(t, chain, db, next.Add(1*time.Minute), "next0")
+
+	// ③ 删掉"被封的那条"（= 上月最后一条）。
+	allowMutationForTest(t, db, month)
+	if err := db.Exec(`DELETE FROM audit_logs WHERE id = ?`, sealed.ID).Error; err != nil {
+		t.Fatalf("delete sealed tail: %v", err)
+	}
+
+	// ④ 次月复核：必须报断链（旧口径这里会 `broken=nil` 放过）。
+	ResetMetricsForTest()
+	v.now = func() time.Time { return next.Add(10 * time.Minute) }
+	res, err := v.RunOnce(ctx)
+	if err != nil {
+		t.Fatalf("次月 RunOnce: %v", err)
+	}
+	if res.Broken == nil {
+		t.Fatal("封锚尾巴被删后次月复核仍报通过 —— 段首判据没走真实前驱（旧口径的漏检形态）")
+	}
+	if res.Broken.Reason != ReasonPrevMismatch {
+		t.Fatalf("应以 %s 断链（次月首条 prev_tag 指向已不存在的 tag），实际 %s",
+			ReasonPrevMismatch, res.Broken.Reason)
+	}
+	if got := ChainBrokenTotal(); got != 1 {
+		t.Fatalf("audit_chain_broken_total 期望 1，实际 %d", got)
+	}
+}
+
+// TestAnchorHeadHandlesCreatedAtTie 是 **Owl 事后审 P1-2 的回归用例**：链序是 `(created_at, id)`
+// 两列，而 `created_at` 没有唯一约束——只要出现**并列**，按单列 `created_at < ?` 取前驱就会
+// 把"同 created_at、id 更小"的那条漏掉，期望值落到更早的一条 → `prev_tag_mismatch` **假告警**。
+//
+// 并列从哪来：`Append` 自己永远抬 `created_at`（链尾+1µs），所以只有**非 `Append` 写入**
+// （回灌 / 归档恢复 / 批量导入）才可能造出并列。这里用直接 INSERT 精确复刻那个形态：
+//   - R1 属上月（`occurred_at` 在上月）；
+//   - R2 属次月，`created_at` **与 R1 完全相同**，且 `id` 更大（链序上排在 R1 之后）；
+//   - R2.`prev_tag` = R1 的 tag（这就是真实链序）。
+//
+// 单列口径：`created_at < R2.created_at` 把 R1 排除掉 → 前驱退到更早的记录 → 报断链（假告警）；
+// 行值口径：`(created_at, id) < (R1.created_at, R1.id)` → 命中 R1 → 通过。
+func TestAnchorHeadHandlesCreatedAtTie(t *testing.T) {
+	db := openAuditTestDB(t)
+	chain := auditTestChain(t)
+	month := requirePartition(t, db, freshMonth(t, db))
+	cleanupMonth(t, db, month)
+	next := requirePartition(t, db, month.AddDate(0, 1, 0))
+	cleanupMonth(t, db, next)
+
+	v, _ := newTestVerifier(t, chain, db)
+	ctx := context.Background()
+	tieAt := month.Add(10 * time.Hour) // 两条记录共用的 created_at
+
+	// id 固定且**可比较**：R1.id < R2.id（不依赖 uuid v7 的随机位）。
+	idA := uuid.MustParse("018f0000-0000-7000-8000-00000000000a")
+	idB := uuid.MustParse("018f0000-0000-7000-8000-00000000000b")
+
+	r1 := Record{ID: idA, Action: "tie.import", Result: "success", TargetID: "tie-a",
+		OccurredAt: month.Add(30 * time.Minute)}
+	tag1, err := chain.Tag(nil, r1)
+	if err != nil {
+		t.Fatalf("Tag(r1): %v", err)
+	}
+	// 直接 INSERT：绕开 `Append`（它就是要把 created_at 抬成不并列，见文件头）。
+	if err := db.Exec(`INSERT INTO audit_logs
+			(id, action, result, target_id, integrity_tag, prev_tag, occurred_at, created_at)
+			VALUES (?, 'tie.import', 'success', 'tie-a', ?, NULL, ?, ?)`,
+		idA, tag1, r1.OccurredAt.UTC(), tieAt.UTC()).Error; err != nil {
+		t.Fatalf("插入 R1（上月，回灌形态）：%v", err)
+	}
+
+	r2 := Record{ID: idB, Action: "tie.import", Result: "success", TargetID: "tie-b",
+		OccurredAt: next.Add(5 * time.Minute), PrevTag: tag1}
+	tag2, err := chain.Tag(tag1, r2)
+	if err != nil {
+		t.Fatalf("Tag(r2): %v", err)
+	}
+	if err := db.Exec(`INSERT INTO audit_logs
+			(id, action, result, target_id, integrity_tag, prev_tag, occurred_at, created_at)
+			VALUES (?, 'tie.import', 'success', 'tie-b', ?, ?, ?, ?)`,
+		idB, tag2, tag1, r2.OccurredAt.UTC(), tieAt.UTC()).Error; err != nil {
+		t.Fatalf("插入 R2（次月，与 R1 同 created_at）：%v", err)
+	}
+
+	ResetMetricsForTest()
+	v.now = func() time.Time { return next.Add(30 * time.Minute) }
+	res, err := v.RunOnce(ctx)
+	if err != nil {
+		t.Fatalf("RunOnce: %v", err)
+	}
+	if res.Broken != nil {
+		t.Fatalf("created_at 并列时把正常链报成断链（index=%d reason=%s）：段首前驱必须按 (created_at, id) 取",
+			res.Broken.Index, res.Broken.Reason)
+	}
+	if got := ChainBrokenTotal(); got != 0 {
+		t.Fatalf("audit_chain_broken_total 应为 0，实际 %d", got)
+	}
+	if len(res.AnchorUsed) == 0 {
+		t.Fatal("段首期望值应取到 R1 的 tag（而非退化成 nil/未知）")
+	}
+	if string(res.AnchorUsed) != string(tag1) {
+		t.Fatalf("段首期望值必须是 R1 的 tag（并列里的前一条）：期望 %x 实际 %x", tag1, res.AnchorUsed)
+	}
+}
