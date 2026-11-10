@@ -107,14 +107,11 @@ func (f *flowFixture) postRaw(t *testing.T, path, body, traceID string) (int, ht
 // 否则"已存在"这件事可能只是夹具造出来的假象。
 func (f *flowFixture) registerEmailUser(t *testing.T, db *gorm.DB, email, password string) uuid.UUID {
 	t.Helper()
-	raw := make([]byte, 32)
-	for i := range raw {
-		raw[i] = byte(i + 7)
-	}
-	mk, err := crypto.NewMasterKey(raw)
-	if err != nil {
-		t.Fatalf("NewMasterKey: %v", err)
-	}
+	// 关键：必须用**装配链路同一把主密钥**派生盲索引键。
+	// `e2e_db_test.go` 的 `registerUser` 用 `byte(i+7)` 自造主密钥，那是给"不查标识符索引"
+	// 的用例准备的；拿它建"已存在"的 email，盲索引与装配侧算出来的不是同一个值，
+	// 于是 `register/start` 查不到、返回 200 —— 首版就是这么红的（见 PR 讨论）。
+	mk := testConfig(t).MasterKey
 	indexKey, err := mk.DeriveHMAC(crypto.PurposeHMACIdentifier)
 	if err != nil {
 		t.Fatalf("DeriveHMAC: %v", err)
