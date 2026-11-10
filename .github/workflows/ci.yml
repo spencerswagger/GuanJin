@@ -173,6 +173,14 @@ jobs:
           echo "register_timing_key=$rtim type=$rtyp"
           [ "$rtim" = "50" ] || { echo "[FAIL] register.timing.max_diff_ms seed 期望 50（D21，迁移 000019），实际 '$rtim'"; exit 1; }
           [ "$rtyp" = "int" ] || { echo "[FAIL] register.timing.max_diff_ms 的 value_type 必须是 int（D21），实际 '$rtyp'"; exit 1; }
+          # D22：平台级禁用集的载体行必须存在、且是 jsonb 空数组（并发 FOR UPDATE 的前提）
+          fdis=$(q "SELECT value::text FROM runtime_config WHERE key='factors.disabled';")
+          ftyp=$(q "SELECT value_type FROM runtime_config WHERE key='factors.disabled';")
+          fjt=$(q "SELECT jsonb_typeof(value) FROM runtime_config WHERE key='factors.disabled';")
+          echo "factors_disabled_seed=$fdis type=$ftyp jsonb_typeof=$fjt"
+          [ "$fdis" = "[]" ] || { echo "[FAIL] factors.disabled seed 期望 jsonb 空数组 []（D22，迁移 000020），实际 '$fdis'"; exit 1; }
+          [ "$ftyp" = "json" ] || { echo "[FAIL] factors.disabled 的 value_type 必须是 json（D22），实际 '$ftyp'"; exit 1; }
+          [ "$fjt" = "array" ] || { echo "[FAIL] factors.disabled 的值必须是 jsonb array（D22 禁 null/{}），实际 jsonb_typeof='$fjt'"; exit 1; }
       - name: 迁移往返（AC-ENG-02 的 down 半边：up → down -all → up → down -all）
         # 判据原文「migrate up 全绿、down 可回滚」——此前只跑了 up，「可回滚」无证据。
         # 用**专用库**（本步自建自删），不碰 guanjin_test，故不影响上面的 schema 断言与下面的集成用例。
