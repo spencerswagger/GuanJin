@@ -1,6 +1,7 @@
 package audit
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -284,7 +285,12 @@ func decodeJSON(raw []byte) map[string]any {
 		return nil
 	}
 	var m map[string]any
-	if err := json.Unmarshal(raw, &m); err != nil {
+	// `UseNumber`：**读侧必须保留数字原文**，否则 `json.Unmarshal` 把整数解码成 `float64`
+	// → 重算 tag 时 `1234567` 变成 `1.234567e+06`，与写入时算的 `1234567` 不一致
+	// → 自己写的链自己验不过（Owl II 复审的 P0：链自断）。
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.UseNumber()
+	if err := dec.Decode(&m); err != nil {
 		return map[string]any{"_raw": string(raw)}
 	}
 	return m

@@ -8,6 +8,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
@@ -104,16 +105,34 @@ func (v *Verifier) RunOnce(ctx context.Context) (VerifyResult, error) {
 }
 
 // RunRange 复核 `[from, to)` 区间。
+//
+// ## 锚点语义（Owl II P0 修复后的**唯一口径**）
+//
+// **`anchor[M]` = 第 M 月最后一条已复核记录的 `integrity_tag`（"该月的封条"）。**
+//   - 写：`AnchorCurrentMonth` 在整链通过后写入（就是本月链尾的 tag）。
+//   - 读：复核第 M 月时，段首期望的 `prev_tag` 来自 **`anchor[M-1]`**（**不是** `anchor[M]`）；
+//     段尾必须等于 `anchor[M]`（若已存在）——尾部被整段删除时链内仍自洽，只有锚点对不上。
+//
+// 缺锚点（同一 P0 的另一面）：
+//   - `anchor[M-1]` 不存在 → 段首 `prev_tag` 是**未知**，不判（`VerifyFrom(..., checkFirst=false)`）；
+//   - 但若第 M 月是链的**首段**（该月之前没有任何记录），段首必须为 nil —— 仍然判。
 func (v *Verifier) RunRange(ctx context.Context, from, to time.Time) (VerifyResult, error) {
 	res := VerifyResult{From: from.UTC(), To: to.UTC()}
+	month := monthOf(from)
 
-	anchor, err := v.anchors.Get(ctx, monthOf(from))
+	// ① 段首期望值 = **上个月**的锚点（P0 根因：旧实现误用了本月锚点）。
+	prevAnchor, err := v.anchors.Get(ctx, month.AddDate(0, -1, 0))
 	if err != nil {
-		// 读不到锚点 = 无法确认分段起点，**不许**退化成 nil 继续校验（那会把"锚点丢了"
-		// 伪装成"首段正常"）。
+		return res, fmt.Errorf("audit: load prev-month anchor: %w", err)
+	}
+	// ② 本月锚点（若已封锚）用于段尾一致性校验。
+	selfAnchor, err := v.anchors.Get(ctx, month)
+	if err != nil {
 		return res, fmt.Errorf("audit: load anchor: %w", err)
 	}
-	res.AnchorUsed = anchor
+	// 字段含义：**本月封条**（`anchor[M]`）。段首实际用的是 `anchor[M-1]`，
+	// 两者不是同一个值——这里保留本月封条，因为它是"本段复核完成度"的凭据。
+	res.AnchorUsed = selfAnchor
 
 	records, err := v.chain.Load(ctx, v.db, from, to)
 	if err != nil {
@@ -121,9 +140,56 @@ func (v *Verifier) RunRange(ctx context.Context, from, to time.Time) (VerifyResu
 	}
 	res.Checked = len(records)
 
-	broken, err := v.chain.Verify(records, anchor)
+	// ③ 段首是否可判：有上月锚点 → 可判；否则只有"该月是首段"才可判（应为 nil）。
+	checkFirst := len(prevAnchor) > 0
+	if !checkFirst && len(records) > 0 {
+		var before int64
+		// `EXISTS … LIMIT 1` 而不是 `count(*)`：只需回答"之前有没有"，精确计数在
+		// `audit_logs`（按月分区、`occurred_at` 无单列索引）上要扫全表。
+		if err := v.db.WithContext(ctx).Raw(
+			`SELECT CASE WHEN EXISTS (SELECT 1 FROM audit_logs WHERE occurred_at < ?) THEN 1 ELSE 0 END`,
+			from.UTC()).Scan(&before).Error; err != nil {
+			return res, fmt.Errorf("audit: probe records before: %w", err)
+		}
+		checkFirst = before == 0
+	}
+
+	broken, err := v.chain.VerifyFrom(records, prevAnchor, checkFirst)
 	if err != nil {
 		return res, err
+	}
+	// ④ 本月封条必须**在段内找得到对应记录**（若已封锚且复核的是整月区间）。
+	//
+	// 这里必须是**存在性**判定，不能拿"段尾 tag == 锚点"做等值判定（Owl II P0）：
+	// `StartJob` 每一拍是「先 RunOnce 复核当月 → 再 AnchorCurrentMonth 写当月链尾」，
+	// 所以 `anchor[M]` 是**上一次**复核时的链尾；同月之后只要再写一条审计事实，
+	// 段尾就变了 → 等值判定会把"正常追加"报成 `integrity_tag_mismatch`，
+	// 与本次要修的假告警症状一模一样（`chain_broken_total` 照样每天 +1、`anchor_age` 停住）。
+	// 存在性判定既能发现"整月尾部被删"（锚点对应的那条没了），又不会误报正常追加。
+	//
+	// 只在**整月区间**（`to == 下月 1 号`）启用：`RunRange` 也支持取证用的子区间，
+	// 那种区间里本来就不含封条对应的记录。
+	if broken == nil && len(selfAnchor) > 0 && to.UTC().Equal(month.AddDate(0, 1, 0)) {
+		if len(records) == 0 {
+			// 已封锚、整月却一条不剩：这是尾部截断的**最极端形态**（整月被清空）。
+			// `AnchorCurrentMonth` 对空月不写锚，所以"锚在、记录为零"必然是异常，
+			// 不能走"没记录就不判"（那会把清空整月显示成"刚验过"，`anchor_age` 还会被刷新）。
+			broken = &BrokenPoint{Index: 0, RecordID: uuid.Nil, Reason: ReasonAnchorMismatch}
+		} else {
+			found := false
+			for i := range records {
+				if bytesEqual(records[i].IntegrityTag, selfAnchor) {
+					found = true
+					break
+				}
+			}
+			if !found {
+				// 指到段内最后一条（便于人查"从哪之后没了"），但原因码单列 `anchor_mismatch`，
+				// 别让运维以为最后那条记录的内容被改过。
+				last := records[len(records)-1]
+				broken = &BrokenPoint{Index: len(records) - 1, RecordID: last.ID, Reason: ReasonAnchorMismatch}
+			}
+		}
 	}
 	res.Broken = broken
 
