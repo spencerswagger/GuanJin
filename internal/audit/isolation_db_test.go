@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"gorm.io/gorm"
 )
@@ -94,56 +95,57 @@ func ensureIsolatedSchema(db *gorm.DB) error {
 	return nil
 }
 
-// purgeSharedFutureRows 幂等清理**共享库里被历史运行写进去的未来行与未来分区**。
+// purgeSharedFutureRows 幂等清理**共享库里历史运行写进去的未来分区**。
 //
-// 判据：`occurred_at >= 当月 + 2 个月` 视为"测试写进去的未来数据"（生产不会预写未来）。
+// ## 三条安全护栏（删数据前必须全部满足，缺一不可）
+//  1. **显式开关**：只有设置 `GUANJIN_ALLOW_TEST_CLEANUP=1` 才执行，否则 skip 并打印原因；
+//  2. **库名必须像测试库**：`SELECT current_database()` 必须匹配 `_test$`，否则 skip；
+//  3. **表名全部 schema 限定**（`public.audit_logs` / `public.audit_logs_pYYYYMM`），
+//     不依赖 `search_path`——避免"以为在删测试库、实际删了别的 schema"。
+//
+// ## 只做 DROP 分区，**不做 DELETE**
+// `DROP TABLE <partition>` 本身就带走该分区的行；为了 `DELETE` 而临时
+// `ALTER TABLE … DISABLE TRIGGER USER` 的代价是：PG 的触发器开关是**持久化表属性、跨连接可见**，
+// 一旦中途失败就会让 append-only 保护长期失效。少一条"能删真数据"的路径更安全。
+//
+// 判据：`occurred_at >= 当月 + 2 个月` 视为测试写进去的未来数据（生产不会预写未来）。
 // 返回清理前后的 `max(occurred_at)`，供 PR 与日志核对（要求：清完回到当月）。
 func purgeSharedFutureRows(db *gorm.DB) (before, after string, err error) {
 	ctx := context.Background()
+
+	// 护栏 ①：显式开关。
+	if os.Getenv("GUANJIN_ALLOW_TEST_CLEANUP") != "1" {
+		fmt.Fprintln(os.Stderr, "[audit.TestMain] skip future-partition cleanup: 未设置 GUANJIN_ALLOW_TEST_CLEANUP=1")
+		return "", "", nil
+	}
+
+	// 护栏 ②：库名必须是测试库（`..._test$`）。
+	var dbName string
+	if err := db.WithContext(ctx).Raw(`SELECT current_database()`).Scan(&dbName).Error; err != nil {
+		return "", "", fmt.Errorf("read current_database: %w", err)
+	}
+	if !strings.HasSuffix(dbName, "_test") {
+		fmt.Fprintf(os.Stderr, "[audit.TestMain] skip future-partition cleanup: 库名 %q 不以 _test 结尾\n", dbName)
+		return "", "", nil
+	}
+
 	var b, a struct{ Max *string }
-	_ = db.Raw(`SELECT to_char(max(occurred_at), 'YYYY-MM-DD"T"HH24:MI:SSOF') AS max FROM audit_logs`).Scan(&b).Error
+	_ = db.Raw(`SELECT to_char(max(occurred_at), 'YYYY-MM-DD"T"HH24:MI:SSOF') AS max FROM public.audit_logs`).Scan(&b).Error
 	if b.Max != nil {
 		before = *b.Max
 	}
-	// ① 未来分区**整表 drop**（顺带把里面的行带走；`audit_logs` 有 append-only 触发器，
-	// DELETE 会被 `forbid_mutation` 拒，所以先 drop 分区、再对残留行临时关触发器删）。
-	futureMonths := []string{}
-	if err := db.WithContext(ctx).Raw(`
-		SELECT to_char(d, 'YYYYMM') FROM generate_series(
-			date_trunc('month', now()) + interval '2 months',
-			date_trunc('month', now()) + interval '120 months',
-			interval '1 month') AS d`).Scan(&futureMonths).Error; err != nil {
-		return before, "", fmt.Errorf("list future months: %w", err)
-	}
-	for _, m := range futureMonths {
-		if err := db.WithContext(ctx).Exec(fmt.Sprintf(`DROP TABLE IF EXISTS audit_logs_p%s`, m)).Error; err != nil {
-			return before, "", fmt.Errorf("drop partition %s: %w", m, err)
+
+	// 护栏 ③：分区名**schema 限定**，逐个月 DROP（幂等：`IF EXISTS`）。
+	now := time.Now().UTC()
+	for i := 2; i <= 120; i++ {
+		m := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC).AddDate(0, i, 0)
+		name := fmt.Sprintf("public.audit_logs_p%s", m.Format("200601"))
+		if err := db.WithContext(ctx).Exec(fmt.Sprintf(`DROP TABLE IF EXISTS %s`, name)).Error; err != nil {
+			return before, "", fmt.Errorf("drop %s: %w", name, err)
 		}
 	}
-	// ② 其余残留未来行：临时关 append-only 触发器再删（与测试里 `allowMutationForTest` 同一手法）。
-	if err := db.WithContext(ctx).Exec(`ALTER TABLE audit_logs DISABLE TRIGGER USER`).Error; err == nil {
-		_ = db.WithContext(ctx).Exec(`
-			DELETE FROM audit_logs WHERE occurred_at >= date_trunc('month', now()) + interval '2 months'`).Error
-		_ = db.WithContext(ctx).Exec(`ALTER TABLE audit_logs ENABLE TRIGGER USER`).Error
-	}
-	// ② drop 未来分区（>= 当月 +2 个月）；只删 `audit_logs_pYYYYMM` 形式的子分区。
-	var names []string
-	if err := db.WithContext(ctx).Raw(`
-		SELECT c.relname FROM pg_class c
-		JOIN pg_inherits i ON i.inhrelid = c.oid
-		JOIN pg_class p ON p.oid = i.inhparent
-		WHERE p.relname = 'audit_logs'
-		  AND c.relname ~ '^audit_logs_p[0-9]{6}$'
-		  AND to_date(substring(c.relname from 14), 'YYYYMM') >= date_trunc('month', now()) + interval '2 months'
-		ORDER BY 1`).Scan(&names).Error; err != nil {
-		return before, "", fmt.Errorf("list future partitions: %w", err)
-	}
-	for _, n := range names {
-		if err := db.WithContext(ctx).Exec(fmt.Sprintf(`DROP TABLE IF EXISTS %s`, n)).Error; err != nil {
-			return before, "", fmt.Errorf("drop %s: %w", n, err)
-		}
-	}
-	_ = db.Raw(`SELECT to_char(max(occurred_at), 'YYYY-MM-DD"T"HH24:MI:SSOF') AS max FROM audit_logs`).Scan(&a).Error
+
+	_ = db.Raw(`SELECT to_char(max(occurred_at), 'YYYY-MM-DD"T"HH24:MI:SSOF') AS max FROM public.audit_logs`).Scan(&a).Error
 	if a.Max != nil {
 		after = *a.Max
 	}
