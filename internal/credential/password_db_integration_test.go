@@ -142,7 +142,7 @@ func TestAC_AUD_12_PasswordEnvelopeRoundTripsInDB(t *testing.T) {
 		t.Fatalf("解析 algo 失败：%v", err)
 	}
 	upper := strings.ToUpper(probe.Algo)
-	for _, banned := range []string{"SHA", "RSA", "MD5", "BCRYPT", "SCRYPT"} {
+	for _, banned := range []string{"SHA", "RSA", "MD5", "BCRYPT", "SCRYPT"} { // NEGATIVE-SHA-TEST（负向用例：断言这些算法必须被拒；扫描器只在测试文件认这个标记）
 		if strings.Contains(upper, banned) {
 			t.Fatalf("口令算法 %q 命中禁用算法 %q", probe.Algo, banned)
 		}

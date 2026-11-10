@@ -67,7 +67,7 @@ func TestGenRowLoadAndSign(t *testing.T) {
 	if _, err := VerifyJWT(key.Public, flip(parts[1])+"."+parts[1]+"."+parts[2]); err == nil {
 		t.Fatal("篡改 payload 必须失败")
 	}
-	badAlg := b64(`{"alg":"RS256","kid":"oidc-v1","typ":"JWT"}`) + "." + parts[1] + "." + parts[2]
+	badAlg := b64(`{"alg":"RS256","kid":"oidc-v1","typ":"JWT"}`) + "." + parts[1] + "." + parts[2] // NEGATIVE-SHA-TEST（负向用例：断言这些算法必须被拒；扫描器只在测试文件认这个标记）
 	if _, err := VerifyJWT(key.Public, badAlg); err == nil {
 		t.Fatal("非 SM3withSM2 必须拒绝（不得算法降级）")
 	}
