@@ -10,7 +10,7 @@ package protocol
 import (
 	"context"
 	"crypto/rand"
-	"crypto/sha256"
+	"crypto/sha256" // PKCE-S256（AC-AUD-12 唯一白名单，R5）
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -415,7 +415,7 @@ func verifyPKCE(challenge, verifier string) error {
 		// D3-E：缺/畸形 verifier → `INVALID_CODE_VERIFIER`（400），与"不匹配"分开。
 		return &protoError{code: httpx.CodeInvalidCodeVerifier}
 	}
-	sum := sha256.Sum256([]byte(verifier))
+	sum := sha256.Sum256([]byte(verifier)) // PKCE-S256（AC-AUD-12 唯一白名单，R5）
 	if base64.RawURLEncoding.EncodeToString(sum[:]) != challenge {
 		return &protoError{code: httpx.CodePKCEFailed}
 	}
