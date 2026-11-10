@@ -120,7 +120,8 @@ func (c *Chain) Append(ctx context.Context, db *gorm.DB, rec Record) ([]byte, er
 		// （哈希覆盖原值，才是"证据原样"）。
 		// ②‴ 上界守卫：`occurred_at` 不得晚于"链尾月份 + 1 个月"（链为空时取当月 + 1）。
 		{
-			limit := monthOf(time.Now().UTC()).AddDate(0, 1, 0)
+			// 链空时：允许写到"当月 + 1"个月（含），所以上界取"当月 + 2"的开区间。
+			limit := monthOf(time.Now().UTC()).AddDate(0, 2, 0)
 			if tailTime != nil {
 				limit = monthOf(*tailTime).AddDate(0, 2, 0) // 链尾月 + 1 个月（右开）
 			}

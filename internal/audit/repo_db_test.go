@@ -193,34 +193,71 @@ var lastUsedMonth atomic.Value // time.Time
 // 池里分配的月份可能已经**早于链尾**（撞下界守卫）或分区被别人 `DROP`（撞 23514）。
 // 每次现取链尾 → +1 个月 → `EnsurePartitions`（同事务取链锁，不与其他写者死锁）→
 // **断言分区真的存在**，把这类错误在"拿到月份那一刻"就炸掉，而不是等 INSERT 抛 23514。
-func freshMonth(t *testing.T, db *gorm.DB) time.Time {
-	t.Helper()
+// writeMonthBase 是"写入月/预建窗口"的唯一来源：`max(链尾月, 当月) + 1`。
+// `TestMain` 的预建起点在 #77 里也用它，避免两套起点（实测漏过 `2026-12`）。
+func writeMonthBase(db *gorm.DB) (time.Time, error) {
 	var tail sql.NullTime
 	if err := db.Raw(`SELECT max(occurred_at) FROM audit_logs`).Scan(&tail).Error; err != nil {
-		t.Fatalf("read tail: %v", err)
+		return time.Time{}, err
 	}
-	// 预建范围以 `TestMain` 里按 `max(occurred_at)+1` 算出的基准月为准。
-	lo := time.Date(time.Now().UTC().Year(), time.Now().UTC().Month(), 1, 0, 0, 0, 0, time.UTC)
-	if base, ok := poolBaseMonth.Load().(time.Time); ok && !base.IsZero() {
-		lo = base
-	}
-	hi := lo.AddDate(0, partitionMonthCount-1, 0) // 最后一个**已预建**月份
-	month := lo
+	base := monthOf(time.Now().UTC())
 	if tail.Valid && !tail.Time.IsZero() {
-		tm := time.Date(tail.Time.UTC().Year(), tail.Time.UTC().Month(), 1, 0, 0, 0, 0, time.UTC).AddDate(0, 1, 0)
-		if tm.After(month) {
-			month = tm
+		if tm := monthOf(tail.Time); tm.After(base) {
+			base = tm
 		}
 	}
-	// **不再用"进程内最大已用月份"**：`Append` 有上界守卫（occurred_at ≤ 链尾月 + 1），
-	// 而"分配了月份但没写入"的用例会让 lastUsed 跑到链尾前面两个月 → 被守卫拒（实测 `-count=3` 必红）。
-	// 现在月份恒为 `tail+1`：该月**必然没有任何行**（否则 tail 会更新），所以不会与别的用例共用。
-	// **运行期零 DDL**：不在这里建分区（`CREATE TABLE … PARTITION OF` 取 ACCESS EXCLUSIVE，
-	// 与并发 INSERT 的 ROW EXCLUSIVE 相撞会 40P01）。分区全部由 `TestMain` 预建；
-	// 越界就当场 Fatalf 并打出范围与链尾，不等到 INSERT 抛 23514。
-	if month.Before(lo) || month.After(hi) {
-		t.Fatalf("可用月份 %s 超出预建范围 [%s, %s]（链尾=%v）——调大 partitionMonthCount",
-			month.Format("200601"), lo.Format("200601"), hi.Format("200601"), tail)
+	return base.AddDate(0, 1, 0), nil
+}
+
+// sharedMonth 是进程内共享的当前写入月（一次算出、复用）：每条用例各领一个月会让
+// `-count=3` 把 120 个月窗口耗尽（实测 53 条 FAIL）。只有三条跨月用例调 `freshNextMonth`：
+// TestOccurredAtUpperBoundGuard / TestSameMonthMicrosecondRollbackIsAccepted / TestAnchorContinuitySameMonth。
+var sharedMonth atomic.Value // time.Time
+
+func freshMonth(t *testing.T, db *gorm.DB) time.Time {
+	t.Helper()
+	if m, ok := sharedMonth.Load().(time.Time); ok && !m.IsZero() {
+		return m
+	}
+	// **首次使用时按当前链尾现算**（不复用 TestMain 快照）：上次运行残留的未来行会把
+	// 链尾推高，用快照就会算出"落后于链尾"的月份（实测 8 条红）。
+	m, err := writeMonthBase(db)
+	if err != nil {
+		t.Fatalf("writeMonthBase: %v", err)
+	}
+	sharedMonth.Store(m)
+	assertInWindow(t, db, m)
+	return m
+}
+
+// freshNextMonth 领下一个月——仅限上面注释里的三条跨月用例。
+func freshNextMonth(t *testing.T, db *gorm.DB) time.Time {
+	t.Helper()
+	next := freshMonth(t, db).AddDate(0, 1, 0)
+	sharedMonth.Store(next)
+	assertInWindow(t, db, next)
+	return next
+}
+
+// assertInWindow 断言月份落在预建窗口内且分区存在（越界当场失败并打出链尾）。
+func assertInWindow(t *testing.T, db *gorm.DB, month time.Time) {
+	t.Helper()
+	lo, ok := poolBaseMonth.Load().(time.Time)
+	if !ok || lo.IsZero() {
+		var err error
+		if lo, err = writeMonthBase(db); err != nil {
+			t.Fatalf("writeMonthBase: %v", err)
+		}
+	}
+	if month.Before(lo) {
+		lo = month
+	}
+	hi := lo.AddDate(0, partitionMonthCount-1, 0)
+	var tail sql.NullTime
+	_ = db.Raw(`SELECT max(occurred_at) FROM audit_logs`).Scan(&tail).Error
+	if month.After(hi) {
+		t.Fatalf("写入月 %s 超出预建窗口上界 %s（链尾=%v）——调大 partitionMonthCount",
+			month.Format("200601"), hi.Format("200601"), tail)
 	}
 	name := fmt.Sprintf("audit_logs_p%s", month.Format("200601"))
 	var exists bool
@@ -228,9 +265,8 @@ func freshMonth(t *testing.T, db *gorm.DB) time.Time {
 		t.Fatalf("check %s: %v", name, err)
 	}
 	if !exists {
-		t.Fatalf("分区 %s 不在预建集合里（TestMain 应预建 %d 个月）", name, partitionMonthCount)
+		t.Fatalf("分区 %s 未被预建（TestMain 预建 %d 个月）", name, partitionMonthCount)
 	}
-	return month
 }
 
 // requirePartition 保证"该月分区存在"且**该月晚于全局链尾月份**，返回实际可用的月份。
