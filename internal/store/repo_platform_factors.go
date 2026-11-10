@@ -25,9 +25,31 @@ import (
 // 为什么键不存在时不报错、而按空集处理：平台级禁用默认就该是"没有任何因子被停"；
 // 首次写入时 `ON CONFLICT` 建行即可。这样新环境不需要额外的 seed 迁移（避免"忘了跑 seed
 // 就启停不了"的隐性前置条件）。
+//
+// **并发正确性靠 advisory 事务锁**（不是靠行锁）：键不存在时 `FOR UPDATE` 锁不到行，
+// 并发首次写入会各自读到空集 → 一次真实变更记两条审计 / 丢更新。详见
+// `platformFactorLockKey` 的注释与 AC-FLOW-05 判据 4 的用例。
 
 // KeyFactorsDisabled 是平台级因子启停的唯一存储位（`runtime_config`，jsonb 数组）。
 const KeyFactorsDisabled = "factors.disabled"
+
+// platformFactorLockKey 是"平台级因子启停"的 **advisory 事务锁**键（固定常量）。
+//
+// 为什么不能只靠 `SELECT … FOR UPDATE`（2026-11-11 缺陷根因）：行锁锁的是**行**，
+// 键还不存在时 `FOR UPDATE` 一行都锁不到 —— 20 个并发首次 PATCH 各自读到"空集"，
+// 于是同一次真实变更被记成**两条审计**（两条 `before=true`），enable/disable 交叉时还会丢更新。
+// advisory 锁不依赖"行存在"，也不依赖 key 的形态（单行聚合键 / 逐因子键都一样成立）。
+//
+// 为什么是 advisory 而不是"先 INSERT 占位再 FOR UPDATE"：占位写会让"同值幂等"的请求也建行，
+// 而且必须先写一个假值再读；advisory 锁零副作用、只在事务期持有。
+//
+// 多实例部署：`pg_advisory_xact_lock` 是**数据库级**的（所有后端共享），不是进程内锁，
+// 所以多副本同时 PATCH 也串行。
+//
+// **锁序固定：先 factors 锁，再 runtime_config 行锁，最后审计链自己的 advisory 锁**
+// （`audit.Chain.Append` 内部取 `chainLockKey`）。反向路径不存在，因此不会成环；
+// 换这个键等于让新旧进程用两把锁 → **静默丢更新**级别的错误，故写成常量并加注释。
+const platformFactorLockKey int64 = 2026111101
 
 // 错误：装配期与输入期。
 var (
@@ -96,6 +118,11 @@ func NewPlatformFactorReader(db *gorm.DB) (*PlatformFactorReader, error) {
 type PlatformFactorRepo struct {
 	*PlatformFactorReader
 	audit FactorAuditWriter
+
+	// afterRead 是**仅测试用**的注入点（生产恒为 nil）：在"读到当前集合"与"写回"之间插入
+	// 可控延迟，用来把"行不存在 → 并发都读到空集"的窗口张开，证明互斥真的挡住了竞态
+	// （与 `audit.Chain.afterTailRead` 同一手法：不靠"多跑几次碰运气"）。
+	afterRead func()
 }
 
 // NewPlatformFactorRepo 绑定读侧与审计写入器；缺任一即装配期失败（不留 nil 分支）。
@@ -140,13 +167,23 @@ func (r *PlatformFactorRepo) SetEnabled(ctx context.Context, in SetFactorEnabled
 	}
 
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		// 锁住这一行：并发两个 PATCH 时"读集合 → 改 → 写回"必须串行，
-		// 否则会丢更新（后写的覆盖先写的，且审计里两条 before/after 都算错）。
+		// ① **先取 advisory 事务锁**：行不存在时 `FOR UPDATE` 锁不到任何行（见常量注释），
+		//    并发首次 PATCH 会各自读到空集 → 一次真实变更记两条审计 / 丢更新。
+		//    这把锁与"行在不在"无关，且跨实例生效。
+		if err := tx.Exec(`SELECT pg_advisory_xact_lock(?)`, platformFactorLockKey).Error; err != nil {
+			return fmt.Errorf("store: lock platform factors: %w", err)
+		}
+		// ② 再锁行：串行化"读集合 → 改 → 写回"。行已存在时它是第一道防线，
+		//    行不存在时是空操作（真正的互斥由 ① 提供）——两道都留，防以后有人只删掉其中一道。
 		var current string
 		row := tx.Raw(`SELECT value::text FROM runtime_config WHERE "key" = ? FOR UPDATE`,
 			KeyFactorsDisabled).Scan(&current)
 		if row.Error != nil {
 			return MapError(row.Error)
+		}
+
+		if r.afterRead != nil {
+			r.afterRead()
 		}
 
 		disabled, err := decodeDisabledFactors(current)
