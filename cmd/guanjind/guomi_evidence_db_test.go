@@ -19,6 +19,7 @@ package main
 import (
 	"context"
 	"crypto/rand"
+	"database/sql"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -216,13 +217,20 @@ func TestAC_AUD_12_FullChainGuomi(t *testing.T) {
 	// ===== ②补：审计链真落库（"集成"那一半）=====
 	db := openTestDB(t)
 	occurredAt := time.Now().UTC()
-	// 既有链尾可能在未来月份（其它用例推高过）：取 max(now, 链尾月) 保证不撞下界守卫。
-	var tail *time.Time
-	if err := db.Raw(`SELECT max(occurred_at) FROM audit_logs`).Scan(&tail).Error; err != nil {
-		t.Fatalf("读链尾: %v", err)
+	// 既有链尾可能在未来月份（其它用例推高过）：取 max(now, 链尾) 保证不撞下界守卫。
+	//
+	// **空值语义必须分开，不许混成零值**：`max(occurred_at)` 在**空表**上返回 SQL NULL，
+	// 那是"这条链还没有任何审计事实"这一合法初始状态（用例照跑，`occurred_at` 保持 now）；
+	// 而**查询失败**（表不存在 / 连接断）必须当场炸——把它当"无数据"会让这条证据用例
+	// 在库坏掉时照样绿，那是最坏的假绿。所以用 `sql.NullTime` + `Row().Scan`：
+	// `err != nil` = 查询失败，`!Valid` = 空表（CI 首跑就是这么红的：
+	// `Scan error … unsupported Scan, storing driver.Value type <nil> into type *time.Time`）。
+	var tail sql.NullTime
+	if err := db.Raw(`SELECT max(occurred_at) FROM audit_logs`).Row().Scan(&tail); err != nil {
+		t.Fatalf("读链尾失败（查询失败；空表应返回 NULL 且 tail.Valid=false，不该报错）：%v", err)
 	}
-	if tail != nil && occurredAt.Before(*tail) {
-		occurredAt = *tail
+	if tail.Valid && occurredAt.Before(tail.Time) {
+		occurredAt = tail.Time
 	}
 	rec := audit.Record{
 		ID:         uuid.New(),
