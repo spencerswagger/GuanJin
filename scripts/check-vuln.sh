@@ -24,7 +24,6 @@
 # 用法：
 #   ./scripts/check-vuln.sh                 # 真扫本仓（CI 用法）
 #   ./scripts/check-vuln.sh --self-test     # 正控：临时树注入已知漏洞依赖，必须判红并点名
-#   ./scripts/check-vuln.sh --db-only       # 只验漏洞库新鲜度（排查用）
 #
 # 依赖：govulncheck（钉 v1.1.4）、trivy（钉 0.76.2）、python3
 set -uo pipefail
@@ -50,11 +49,13 @@ govulncheck -version 2>&1 | sed -n '1,4p' | sed 's/^/  /'
 trivy --version 2>&1 | sed -n '1,2p' | sed 's/^/  /'
 
 # ---------- 漏洞库新鲜度 ----------
-check_db_freshness() {
-  local out age_trivy age_govuln
+# 注意顺序：**先扫再判龄**。trivy / govulncheck 的"库版本"只有在库被拉下来之后才可读，
+# 冷启动的 runner 上先读 `version` 只会得到空 → 会误判成"库没拉下来"。所以两个判龄函数都在真扫之后调用。
+trivy_db_age() {
+  local out
   out="$(trivy version 2>/dev/null || true)"
-  printf '%s\n' "$out" | sed -n '/Vulnerability DB/,$p' | sed 's/^/  /'
-  age_trivy="$(printf '%s' "$out" | python3 -c '
+  printf '%s\n' "$out" | sed -n '/Vulnerability DB/,$p' | sed 's/^/  /' >&2
+  printf '%s' "$out" | python3 -c '
 import sys,re,datetime
 t=sys.stdin.read()
 m=re.search(r"UpdatedAt:\s*(\S+ \S+)", t)
@@ -65,14 +66,11 @@ try:
 except Exception:
     print("unparsable"); raise SystemExit
 print(int((datetime.datetime.utcnow()-d).total_seconds()//86400))
-')"
-  case "$age_trivy" in
-    missing|unparsable) fail "读不到 trivy 漏洞库的 UpdatedAt（库没拉下来 = 未验证 = 红）" ;;
-  esac
-  [ "$age_trivy" -le "$MAX_DB_AGE_DAYS" ] || fail "trivy 漏洞库已 $age_trivy 天未更新（上限 $MAX_DB_AGE_DAYS 天）→ 库太旧等于没扫"
-  echo "  [OK] trivy 库年龄 ${age_trivy} 天（上限 ${MAX_DB_AGE_DAYS}）"
+'
+}
 
-  age_govuln="$(govulncheck -version 2>&1 | python3 -c '
+govuln_db_age() {
+  govulncheck -version 2>&1 | python3 -c '
 import sys,re,datetime
 t=sys.stdin.read()
 m=re.search(r"DB updated:\s*(\d{4}-\d{2}-\d{2})", t)
@@ -80,16 +78,16 @@ if not m:
     print("missing"); raise SystemExit
 d=datetime.datetime.strptime(m.group(1), "%Y-%m-%d")
 print(int((datetime.datetime.utcnow()-d).total_seconds()//86400))
-')"
-  case "$age_govuln" in
-    missing|unparsable) fail "读不到 govulncheck 漏洞库的 DB updated（库没拉下来 = 未验证 = 红）" ;;
-  esac
-  [ "$age_govuln" -le "$MAX_DB_AGE_DAYS" ] || fail "govulncheck 漏洞库已 $age_govuln 天未更新（上限 $MAX_DB_AGE_DAYS 天）"
-  echo "  [OK] govulncheck 库年龄 ${age_govuln} 天"
+'
 }
 
-check_db_freshness
-[ "$MODE" = "--db-only" ] && { echo "[OK] 漏洞库新鲜度检查通过（--db-only）"; exit 0; }
+assert_fresh() { # $1=名字 $2=年龄
+  case "$2" in
+    missing|unparsable) fail "$1 漏洞库读不到版本信息（库没拉下来 = 未验证 = 红）" ;;
+  esac
+  [ "$2" -le "$MAX_DB_AGE_DAYS" ] || fail "$1 漏洞库已 $2 天未更新（上限 $MAX_DB_AGE_DAYS 天）→ 库太旧等于没扫"
+  echo "  [OK] $1 库年龄 $2 天（上限 $MAX_DB_AGE_DAYS）"
+}
 
 # ---------- 正控：注入已知漏洞依赖，必须判红并点名 ----------
 if [ "$MODE" = "--self-test" ]; then
@@ -177,6 +175,8 @@ echo "== ① govulncheck（符号级可达性；可达即红）=="
 grc=$?
 grep -E '^(Vulnerability #|  Module:|    Found in:|    Fixed in:)' "$WORK/govuln.log" | sed 's/^/  /' || true
 tail -4 "$WORK/govuln.log" | sed 's/^/  /'
+
+assert_fresh govulncheck "$(govuln_db_age)"
 
 case "$grc" in
   0) echo "  [OK] govulncheck：0 条可达漏洞" ;;
@@ -278,6 +278,8 @@ trivy fs --scanners vuln --severity "$SEVERITY" --exit-code 1 --ignorefile "$TRI
   --format table "$ROOT" > "$WORK/trivy.log" 2>&1
 trc=$?
 grep -E '^(go\.mod|web/package-lock\.json|Total:|│ )' "$WORK/trivy.log" | sed 's/^/  /' | head -40 || true
+assert_fresh trivy "$(trivy_db_age)"
+
 case "$trc" in
   0) echo "  [OK] trivy：HIGH/CRITICAL 0 条（白名单见 .trivyignore.yaml）" ;;
   1) cat "$WORK/trivy.log"; fail "trivy：存在未白名单的 HIGH/CRITICAL（见上表；白名单必须逐条给理由+到期日）" ;;
