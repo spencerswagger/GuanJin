@@ -474,6 +474,32 @@
 
 ---
 
+## D20 `audit_logs` 补一条链序索引：**加**，现在加（`(created_at, id)`，迁移 `000019`，零代码改动）
+
+> **触发**：Edge 修「跨月锚点被当接续判据」的误报（PR #88 / main `6ffa21f`）时发现——`audit_logs` **没有任何 `created_at` 索引**，而 `Append` 的链尾读（`internal/audit/repo.go` 的 `tailSQL`：`ORDER BY created_at DESC, id DESC LIMIT 1 FOR UPDATE`）与新增的 `TailTagBefore`（`repo.go:224`）都按 `created_at` 排序。他按约束没擅自加迁移，要裁定。**本条只给决议与索引定义，迁移由 Edge 落；不在本 PR 写 SQL 文件、不改代码。**
+
+- **结论：加，本切片就加。** 索引定义（唯一一条）：
+  ```sql
+  CREATE INDEX audit_logs_created_id_idx ON audit_logs (created_at, id);
+  ```
+  迁移 **`000019_audit_logs_created_id_idx.{up,down}.sql`**（现最大 `000018`；`000016` 是"索引单开一条"的先例）：`up` = 上面那句，`down` = `DROP INDEX IF EXISTS audit_logs_created_id_idx;`。**在父表上建**，PG 会自动在每个现有分区上建同名子索引，并作为**分区索引模板**自动套用到 `EnsurePartitions` 将来新建的分区 → **`EnsurePartitions` 不用改、`Append`/`TailTagBefore` 一行代码都不用改**（两句 SQL 已经按 `(created_at DESC, id DESC)` / `(created_at DESC, id DESC)` 写好了，规划器自己会改走索引）。
+
+- **理由落在「锁内路径的写放大与尾延迟」，不是泛泛性能**：`Append` 的链尾读在 **`pg_advisory_xact_lock(chainLockKey)` 之内**——它是**全局串行点**，同一时刻只有一个审计写者，锁持有时长 = 全局审计写吞吐的倒数。当前这条读没有任何可用索引 → 规划器只能 `Seq Scan`（无 `occurred_at` 谓词 ⇒ **不剪枝，扫全部存活分区**）+ `Sort`（top-N 也必须吃完全部输入行）+ `Limit 1`，于是**每写一条审计，都要把留存期内（365 天）的全部审计行读一遍，且全程持锁**。代价随留存天数**线性**增长，不是常数：今天表小看不出，M1 之后每个月都比上个月慢一档，而这是"事后无法补"的写法——索引能补，但补的时机越晚、锁窗口越长。加上索引后该读变成**每分区一次 btree 反向下降 + `LIMIT 1`**（分区数由留存决定，12–13 个封顶），锁内只留 O(log n)。附带：`FOR UPDATE` 的语义不变（仍是"先 advisory、后行锁"，只锁命中那一行），**断电顺序/链序口径一个字未动**。
+
+- **四件形态确认（逐条给结论）**
+  1. **不要 `DESC`**：`(created_at DESC, id DESC)` 与 `(created_at, id)` 对 `ORDER BY created_at DESC, id DESC` 等价（btree 可反向扫），但后者还能顺带服务升序扫描；写库里少一处无意义差异。
+  2. **不要 `occurred_at` / `month` / `partition` 前缀**：`occurred_at` 是**分区键、不是月列**，"分区前缀"在分区表上不成立（每个分区自带索引）；而一旦把 `occurred_at` 放前导列，**恰恰服务不了锁内那条读**——它没有 `occurred_at` 谓词。`Load` / `TailTagBefore` 的 `occurred_at` 区间靠**分区剪枝**（落到 1 个分区）已经足够，它们跑在写锁外、由定时任务驱动，不构成风险；若将来 `EXPLAIN` 证明校验侧排序成为问题，**另开一条**（不塞进本条）。
+  3. **不要 `CONCURRENTLY`**：①`CREATE INDEX CONCURRENTLY` **不能在事务块内执行**（PG 直接报 `cannot run inside a transaction block`），而 `golang-migrate` 的 pgx 驱动**默认把每个版本包在事务里** → 写进迁移会当场失败；②未上线、表小，普通 `CREATE INDEX` 的 `SHARE` 锁窗口以毫秒计。若**上线后**要加同类索引，走 CONCURRENTLY 的运维脚本（不入 `migrations/`），并按技术栈 §6.2 登记为流程差异。
+  4. **不要 partial / 不要第二条**：链尾读对全行集无谓词（partial 会漏链尾，直接断链级错误）；一条索引已覆盖锁内路径，第二条只增加每写一次的索引维护成本（右端顺序插入代价小但非零）。
+
+- **否决的替代方案（两次被提出的两个）**：①**链尾 tag 缓存 / 落 `runtime_config`**——把"链尾"变成**第二份真源**：事务回滚、进程在"写锚点后、插入前"崩、或别名写入路径漏更新，都会让缓存与真实链尾分叉，而**分叉的表现是"链看着正常、事后整链复核才发现断"**（这类错误没有即时信号）→ 用安全换性能，不采纳；且它救不了 `TailTagBefore` / `Load` 的排序路径。②**只在内存/进程内缓存**——多副本各有一份，advisory 锁下的"链尾"必须是**库里的**那一行，否则分叉。**若不加，先劣化的路径**（写进本条备查）：先是**审计写 p99**（全局串行点），随后是 `audit_anchor_age_seconds`（锚点任务与写入抢同一把锁排队）。
+
+- **账目/契约面：零改动**。纯性能索引，不改表/列/约束/错误码/端点 → **不进 CH**（按 P8③ 判据：不让业务方多出任何一种配置方式）；`acceptance-criteria.md` 一字未动，`AC-AUD-*` 的判据口径不变。**举证归 Gate**：Edge 落 `000019` 后，用 `EXPLAIN (ANALYZE, BUFFERS)` **前后对照**贴 plan，断言「锁内链尾读 = Index Scan（Backward）/ Merge Append，不再是 Seq Scan + Sort」；`FOR UPDATE` 仍在、并发分叉反证（`disableChainLock`/`disableRowLock` 两个注入点）仍应红。
+
+- **归属与顺序**：**Edge** 落 `000019`（up/down 各一份，注释写清"服务哪条 SQL、为什么单开一条、为什么不用 CONCURRENTLY"）；**Gate** 出 plan 前后对照；**Core 不参与**（`Append` 零改动）。本条与 D19 同批回传、**分属两条 DEC**。
+
+---
+
 ## 契约变更清单（对外可见）—— 状态：**CH-1~CH-5 已追认（经 hugo 追认，2026-11-02）；CH-6 为内部口径；CH-7 已裁定；CH-8 待追认（2026-11-04）；CH-9 待追认（2026-11-10）**
 
 > 本表只收**对外可见**的变更（影响业务系统、SDK、前端或对外错误码的）。基线 `/docs/baseline/` 一个字不改，这些变更以本表为准并在**下版契约文档**（OpenAPI + `sdk-contract.md` + 页面规格口径）一次性落盘；落盘时机 = 全部 M1 判据回填后、M1 编码前。**本表状态：CH-1~CH-5 = 已追认（经 hugo 追认，2026-11-02，记录法见 P8）；CH-6 = 内部口径、无需追认；CH-7 = 已裁定；CH-8 = 待追认（2026-11-04）；CH-9 = 待追认（2026-11-10，SLO 通知）。** 后续新增变更一律按 **P8②** 追加行（编号只增不重排）；作废条目改「已撤回」并保留原行。
@@ -575,6 +601,7 @@
 | `D4-C(5)` | D4 裁定 C 的第 (5) 条 | 链序 = `created_at`；`occurred_at` 原样并**参与 `integrity_tag`**；二者不同不算缺陷；下界守卫防跨月破链（完整裁定 `notes/audit-chain-order-2026-11-10.md`） |
 | `D17` | §**D17** | 能力矩阵与 AC 账目的计数单位：`GJ-CAP-17/20/21` **无 AC 条目**、能力矩阵记 `DEFERRED(M5)`/`N/A(M2)`、与 `AC-AGENT-01~03` **不得双计**、22 能力与 90 判据**不得换算**；`90 = 83/0/0/6/0/1` 不受影响 |
 | `D19` | §**D19** | `disabled_factors` 的物理落点 = `login_policies`（client 级 `client_override`、回落 `tier_default`），`clients` 无此列；`接口清单:211`/`页面规格:533` 的"来自 clients"是笔误、只改措辞不进 CH；平台级开关在 `runtime_config` |
+| `D20` | §**D20** | `audit_logs` 加 `audit_logs_created_id_idx (created_at, id)`（迁移 `000019`，父表建、自动套用新分区、零代码改动）；不加 DESC/`occurred_at` 前缀/`CONCURRENTLY`/partial；否决"链尾 tag 落 `runtime_config`"缓存方案；不进 CH、判据不动 |
 | `D16①②③④⑤` | §**D16** | 数据面 S8 收口：断言 claim 逐项来源（`aud`=路由命中 client、`roles`=活跃 `role_bindings`、`exp=iat+60`、`jti`=UUIDv7）、准入基准=`login_policies.min_acr`、路由规则冻结（R11①）、SLO 通知与 `details.flow` 字段集登记 R12/R13 |
 | `CH-8` | 契约变更清单 | `§3.3.1` 响应新增 `attempts_left`（纯加字段，**待追认**；追认前不作判据依据） |
 | `D6(1)(6)` + `F0-5` | D6 裁定 (1)/(6) + F0 第 5 条 | SDK 配置 **29 键**（缺号 #7/#16/#17 不补）+ 环境变量逐段机械转换 |
