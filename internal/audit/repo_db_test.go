@@ -18,6 +18,8 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
+	"github.com/spencerswagger/guanjin/internal/testdb"
+
 	"github.com/spencerswagger/guanjin/internal/crypto"
 	"github.com/spencerswagger/guanjin/internal/store"
 )
@@ -336,10 +338,14 @@ func cleanupMonth(t *testing.T, db *gorm.DB, month time.Time) {
 	t.Helper()
 	to := month.AddDate(0, 1, 0)
 	t.Cleanup(func() {
-		_ = db.Exec(`DELETE FROM audit_logs WHERE occurred_at >= ? AND occurred_at < ?`, month, to).Error
+		testdb.RequireTestDB(t, db) // 删改类动作的入口护栏（库名必须 _test）
+		// **schema 限定**，不依赖 search_path（隔离开启时是 audit_test）。
+		_ = db.Exec(fmt.Sprintf(`DELETE FROM %s.audit_logs WHERE occurred_at >= ? AND occurred_at < ?`,
+			auditSchemaForTests), month, to).Error
 		// 锚点也要清：跨运行复用同一"测试月份"时，旧锚会让"空月份不写锚"的断言假红
 		// （实测踩到：上一轮跑过的月份留下了 anchor，这一轮读到它）。
-		_ = db.Exec(`DELETE FROM runtime_config WHERE key = ?`, AnchorKey(month)).Error
+		_ = db.Exec(fmt.Sprintf(`DELETE FROM %s.runtime_config WHERE key = ?`, auditSchemaForTests),
+			AnchorKey(month)).Error
 	})
 }
 
@@ -359,7 +365,9 @@ func cleanupMonth(t *testing.T, db *gorm.DB, month time.Time) {
 // 用例结束后立刻恢复，确保不留后门。
 func allowMutationForTest(t *testing.T, db *gorm.DB, month time.Time) {
 	t.Helper()
-	name := fmt.Sprintf("audit_logs_p%s", month.Format("200601"))
+	// **安全护栏**：这里要关 append-only 触发器造"被篡改的库"，属于删改类动作。
+	testdb.RequireTestDB(t, db)
+	name := fmt.Sprintf("%s.audit_logs_p%s", auditSchemaForTests, month.Format("200601"))
 	stmt := fmt.Sprintf(`ALTER TABLE %s DISABLE TRIGGER USER`, name)
 	if err := db.Exec(stmt).Error; err != nil {
 		t.Fatalf("disable trigger on %s: %v", name, err)
