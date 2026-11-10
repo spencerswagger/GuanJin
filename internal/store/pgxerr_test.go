@@ -88,6 +88,9 @@ func TestUnmappedErrorsStayDefects(t *testing.T) {
 		pgErr(sqlStateRestrictViolation, ""),
 		pgErr(sqlStateUndefinedTable, ""),
 		pgErr(sqlStateUndefinedColumn, ""),
+		// 23514 但**没有约束名**：不是 CHECK 违反（PG 对"落不进任何分区"也用 23514），
+		// 属部署缺陷 → 必须保持未映射（400 会把它说成"改参数重试"）。
+		pgErr(sqlStateCheckViolation, ""),
 	} {
 		mapped := MapError(err)
 		var e *Error
@@ -98,8 +101,11 @@ func TestUnmappedErrorsStayDefects(t *testing.T) {
 			t.Errorf("%s/%s must stay unmapped (defect), got code %q",
 				e.SQLState, e.Constraint, e.Code)
 		}
+		// 这几类的**输入本身就没有约束名**（只增表触发器 / schema 漂移 / 无分区 23514），
+		// 所以不能要求"未映射错误必须留下约束名"。
 		if ConstraintOf(mapped) == "" && e.SQLState != sqlStateUndefinedTable &&
-			e.SQLState != sqlStateUndefinedColumn && e.SQLState != sqlStateRestrictViolation {
+			e.SQLState != sqlStateUndefinedColumn && e.SQLState != sqlStateRestrictViolation &&
+			e.SQLState != sqlStateCheckViolation {
 			t.Errorf("unmapped error must keep the constraint name for diagnosis: %v", mapped)
 		}
 	}
