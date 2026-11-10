@@ -1,0 +1,18 @@
+# trivy 白名单（AC-ENG-07 · 依赖坐标侧）
+#
+# 规则：
+#   1. 每条必须带 `statement`（为什么现在不能修）+ `expired_at`（到期即重新判红）；
+#   2. `id` 必须是具体漏洞 ID（GHSA/CVE），**不许**按包名/整类忽略；
+#   3. 到期后 trivy 会重新判红——修掉或续期（续期要改这一行，diff 里看得见）。
+#
+# 当前条目 = 1 条。
+vulnerabilities:
+  - id: GHSA-g2v6-rqmx-r4w6
+    paths:
+      - web/package-lock.json
+    statement: >-
+      @vue/server-renderer 3.5.13（vue 3.5.13 的传递依赖）。本项目前端是纯 CSR：
+      vite build 出静态产物后 go:embed 由后端同端口托管，**没有 SSR 入口**，
+      该漏洞的触发面（服务端渲染时属性名黑名单漏 CR）在本项目不存在可达路径。
+      修复需把 vue 升到 3.5.42+（连带 server-renderer），归前端（Vue）在下一个依赖升级 PR 里做。
+    expired_at: 2026-12-15

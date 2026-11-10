@@ -13,7 +13,11 @@ name: ci
 #     并比对 `INFO stats.total_commands_processed` 的增量；任一不满足即判红（真 Redis 未被使用 = 未验证 = 红）。
 #   - migrate CLI 版本**单一来源** = Makefile 的 `MIGRATE_VERSION`（v4.19.1）：job 里跑 `make migrate-tool`
 #     装到 `./bin`，迁移命令走 `make migrate-up`，顺带把「PATH 找不到 migrate → 回退 ./bin/migrate」这条回退路径在 CI 里验到。
-#   - **合并门禁包含 integration**：`go` / `race` / `web` / `integration` / `sdk` 五个 job 全绿才许合入 main。
+#   - **合并门禁包含 integration**：`go` / `race` / `web` / `integration` / `sdk` / `vuln` 六个 job 全绿才许合入 main。
+#   - **vuln 是 AC-ENG-07 的依赖漏洞门禁**（govulncheck 可达漏洞 + trivy HIGH/CRITICAL）：
+#     fail-closed——不加 continue-on-error、不降 severity、不整类 ignore；白名单逐条带理由+到期日
+#     （docs/qa/vuln-allowlist.tsv / .trivyignore.yaml），到期或失效由脚本判红；
+#     与 `check-guomi-algorithms.sh` 零重叠（那条扫源码里的算法标识，这条扫依赖坐标上的 CVE/GO-ID）。
 #   - **sdk 是 Java 8 双门禁**（docs/sdk-contract.md §5.1.1）：JDK 17 走 release=8 + **真实 JDK 8** 各跑一遍；
 #     `jti` 防重放**必须连真 Redis**（不许 mock），有 SKIP 即红。
 
@@ -246,6 +250,43 @@ jobs:
           COVERAGE_TAGS=integration COVERAGE_PROFILE=integration-cover.out \
             COVERAGE_EXTRA_PROFILE=audit-serial-cover.out COVERAGE_MIN=60 \
             ./scripts/coverage-gate.sh | tee integration-coverage.txt
+
+  vuln:
+    # AC-ENG-07：依赖漏洞门禁（govulncheck 可达漏洞 + trivy HIGH/CRITICAL）。**fail-closed**。
+    # 判据原文：「govulncheck / trivy 必须真跑，发现 HIGH/CRITICAL 判红」。
+    # 为什么 govulncheck 不分级：Go 官方 OSV 不带 CVSS，且 govulncheck 只报**代码真能调用到**的漏洞
+    # （符号级可达性）——比"按分数筛"更严，所以策略是"可达即红，除非逐条白名单+理由+到期日"。
+    runs-on: ubuntu-latest
+    env:
+      CGO_ENABLED: '0'
+      GOVULNCHECK_VERSION: v1.1.4
+      TRIVY_VERSION: 0.76.2
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          # 安全扫描刻意用 1.25 线**最新补丁**（不是 go.mod 的 1.25.0）：标准库漏洞只在补丁里修，
+          # 用旧补丁扫出来的 stdlib 红会掩盖真问题；`check-latest` 保证工具链不是三天前的。
+          go-version: '1.25'
+          check-latest: true
+          cache: false
+      - name: 装扫描器（版本钉死；升级工具 = 一次显式改动，必须进 PR）
+        run: |
+          set -euo pipefail
+          mkdir -p bin
+          GOBIN="$PWD/bin" go install "golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}"
+          TARBALL="trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
+          curl -sSfL -O "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/${TARBALL}"
+          curl -sSfL -O "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_checksums.txt"
+          grep " ${TARBALL}$" "trivy_${TRIVY_VERSION}_checksums.txt" | sha256sum -c -
+          tar -xzf "$TARBALL" -C bin trivy
+          echo "$PWD/bin" >> "$GITHUB_PATH"
+      - name: 工具链版本（证据行：扫描用的 Go 补丁版必须打出来）
+        run: go version
+      - name: 漏洞库新鲜度 + 依赖漏洞门禁（fail-closed）
+        run: ./scripts/check-vuln.sh
+      - name: 正控（临时树注入已知漏洞依赖 → 必须判红并点名 id/坐标；负控证明版本敏感）
+        run: ./scripts/check-vuln.sh --self-test
 
   sdk:
     # Java 8 SDK（sdk/java）：单测 + **真 Redis** 集成用例 + Java 8 机械门禁。
