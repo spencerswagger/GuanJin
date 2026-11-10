@@ -448,6 +448,58 @@
 
 ---
 
+## D19 概念名 vs 物理列：`disabled_factors` 的权威落点 = `login_policies`（2026-11-11，实现与判据不变，只登记措辞）
+
+> **触发**：Spec 实读基线时发现**既有文本冲突**——`接口清单:211`（`GET /authorize/flow` 响应要点）写「`disabled_factors` 来自 `clients` 的"禁用因子"」，而数据模型的 DDL 把该列放在 `login_policies`（`数据模型:770`）。**本条只登记权威判定与影响面：不改基线正文、不改代码、不动判据、不动账目。**（编号说明：**D18** 由 draft PR #72「无 client 上下文时 `ACR_INSUFFICIENT` 不带 `details.flow`」占用、待 spencer 拍板，本条顺延为 **D19**，不重排、不占 D18。）
+
+- **一句话结论：不是设计变更，是接口文档的措辞滞后（笔误）；物理落点 = `login_policies.disabled_factors`，实现与判据均以它为准，不改判。** 依据全在基线内，且直指这一条：
+  1. **索引 §2-16（`设计基线索引:130`，本文裁定权威顺序的第 ① 层）**：「门槛项的存储位置 = 门槛项落 `login_policies`；`clients` 只存 `tier`」。
+  2. **数据模型 §3.9（`数据模型:734`/`:739`）**：`login_policies` 的职责原文是「把预设档位清单第三节 A~E 的门槛项落成数据」；`disabled_factors` 就在该表（`:770`），语义注（`:805`）同节。**`clients` DDL（`:684`）没有任何 `disabled_factors` 列** → 接口那句在数据契约里无落点。
+  3. **数据模型 §4 的 I9（`:1042`）**：「门槛一律查 `login_policies`」——同一条纪律的另一种写法。
+  - **实现已一致**：`migrations/000012_create_login_policies.up.sql:36`；读取 `internal/store/repo_admission.go`（`client_override` 优先 → 同档 `tier_default` 回落 → 两侧都无即配置缺陷）；Descriptor 字段注释 `internal/flow/descriptor.go:129`、`internal/flow/orchestrator.go:147`。
+  - **接口那句的正确读法**：`clients` 是**概念归属**（"按业务系统配置"），`login_policies` 是**物理落点**（`scope='client_override'` 行；缺行回落同档 `tier_default`）。管理面 `GET/POST /api/v1/clients` 的 `disabled_factors` 字段外形（`接口清单:449`/`:455`）**不算冲突**：那是 client 资源的投影，后端由 `login_policies` 供数，对外形状零变化。
+
+- **影响面（三处，结论都是"不变"）**
+  1. **前端**：Flow Descriptor 的 `disabled_factors[]` 由平台计算下发，`页面规格 §4.1` 的 TS 类型与 `web/src/types/flow.ts:47` **一个字不改**；管理后台"客户端页"（A5）编辑的 `disabled_factors` 落 `login_policies.client_override`，界面与接口字段均无变化。**`页面规格:533` 的注释（"来自 `clients` 的禁用因子"）与 `接口清单:211` 是同一处笔误**，同批对齐。
+  2. **测试断言**：`AC-FLOW-04`（`acceptance-criteria.md:135`：不进 `steps[]`、不计入 `current_acr`、直发 → `FACTOR_DISABLED`）、`AC-FLOW-07`（`:138`：全禁 + 目标 AAL2 → 200 + `terminal_state='unreachable'`）以及 Spec 已按本条完成的 `AC-FLOW-05`/`AC-FLOW-09` 判据，全部建立在 `login_policies` 上；夹具要直改库必须写 `login_policies`（`scope='client_override'`），写 `clients` 无列可写。**若改判到 `clients`**：需新迁移加列 + 改 store/flow 两处读取 + 上述断言整套失效 → **不采用**。
+  3. **接口文档**：只有 `接口清单:211`（+ `页面规格:533` 同一处注释）的措辞需更正；`数据模型` 正文不动。
+
+- **平台级 ≠ 本条（顺手纠正一处转述）**：`AC-FLOW-05` 里的「平台级开关」**不在** `login_policies`——基线把它落在 **`runtime_config`**（`数据模型:1071`：`factors.<type>.enabled=true`），与 client 级禁用**互不覆盖、效果取并集**；`login_policies` 只承载 **client 级**（含 `tier_default` 回落）。此前群聊里「平台级开关 = `login_policies`」的转述应更正为「**平台级 = `runtime_config`，client 级 = `login_policies`**」。附事实：`/api/v1/factors/{type}` 端点当前 main **未实现**（`cmd/guanjind/main.go` 未挂 `/api/v1/factors`），`AC-FLOW-05` 的实现侧仍依赖该端点与 `factors.<type>.enabled` 键；**本条不改变它的账目状态**。
+
+- **已知行为（只登记，不改）**：现实现是**整行胜出**——`client_override` 存在即整份取它的 `disabled_factors`，**不与 `tier_default` 合并**。当前 `000017` 三档 seed 都是 `{}`，故今日无差异；一旦某档 `tier_default` 设了非空禁用集，`client_override` 会遮蔽它。要不要改成并集属**行为变更**，另开裁定（不在本条）。
+
+- **基线处理：不改正文，也不进 CH**。按 **P8③** 的判据（"是否让业务方能用基线原本不允许的方式配置？"），本条对外可见面——Descriptor 字段名、管理 API 字段外形、错误码——**一个字不变**，属**措辞纠错**，不占 CH 编号；`/docs/baseline/` 一个字不改（本文效力条款），更正随**下版契约文档一次性落盘**（与 CH-1~CH-9 同批，时机 = M1 判据回填后）。
+
+- **归属**：Spec（判据沿用本条、不另立表述）；Vue（不改数据源与字段）；Gate（断言/夹具只写 `login_policies`，不写 `clients`）；Core/Edge（`LoadAdmissionPolicy` 路径与注释已一致，**无需改代码**）。
+
+---
+
+## D20 `audit_logs` 补一条链序索引：**加**，现在加（`(created_at, id)`，迁移 `000019`，零代码改动）
+
+> **触发**：Edge 修「跨月锚点被当接续判据」的误报（PR #88 / main `6ffa21f`）时发现——`audit_logs` **没有任何 `created_at` 索引**，而 `Append` 的链尾读（`internal/audit/repo.go` 的 `tailSQL`：`ORDER BY created_at DESC, id DESC LIMIT 1 FOR UPDATE`）与新增的 `TailTagBefore`（`repo.go:224`）都按 `created_at` 排序。他按约束没擅自加迁移，要裁定。**本条只给决议与索引定义，迁移由 Edge 落；不在本 PR 写 SQL 文件、不改代码。**
+
+- **结论：加，本切片就加。** 索引定义（唯一一条）：
+  ```sql
+  CREATE INDEX audit_logs_created_id_idx ON audit_logs (created_at, id);
+  ```
+  迁移 **`000019_audit_logs_created_id_idx.{up,down}.sql`**（现最大 `000018`；`000016` 是"索引单开一条"的先例）：`up` = 上面那句，`down` = `DROP INDEX IF EXISTS audit_logs_created_id_idx;`。**在父表上建**，PG 会自动在每个现有分区上建同名子索引，并作为**分区索引模板**自动套用到 `EnsurePartitions` 将来新建的分区 → **`EnsurePartitions` 不用改、`Append`/`TailTagBefore` 一行代码都不用改**（两句 SQL 已经按 `(created_at DESC, id DESC)` / `(created_at DESC, id DESC)` 写好了，规划器自己会改走索引）。
+
+- **理由落在「锁内路径的写放大与尾延迟」，不是泛泛性能**：`Append` 的链尾读在 **`pg_advisory_xact_lock(chainLockKey)` 之内**——它是**全局串行点**，同一时刻只有一个审计写者，锁持有时长 = 全局审计写吞吐的倒数。当前这条读没有任何可用索引 → 规划器只能 `Seq Scan`（无 `occurred_at` 谓词 ⇒ **不剪枝，扫全部存活分区**）+ `Sort`（top-N 也必须吃完全部输入行）+ `Limit 1`，于是**每写一条审计，都要把留存期内（365 天）的全部审计行读一遍，且全程持锁**。代价随留存天数**线性**增长，不是常数：今天表小看不出，M1 之后每个月都比上个月慢一档，而这是"事后无法补"的写法——索引能补，但补的时机越晚、锁窗口越长。加上索引后该读变成**每分区一次 btree 反向下降 + `LIMIT 1`**（分区数由留存决定，12–13 个封顶），锁内只留 O(log n)。附带：`FOR UPDATE` 的语义不变（仍是"先 advisory、后行锁"，只锁命中那一行），**断电顺序/链序口径一个字未动**。
+
+- **四件形态确认（逐条给结论）**
+  1. **不要 `DESC`**：`(created_at DESC, id DESC)` 与 `(created_at, id)` 对 `ORDER BY created_at DESC, id DESC` 等价（btree 可反向扫），但后者还能顺带服务升序扫描；写库里少一处无意义差异。
+  2. **不要 `occurred_at` / `month` / `partition` 前缀**：`occurred_at` 是**分区键、不是月列**，"分区前缀"在分区表上不成立（每个分区自带索引）；而一旦把 `occurred_at` 放前导列，**恰恰服务不了锁内那条读**——它没有 `occurred_at` 谓词。`Load` / `TailTagBefore` 的 `occurred_at` 区间靠**分区剪枝**（落到 1 个分区）已经足够，它们跑在写锁外、由定时任务驱动，不构成风险；若将来 `EXPLAIN` 证明校验侧排序成为问题，**另开一条**（不塞进本条）。
+  3. **不要 `CONCURRENTLY`**：①`CREATE INDEX CONCURRENTLY` **不能在事务块内执行**（PG 直接报 `cannot run inside a transaction block`），而 `golang-migrate` 的 pgx 驱动**默认把每个版本包在事务里** → 写进迁移会当场失败；②未上线、表小，普通 `CREATE INDEX` 的 `SHARE` 锁窗口以毫秒计。若**上线后**要加同类索引，走 CONCURRENTLY 的运维脚本（不入 `migrations/`），并按技术栈 §6.2 登记为流程差异。
+  4. **不要 partial / 不要第二条**：链尾读对全行集无谓词（partial 会漏链尾，直接断链级错误）；一条索引已覆盖锁内路径，第二条只增加每写一次的索引维护成本（右端顺序插入代价小但非零）。
+
+- **否决的替代方案（两次被提出的两个）**：①**链尾 tag 缓存 / 落 `runtime_config`**——把"链尾"变成**第二份真源**：事务回滚、进程在"写锚点后、插入前"崩、或别名写入路径漏更新，都会让缓存与真实链尾分叉，而**分叉的表现是"链看着正常、事后整链复核才发现断"**（这类错误没有即时信号）→ 用安全换性能，不采纳；且它救不了 `TailTagBefore` / `Load` 的排序路径。②**只在内存/进程内缓存**——多副本各有一份，advisory 锁下的"链尾"必须是**库里的**那一行，否则分叉。**若不加，先劣化的路径**（写进本条备查）：先是**审计写 p99**（全局串行点），随后是 `audit_anchor_age_seconds`（锚点任务与写入抢同一把锁排队）。
+
+- **账目/契约面：零改动**。纯性能索引，不改表/列/约束/错误码/端点 → **不进 CH**（按 P8③ 判据：不让业务方多出任何一种配置方式）；`acceptance-criteria.md` 一字未动，`AC-AUD-*` 的判据口径不变。**举证归 Gate**：Edge 落 `000019` 后，用 `EXPLAIN (ANALYZE, BUFFERS)` **前后对照**贴 plan，断言「锁内链尾读 = Index Scan（Backward）/ Merge Append，不再是 Seq Scan + Sort」；`FOR UPDATE` 仍在、并发分叉反证（`disableChainLock`/`disableRowLock` 两个注入点）仍应红。
+
+- **归属与顺序**：**Edge** 落 `000019`（up/down 各一份，注释写清"服务哪条 SQL、为什么单开一条、为什么不用 CONCURRENTLY"）；**Gate** 出 plan 前后对照；**Core 不参与**（`Append` 零改动）。本条与 D19 同批回传、**分属两条 DEC**。
+
+---
+
 ## 契约变更清单（对外可见）—— 状态：**CH-1~CH-5 已追认（经 hugo 追认，2026-11-02）；CH-6 为内部口径；CH-7 已裁定；CH-8 待追认（2026-11-04）；CH-9 待追认（2026-11-10）**
 
 > 本表只收**对外可见**的变更（影响业务系统、SDK、前端或对外错误码的）。基线 `/docs/baseline/` 一个字不改，这些变更以本表为准并在**下版契约文档**（OpenAPI + `sdk-contract.md` + 页面规格口径）一次性落盘；落盘时机 = 全部 M1 判据回填后、M1 编码前。**本表状态：CH-1~CH-5 = 已追认（经 hugo 追认，2026-11-02，记录法见 P8）；CH-6 = 内部口径、无需追认；CH-7 = 已裁定；CH-8 = 待追认（2026-11-04）；CH-9 = 待追认（2026-11-10，SLO 通知）。** 后续新增变更一律按 **P8②** 追加行（编号只增不重排）；作废条目改「已撤回」并保留原行。
@@ -548,6 +600,8 @@
 | `D14①②③④⑤` | §**D14** | 挑战 TTL/次数只从 `runtime_config` 读（`000018`）、`register_token` = HMAC-SM3 签名串、邀请码非空一律 400、`attempts_left` 两处口径、跨模块代落登记表 |
 | `D4-C(5)` | D4 裁定 C 的第 (5) 条 | 链序 = `created_at`；`occurred_at` 原样并**参与 `integrity_tag`**；二者不同不算缺陷；下界守卫防跨月破链（完整裁定 `notes/audit-chain-order-2026-11-10.md`） |
 | `D17` | §**D17** | 能力矩阵与 AC 账目的计数单位：`GJ-CAP-17/20/21` **无 AC 条目**、能力矩阵记 `DEFERRED(M5)`/`N/A(M2)`、与 `AC-AGENT-01~03` **不得双计**、22 能力与 90 判据**不得换算**；`90 = 83/0/0/6/0/1` 不受影响 |
+| `D19` | §**D19** | `disabled_factors` 的物理落点 = `login_policies`（client 级 `client_override`、回落 `tier_default`），`clients` 无此列；`接口清单:211`/`页面规格:533` 的"来自 clients"是笔误、只改措辞不进 CH；平台级开关在 `runtime_config` |
+| `D20` | §**D20** | `audit_logs` 加 `audit_logs_created_id_idx (created_at, id)`（迁移 `000019`，父表建、自动套用新分区、零代码改动）；不加 DESC/`occurred_at` 前缀/`CONCURRENTLY`/partial；否决"链尾 tag 落 `runtime_config`"缓存方案；不进 CH、判据不动 |
 | `D16①②③④⑤` | §**D16** | 数据面 S8 收口：断言 claim 逐项来源（`aud`=路由命中 client、`roles`=活跃 `role_bindings`、`exp=iat+60`、`jti`=UUIDv7）、准入基准=`login_policies.min_acr`、路由规则冻结（R11①）、SLO 通知与 `details.flow` 字段集登记 R12/R13 |
 | `CH-8` | 契约变更清单 | `§3.3.1` 响应新增 `attempts_left`（纯加字段，**待追认**；追认前不作判据依据） |
 | `D6(1)(6)` + `F0-5` | D6 裁定 (1)/(6) + F0 第 5 条 | SDK 配置 **29 键**（缺号 #7/#16/#17 不补）+ 环境变量逐段机械转换 |
