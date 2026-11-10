@@ -219,11 +219,55 @@ func EnvFromEnv() Env {
 	}
 }
 
-// LoadFromEnv 从 `GUANJIN_*` 环境变量装载配置（严格白名单：未知键即失败）。
-func LoadFromEnv() (Config, error) {
-	c := DefaultConfig()
+// loadFromEnvExact 是**非配置**的 `GUANJIN_*` 环境变量（精确名单）；loadFromEnvPrefix
+// 是**非配置**的命名空间前缀。二者合起来就是严格白名单的「排除面」。
+//
+// 为什么需要排除面：`GUANJIN_` 前缀被两件事共用——(1) 本 SDK 的 29 项配置键（契约 §3.2）；
+// (2) 宿主/仓库的运行时与夹具变量：`GUANJIN_ENV`（运行时环境标识，等价 Java 的
+// `spring.profiles.active`，本身不是配置键）、平台自身的 `GUANJIN_DB_DSN`，
+// 以及**仓库测试夹具命名空间** `GUANJIN_TEST_*`（`internal/*` 的真库/真 Redis 用例靠它拿
+// 地址，见 `.github/workflows/ci.yml` 的 integration job 与 `GUANJIN_TEST_DSN` /
+// `GUANJIN_TEST_REDIS_ADDR`）。不排除它们，SDK 在被测试/被宿主的测试进程加载时会把夹具变量
+// 当未知配置键 → 启动失败（PR #51 integration job 的红即此）。
+//
+// 这是**封闭名单**，不是通配后门：除下列条目外，任何 `GUANJIN_*` 映射不到 29 项 → 照样
+// 启动失败并报键名（AC-FC-05）。要放行新的非配置变量，必须改本表并同步 §3.6。
+var (
+	loadFromEnvExact = map[string]bool{
+		"GUANJIN_ENV":         true, // 运行时环境标识（EnvFromEnv 读，非 29 项）
+		"GUANJIN_DB_DSN":      true, // 平台自身数据库（internal/config 读）
+		"GUANJIN_DEV_DSN":     true, // 本地开发库（internal/store 等读）
+		"GUANJIN_STAGING_DSN": true, // 预发库（Makefile 提示开发者与上面两个一并导出；同属平台自身库地址）
+	}
+	loadFromEnvPrefix = []string{
+		"GUANJIN_TEST_", // 测试夹具命名空间：GUANJIN_TEST_DSN / GUANJIN_TEST_REDIS_ADDR / ...
+	}
+)
+
+// isNonConfigEnv 判断某个环境变量名是否属于上面的非配置命名空间。
+func isNonConfigEnv(name string) bool {
+	if loadFromEnvExact[name] {
+		return true
+	}
+	for _, p := range loadFromEnvPrefix {
+		if strings.HasPrefix(name, p) {
+			return true
+		}
+	}
+	return false
+}
+
+// LoadFromEnv 从**当前进程环境**装载配置（= LoadFromEnviron(os.Environ())）。
+func LoadFromEnv() (Config, error) { return LoadFromEnviron(os.Environ()) }
+
+// LoadFromEnviron 从给定的 `KEY=VALUE` 列表装载配置（严格白名单：未知键即失败）。
+//
+// 参数化（而不是直接读 os.Environ）是为了让「白名单必须拦什么、必须放过什么」可以
+// **脱离宿主环境**被断言——否则用例的结果取决于跑它的那台机器/那个 CI job 恰好导出了
+// 哪些 `GUANJIN_*`（这正是 PR #51 红的原因）。
+func LoadFromEnviron(environ []string) (Config, error) {
 	in := map[string]string{}
-	for _, kv := range os.Environ() {
+	for _, kv := range environ {
 		i := strings.IndexByte(kv, '=')
 		if i < 0 {
 			continue
@@ -232,13 +276,12 @@ func LoadFromEnv() (Config, error) {
 		if !strings.HasPrefix(name, "GUANJIN_") {
 			continue
 		}
-		// GUANJIN_ENV / GUANJIN_DSN 之类是运行时环境变量，不是 29 项配置键，跳过。
-		if name == "GUANJIN_ENV" || strings.HasSuffix(name, "_DSN") || strings.HasPrefix(name, "GUANJIN_DB") {
+		if isNonConfigEnv(name) {
 			continue
 		}
-		key := envNameToKey(name)
-		in[key] = val
+		in[envNameToKey(name)] = val
 	}
+	c := DefaultConfig()
 	if err := c.applyMap(in); err != nil {
 		return Config{}, err
 	}

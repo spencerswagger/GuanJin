@@ -315,9 +315,21 @@
 | Node | 构造 `createGuanjin(opts)` 时对 `opts` 做**深度遍历**并与 29 项白名单逐键比对：出现白名单外的键 → 立即 `throw`（`GuanjinConfigError`，附 `unknownKeys[]` + 可用键清单）。环境变量同理：**以 `GUANJIN_` 开头但映射不到 29 项** → 同样抛错（防 `GUANJIN_JAWKS_URI` 这类拼写错误静默失效） |
 | Go | ① `Config.Validate()` 在 `guanjin.New()` 内调用，**先于**任何网络动作（JWKS 拉取）；② 若配置来自文件/JSON，用 `json.Decoder.DisallowUnknownFields()`；③ 环境变量走白名单（`GUANJIN_` 前缀但未知 → 返回 error）；④ 返回 error 时**不得**同时返回可用实例（防调用方忽略 err 继续跑） |
 
-**明确不做**：不提供 `strict-config=false` 之类的关闭开关（否则又成暗开关，与 C-1 同类）；不为未知键提供「预留 / 实验」通道——新增键只能走 ADR 改 29 项。
+**非配置命名空间（白名单的唯一例外，封闭名单）**：`GUANJIN_` 前缀被两类东西共用——本 SDK 的 29 项配置键，以及**宿主的运行时变量与仓库测试夹具变量**。后者不是配置键，装载时一律跳过、且不参与白名单判定：
 
-**Gate 可断言**：塞一个 `guanjin.foo`（或 `GUANJIN_FOO`）→ **启动失败且错误信息含 `guanjin.foo`**；塞 `guanjin.mode: direct`（已废止键，§3.3）→ 同样启动失败（同时满足 `AC-SDK-01`）。
+| 环境变量 | 归属 | 谁在读 |
+|---|---|---|
+| `GUANJIN_ENV` | 运行时环境标识（`local`/`test`/其余=prod），等价 Java 的 `spring.profiles.active`，**不在 §3.2 的 29 项内** | Go `EnvFromEnv()` |
+| `GUANJIN_DB_DSN` / `GUANJIN_DEV_DSN` / `GUANJIN_STAGING_DSN` | 平台自身数据库（本地/开发/预发） | `internal/config`、`internal/store`；`Makefile` 提示三者一并导出 |
+| `GUANJIN_TEST_*` | **仓库测试夹具命名空间**（真 PG / 真 Redis 用例的地址） | CI `integration` job 注入；`internal/*` 的 `*_db_test.go` |
+
+清单**封闭**（不是通配后门）：除上表外，任何 `GUANJIN_*` 映射不到 29 项 → **照样启动失败并报键名**。特别是 `GUANJIN_X_DSN` 这类**以 `_DSN` 结尾的拼错键**也必须失败——Go 旧实现用 `strings.HasSuffix(name,"_DSN")` 兜底，会把它们静默放过（已改为显式名单，PR #51 修）。三语言同语义：Java 的 `ignoreUnknownFields=false`、Node 的深度比对都不得把该命名空间当配置键。
+
+> 事故记录（S9）：`integration` job 导出 `GUANJIN_TEST_REDIS_ADDR`，Go 侧未排除该命名空间 → SDK 装载失败 → `go test ./...` 在该 job 必红（假红）。修法是「上表的封闭例外 + `LoadFromEnviron([]string)` 让白名单可以被脱离宿主环境断言」。
+
+**明确不做**：不提供 `strict-config=false` 之类的关闭开关（否则又成暗开关，与 C-1 同类）；不为未知键提供「预留 / 实验」通道——新增键只能走 ADR 改 29 项。上表的非配置命名空间**不是**这种通道：它们不进 `Config`、不可被读取为配置项、也不新增任何 `guanjin.*` 键。
+
+**Gate 可断言**：塞一个 `guanjin.foo`（或 `GUANJIN_FOO`）→ **启动失败且错误信息含 `guanjin.foo`**；塞 `guanjin.mode: direct`（已废止键，§3.3）→ 同样启动失败（同时满足 `AC-SDK-01`）；同时导出 `GUANJIN_TEST_DSN` / `GUANJIN_TEST_REDIS_ADDR` + 合法配置 → **必须正常装载**（否则 integration job 假红）。
 
 ---
 
@@ -728,5 +740,5 @@ M1 的 S9 **只交付 Java 8 两份产物**；Node / Go 随 M2+ 落地。但**�
 
 ---
 
-**校对快照（v8，供 Spec 抽查）**：`sdk-contract.md` / 行数 **732** 行（`wc -l`） / md5 **`c220f6a6a5f61dc13946a282c9eaa0b0`**（md5 覆盖范围 = **本节 4 行以外、即第 1..728 行**，避免自引用；行数含本节）。上一快照 = v8 731 行 / md5 `a317c945`（PR #1 合入版）。本轮：**按 PR #1 Owl 评审一次性修完 2 个 P2 + 4 个 P3**——E26 `checkLabel(objLevel)` 全文统一（原三处仍写 `level`）；E27 命名原则重写为**两层命名 + §1.5 的 R-1..R-5 封闭形态规则 + 三处冲突的差异类别与理由 + CI 反射比对**（选「改 N3 措辞、不改表」）；E28 配置 #26 的 Node/Go 字段名改为机械可推导（并补 Go 缩写白名单）；E29 新增 **§2.1.2**（`withClearance` 唯一写法、裸 `clearance()` 与 `dataLabel()` 一并作废、密级 1/2/3 词表、公开不占级、禁词正则与扫描范围）；E30 补 `TOKEN_INVALID` vs `TOKEN_EXPIRED` 界分表；E31 确认 Ark 已在他分支放开 `.gitignore` 的 `docs/`（`origin/main` 尚未生效，我不重复改）。**能力仍 22 条、配置仍 29 项，键名/编号/默认值/必填性/判据一处未改；基线未动、无源码。** 追加 **E34**：按 Gate 把关（PR #1 READY 附 1 处 P3）把 §5.1.1 的 **C-2** 「上表 10 条」改为「上表 **14 条**（原 10 条 + 第 11–14 条同批扫描）」，连带把 **C-1** 的「第 1–10 条」改为「第 1–14 条」，与表体、E8/E19 的「14 条」全部对齐——**只改文字，黑名单条目一条未增删**。
+**校对快照（v8，供 Spec 抽查）**：`sdk-contract.md` / 行数 **744** 行（`wc -l`） / md5 **`04692c477392ae661bfc90f93b7e2f51`**（md5 覆盖范围 = **本节 4 行以外、即第 1..740 行**，避免自引用；行数含本节）。上一快照 = v8 732 行 / md5 `94fc0375`（**main 实测值**；本节原先写的 `c220f6a6` 是失真值——§3.2 三行「执行形态」追加后未重算，本次一并修正）。本轮：**按 PR #1 Owl 评审一次性修完 2 个 P2 + 4 个 P3**——E26 `checkLabel(objLevel)` 全文统一（原三处仍写 `level`）；E27 命名原则重写为**两层命名 + §1.5 的 R-1..R-5 封闭形态规则 + 三处冲突的差异类别与理由 + CI 反射比对**（选「改 N3 措辞、不改表」）；E28 配置 #26 的 Node/Go 字段名改为机械可推导（并补 Go 缩写白名单）；E29 新增 **§2.1.2**（`withClearance` 唯一写法、裸 `clearance()` 与 `dataLabel()` 一并作废、密级 1/2/3 词表、公开不占级、禁词正则与扫描范围）；E30 补 `TOKEN_INVALID` vs `TOKEN_EXPIRED` 界分表；E31 确认 Ark 已在他分支放开 `.gitignore` 的 `docs/`（`origin/main` 尚未生效，我不重复改）。**能力仍 22 条、配置仍 29 项，键名/编号/默认值/必填性/判据一处未改；基线未动、无源码。** 追加 **E34**：按 Gate 把关（PR #1 READY 附 1 处 P3）把 §5.1.1 的 **C-2** 「上表 10 条」改为「上表 **14 条**（原 10 条 + 第 11–14 条同批扫描）」，连带把 **C-1** 的「第 1–10 条」改为「第 1–14 条」，与表体、E8/E19 的「14 条」全部对齐——**只改文字，黑名单条目一条未增删**。追加 **E35**（S9，#51 假红）：§3.6 新增「**非配置命名空间**」封闭清单（`GUANJIN_ENV` / `GUANJIN_DB_DSN` / `GUANJIN_DEV_DSN` / `GUANJIN_TEST_*`，附事故记录与 Gate 可断言口径），并关掉 Go 侧 `HasSuffix("_DSN")` 这个**隐性放行**（改显式名单后，`GUANJIN_X_DSN` 这类拼错键必须失败）；29 项键名/编号/默认值/必填性/判据一处未改，基线未动。
 

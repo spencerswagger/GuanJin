@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 	"time"
 )
@@ -112,14 +113,20 @@ func TestPathMatcher(t *testing.T) {
 	}
 }
 
-func TestLoadFromEnvStrictWhitelist(t *testing.T) {
-	t.Setenv("GUANJIN_CLIENT_ID", "svc")
-	t.Setenv("GUANJIN_PLATFORM_BASE_URL", "https://gj.example.com")
-	t.Setenv("GUANJIN_GATEWAY_JWKS_CACHE_TTL", "5m")
-	t.Setenv("GUANJIN_ENV", "test")
-	t.Setenv("GUANJIN_TEST_DSN", "postgres://ignored")
+// baseEnviron 是受控的「合法 environ」：故意不读 os.Environ()，这样「白名单放过什么」
+// 不取决于跑用例那台机器/那个 CI job 导出了什么（PR #51 的红正是这么来的）。
+func baseEnviron() []string {
+	return []string{
+		"PATH=/usr/local/bin:/usr/bin",
+		"GUANJIN_ENV=test",
+		"GUANJIN_CLIENT_ID=svc",
+		"GUANJIN_PLATFORM_BASE_URL=https://gj.example.com",
+		"GUANJIN_GATEWAY_JWKS_CACHE_TTL=5m",
+	}
+}
 
-	cfg, err := LoadFromEnv()
+func TestLoadFromEnvironStrictWhitelist(t *testing.T) {
+	cfg, err := LoadFromEnviron(baseEnviron())
 	if err != nil {
 		t.Fatalf("装载失败：%v", err)
 	}
@@ -129,13 +136,97 @@ func TestLoadFromEnvStrictWhitelist(t *testing.T) {
 	if cfg.Gateway.JwksCacheTTL != 5*time.Minute {
 		t.Fatalf("duration 解析不对：%v", cfg.Gateway.JwksCacheTTL)
 	}
+
+	// 未知键 / 拼错键 / 已废止键一律**装载失败且报键名**（AC-FC-05、AC-SDK-01）。
+	// 注意第 3 条：旧实现用 `HasSuffix("_DSN")` 兜底，会把这种拼错当 "DSN" 静默吞掉；
+	// 现在排除面是封闭名单，它必须失败。
+	cases := []struct {
+		env  string
+		want string
+	}{
+		{"GUANJIN_NOPE=1", "guanjin.nope"},
+		{"GUANJIN_GATEWAY_JWKS_URL=https://x/jwks.json", "guanjin.gateway.jwks.url"},
+		{"GUANJIN_GATEWAY_JWKS_CACHE_TTL_DSN=1m", "guanjin.gateway.jwks.cache.ttl.dsn"},
+		{"GUANJIN_MODE=direct", "guanjin.mode"},
+	}
+	for _, c := range cases {
+		_, err := LoadFromEnviron(append(baseEnviron(), c.env))
+		if err == nil {
+			t.Fatalf("%s 必须装载失败", c.env)
+		}
+		if !strings.Contains(err.Error(), c.want) {
+			t.Fatalf("%s 的报错必须含键名 %q，实得：%v", c.env, c.want, err)
+		}
+	}
+}
+
+// TestLoadFromEnvironToleratesHarnessNamespace 是 PR #51 的回归用例：
+// `.github/workflows/ci.yml` 的 integration job 导出 `GUANJIN_TEST_DSN` /
+// `GUANJIN_TEST_REDIS_ADDR`（真库/真 Redis 用例要用），它们**不是** 29 项配置键；
+// 曾被当成未知键 → SDK 装载失败 → `go test ./...` 在这个 job 里必红（假红）。
+func TestLoadFromEnvironToleratesHarnessNamespace(t *testing.T) {
+	env := append(baseEnviron(),
+		"GUANJIN_TEST_DSN=postgres://ignored",
+		"GUANJIN_TEST_REDIS_ADDR=localhost:6379",
+		"GUANJIN_TEST_REDIS_PASSWORD=",
+		"GUANJIN_DB_DSN=postgres://ignored",
+		"GUANJIN_DEV_DSN=postgres://ignored",
+		"GUANJIN_STAGING_DSN=postgres://ignored", // Makefile 提示开发者一并导出（收紧前的 _DSN 后缀会静默放过，现须在例外名单里）
+	)
+	cfg, err := LoadFromEnviron(env)
+	if err != nil {
+		t.Fatalf("非配置命名空间被当成配置键：%v（PR #51 假红）", err)
+	}
+	if cfg.Client.ID != "svc" {
+		t.Fatalf("夹具变量挤掉了配置键：%+v", cfg)
+	}
+
+	// 排除面不是白名单漏洞：同一批 environ 里混一个拼错的配置键，仍然必须失败。
+	if _, err := LoadFromEnviron(append(env, "GUANJIN_PLATFORM_BASE_URLL=https://x")); err == nil {
+		t.Fatal("混入拼错的配置键必须装载失败（排除面不得成为后门）")
+	}
+}
+
+// TestLoadFromEnvReadsProcessEnviron 验「真读进程环境」这条链路本身：
+// 先把当前进程里参与白名单的 GUANJIN_* 清干净（结束还原），再按 CI integration job 的
+// 现场导出一组变量，证明 LoadFromEnv() 在夹具变量共存时能正常装载。
+func TestLoadFromEnvReadsProcessEnviron(t *testing.T) {
+	scrubGuanjinEnv(t)
+	t.Setenv("GUANJIN_ENV", "test")
+	t.Setenv("GUANJIN_CLIENT_ID", "svc")
+	t.Setenv("GUANJIN_PLATFORM_BASE_URL", "https://gj.example.com")
+	t.Setenv("GUANJIN_TEST_REDIS_ADDR", "localhost:6379") // integration job 现场
+
+	cfg, err := LoadFromEnv()
+	if err != nil {
+		t.Fatalf("装载失败：%v（PR #51 假红）", err)
+	}
+	if cfg.Client.ID != "svc" {
+		t.Fatalf("进程环境未生效：%+v", cfg)
+	}
 	if EnvFromEnv() != EnvTest {
 		t.Fatalf("GUANJIN_ENV=test 应解析为 test，实得 %s", EnvFromEnv())
 	}
+}
 
-	t.Setenv("GUANJIN_NOPE", "1")
-	if _, err := LoadFromEnv(); err == nil {
-		t.Fatal("未知 GUANJIN_* 变量必须失败")
+// scrubGuanjinEnv 把当前进程里**会参与白名单**的 GUANJIN_* 临时清掉，用例结束还原。
+// 目的：任何人机器上跑都是同一结果，不因本地恰好 `export GUANJIN_FOO` 而红。
+func scrubGuanjinEnv(t *testing.T) {
+	t.Helper()
+	for _, kv := range os.Environ() {
+		i := strings.IndexByte(kv, '=')
+		if i < 0 {
+			continue
+		}
+		name, val := kv[:i], kv[i+1:]
+		if !strings.HasPrefix(name, "GUANJIN_") || isNonConfigEnv(name) {
+			continue
+		}
+		n, v := name, val
+		if err := os.Unsetenv(n); err != nil {
+			t.Fatalf("清理 %s 失败：%v", n, err)
+		}
+		t.Cleanup(func() { _ = os.Setenv(n, v) })
 	}
 }
 
