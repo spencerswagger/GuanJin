@@ -286,25 +286,38 @@ func MapError(err error) error {
 	case sqlStateCheckViolation:
 		if rule, ok := checkRules[pgErr.ConstraintName]; ok {
 			applyRule(out, rule)
+		} else if pgErr.ConstraintName == "" {
+			// **23514 但没有约束名 ⇒ 这不是 CHECK 违反**，不映射（未映射 = HTTP 层 500 + 按缺陷排查）。
+			//
+			// 真实形态（真库实测，见 `pgxerr_matrix_db_test.go` 的 R-23514-NOPART）：
+			// 往 `audit_logs` 写一条落在**没有分区**的月份 → PG 报
+			// `23514: no partition of relation "audit_logs" found for row`（无 constraint name）。
+			// 那是**部署缺陷**（分区预建窗口不够 / 月度任务没跑），不是用户入参问题：
+			// 按默认给 400 等于告诉客户端"改参数重试"，而它改什么都没用。
+			// CHECK 违反一定带约束名，所以"空约束名"是一条能安全区分的边界。
 		} else {
 			// CHECK 未逐个登记时一律 400：CHECK 违反几乎都是"入参不满足不变式"，
 			// 与 500 相比 400 更接近事实，且不会把用户输入问题报成服务端故障。
 			out.Code, out.Status = codeInvalidParameter, httpx.HTTPStatus(codeInvalidParameter)
+			out.Reason = "CHECK 违反但约束名未登记 → 按入参不满足不变式处理（400）"
 		}
 	case sqlStateForeignKeyViolation:
 		if rule, ok := fkRules[pgErr.ConstraintName]; ok {
 			applyRule(out, rule)
 		} else {
 			out.Code, out.Status = codeInvalidParameter, httpx.HTTPStatus(codeInvalidParameter)
+			out.Reason = "外键违反但约束名未登记 → 按被引用对象不存在处理（400）"
 		}
 	case sqlStateNotNullViolation:
 		out.Code, out.Status = codeMissingParameter, httpx.HTTPStatus(codeMissingParameter)
+		out.Reason = "NOT NULL 违反 → 必填参数缺失（400）"
 	case sqlStateRestrictViolation:
 		// forbid_mutation()（auth_events / audit_logs 只增表保护，数据模型 I5）。
 		// 这不是用户错误，而是**代码试图篡改只增表** → 500 缺陷。
 		out.Constraint = firstNonEmpty(out.Constraint, "forbid_mutation")
 	case sqlStateInvalidTextRepr, sqlStateNumericOutOfRange:
 		out.Code, out.Status = codeInvalidParameter, httpx.HTTPStatus(codeInvalidParameter)
+		out.Reason = "参数类型/数值超出数据库类型域（22P02/22003）→ 400"
 	case sqlStateSerializationFail, sqlStateDeadlockDetected:
 		// 并发冲突：可重试，不给业务码（调用方按 Retryable 决定重试）。
 	case sqlStateConnectionFailure, sqlStateTooManyConnections,
