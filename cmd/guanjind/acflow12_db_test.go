@@ -5,6 +5,8 @@ package main
 import (
 	"testing"
 
+	"gorm.io/gorm"
+
 	"github.com/spencerswagger/guanjin/internal/factor"
 	"github.com/spencerswagger/guanjin/internal/flow"
 )
@@ -18,6 +20,17 @@ import (
 //
 // 本文件证的是①②③。判据④（discovery `acr_values_supported`）属协议面，不在本文件重复。
 
+// tierDefaultMinACR 读 `login_policies(scope='tier_default', tier=?)` 的落地门槛。
+func tierDefaultMinACR(t *testing.T, db *gorm.DB, tier string) string {
+	t.Helper()
+	var acr string
+	if err := db.Raw(`SELECT min_acr FROM login_policies WHERE scope = 'tier_default' AND tier = ?`,
+		tier).Row().Scan(&acr); err != nil {
+		t.Fatalf("读 tier_default(%s)：%v", tier, err)
+	}
+	return acr
+}
+
 // TestACFLOW12_01_L3TierTargetsAAL2AndL2TargetsAAL1 覆盖判据 ①，并带一条**正控**：
 // 如果只断言"L3 → AAL2"，实现里写死 `target_acr='AAL2'` 也会绿；所以同一用例断言 L2 → AAL1。
 func TestACFLOW12_01_L3TierTargetsAAL2AndL2TargetsAAL1(t *testing.T) {
@@ -27,6 +40,12 @@ func TestACFLOW12_01_L3TierTargetsAAL2AndL2TargetsAAL1(t *testing.T) {
 		{"L2", string(factor.ACRAAL1)},
 		{"L3", string(factor.ACRAAL2)},
 	} {
+		// 目标值**不是**我写死的字面量，而是库里 `tier_default` 的落地值（D13 seed）：
+		// 先断言它就是索引 §4.2-15 的映射，再用它建流。否则"Descriptor 回声我传的值"会假绿。
+		if got := tierDefaultMinACR(t, db, tc.tier); got != tc.want {
+			t.Fatalf("tier_default(%s).min_acr 应为 %s（索引 §4.2-15 / D12），实际 %q",
+				tc.tier, tc.want, got)
+		}
 		f := newFlowFixture(t, db, tc.tier, "{}")
 		row := f.startFlow(t, nil, tc.want)
 		var d flow.Descriptor
@@ -51,13 +70,22 @@ func TestACFLOW12_01_L3TierTargetsAAL2AndL2TargetsAAL1(t *testing.T) {
 func TestACFLOW12_02_NoAAL3RowAnywhere(t *testing.T) {
 	db := openTestDB(t)
 
-	// 先跑一段真实链路（L3 建流 + 口令校验），让"会写 acr 的路径"有机会把 AAL3 写进去。
-	f := newFlowFixture(t, db, "L3", "{}")
+	// 先跑一段真实链路，让"会写 acr 的路径"有机会把 AAL3 写进去。
+	//
+	// 用 **L2**（目标 AAL1）：这里只装配了 password 一个因子，L3/AAL2 必然 `ACR_INSUFFICIENT`
+	// （那是 AC-FLOW-07 的正确行为，不是缺陷）。L2 这条能真拿到 200，链路才算真的走完一次。
+	f := newFlowFixture(t, db, "L2", "{}")
 	userID := f.registerUser(t, db, "GuanJin#Flow12-Strong1")
-	row := f.startFlow(t, &userID, string(factor.ACRAAL2))
+	row := f.startFlow(t, &userID, string(factor.ACRAAL1))
 	if status, raw, env := e2ePost(t, f.srv.URL+"/auth/verify/password",
 		`{"flow_id":"`+row.ID.String()+`","response":"GuanJin#Flow12-Strong1"}`); status != 200 {
 		t.Fatalf("口令校验应 200（让链路真的推进一次），实际 %d / %q（body=%s）", status, env.Code, raw)
+	}
+	// 另外把 **L3 档位**也真建一条流（D12 的关键档位）：它是最容易产出 AAL3 的地方。
+	f3 := newFlowFixture(t, db, "L3", "{}")
+	l3row := f3.startFlow(t, nil, string(factor.ACRAAL2))
+	if l3row.TargetACR != string(factor.ACRAAL2) {
+		t.Fatalf("L3 流的落库 target_acr 应为 AAL2，实际 %q", l3row.TargetACR)
 	}
 
 	for _, q := range []struct{ name, sql string }{
