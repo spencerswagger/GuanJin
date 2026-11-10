@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strconv"
 	"time"
 
 	"github.com/google/uuid"
@@ -104,6 +105,15 @@ func (c *Chain) Tag(prevTag []byte, r Record) ([]byte, error) {
 //  1. `rec.PrevTag` 必须逐字节等于上一条的 `IntegrityTag`（删中间一条/乱序都会在这里暴露）；
 //  2. 按内容重算的 tag 必须等于 `rec.IntegrityTag`（改内容但没改 tag 会在这里暴露）。
 func (c *Chain) Verify(records []Record, anchor []byte) (*BrokenPoint, error) {
+	return c.VerifyFrom(records, anchor, true)
+}
+
+// VerifyFrom 与 `Verify` 相同，但可以**跳过首条的 `prev_tag` 校验**（`checkFirst=false`）。
+//
+// 为什么要这个开关：链按自然月分段，段首的 `prev_tag` 应当等于**上个月封锚的链尾 tag**。
+// 如果上个月还没有锚点（历史月、或还没跑过复核），段首的 `prev_tag` 是"未知"而不是"应为 nil"——
+// 把"未知"当成 nil 判，会让非首月的首次复核恒报 `prev_tag_mismatch`（Owl II P0 的另一面）。
+func (c *Chain) VerifyFrom(records []Record, anchor []byte, checkFirst bool) (*BrokenPoint, error) {
 	// **先判链是否可用**：空记录集也要报错——nil/零键的链若在这里静默返回"通过"，
 	// 调用方会拿到"整链完好"的结论，而实际上一次都没校验（最坏形态：校验 Job 变成摆设）。
 	if c == nil || c.key.IsZero() {
@@ -112,6 +122,18 @@ func (c *Chain) Verify(records []Record, anchor []byte) (*BrokenPoint, error) {
 	prev := anchor
 	for i := range records {
 		rec := records[i]
+		if i == 0 && !checkFirst {
+			// 段首 prev_tag 未知：不判它，但仍按内容重算 tag（改内容照样能发现）。
+			want, err := c.Tag(rec.PrevTag, rec)
+			if err != nil {
+				return nil, err
+			}
+			if !bytesEqual(want, rec.IntegrityTag) {
+				return &BrokenPoint{Index: 0, RecordID: rec.ID, Reason: ReasonTagMismatch}, nil
+			}
+			prev = rec.IntegrityTag
+			continue
+		}
 		if !bytesEqual(rec.PrevTag, prev) {
 			return &BrokenPoint{
 				Index:    i,
@@ -272,13 +294,33 @@ func (e *enc) value(v any) error {
 		e.str("null")
 		return nil
 	case json.Number:
+		// 数字统一口径：先把文本解析成 float64 再按最短可逆十进制输出——
+		// 这样 `json.Number("1")`、`json.Number("1.0")`、`float64(1)` 编出同一个字节串。
+		f, err := t.Float64()
+		if err != nil {
+			// 超出 float64 范围时退回原文（仍然确定，只是与 float64 口径不同，已在文档里写明）。
+			e.str("n")
+			e.str(t.String())
+			return nil
+		}
 		e.str("n")
-		e.str(t.String())
+		e.str(strconv.FormatFloat(f, 'g', -1, 64))
+		return nil
+	case int:
+		e.str("n")
+		e.str(strconv.FormatFloat(float64(t), 'g', -1, 64))
+		return nil
+	case int64:
+		e.str("n")
+		e.str(strconv.FormatFloat(float64(t), 'g', -1, 64))
 		return nil
 	case float64:
-		// 统一成 `json.Number` 的规范串，避免 `1` 与 `1.0` 算出两个 tag。
+		// **与其他数字类型统一口径**（Owl II P2 ②）：一律用最短可逆十进制表示
+		// （`strconv.FormatFloat(v,'g',-1,64)`），所以 `1`、`int64(1)`、`json.Number("1")`、
+		// `float64(1)` 编码结果**完全相同**；`1.5` 也只有一个写法。
+		// 之前用 `%v` 会得到 `1` 与 `1e+06` 这类与 `json.Number` 不一致的串，接首个生产写入方就自断。
 		e.str("n")
-		e.str(fmt.Sprintf("%v", t))
+		e.str(strconv.FormatFloat(t, 'g', -1, 64))
 		return nil
 	default:
 		// 未知类型：用 JSON 兜底（仍然确定，因为 encoding/json 对同一 Go 值是确定的）。
