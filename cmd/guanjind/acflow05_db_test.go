@@ -123,7 +123,10 @@ func newACFLOW05Env(t *testing.T, db *gorm.DB) *acflow05Env {
 		// actor 用户**不删**：audit_logs.actor_user_id 是 ON DELETE SET NULL，
 		// 删用户会把刚写下的审计事实的 actor 抹成 NULL（等于破坏证据）。
 		if env.prev == nil {
-			_ = db.Exec(`DELETE FROM runtime_config WHERE "key" = ?`, store.KeyFactorsDisabled).Error
+			// **不得 DELETE**：这一行是 D22 的 seed 载体，删掉会让后续用例读到"缺行"，
+			// 把"平台级禁用集"变成静默空集（Ark 的夹具纪律：删了 seed 行必须写回 `[]`）。
+			_ = db.Exec(`UPDATE runtime_config SET value = '[]'::jsonb WHERE "key" = ?`,
+				store.KeyFactorsDisabled).Error
 			return
 		}
 		_ = db.Exec(`UPDATE runtime_config SET value = ?::jsonb WHERE "key" = ?`,
