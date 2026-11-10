@@ -39,7 +39,15 @@ module_floor() {
       esac ;;
     internal/factor|internal/credential|internal/identifier|internal/flow|internal/authz) echo 85 ;;
     internal/risk|internal/gateway) echo 80 ;;
-    internal/store) echo 75 ;;
+    # S10 补登（2026-11-10）：`internal/store` 的 75% 下限**只在 integration profile 判定**——
+    # 仓储层的行为（事务、条件更新、聚合查询）只能在真库上验；unit profile 里新增仓储文件
+    # （如 #71 的 `repo_platform_factors.go`）会把它拉到 69%，硬判会让每个 unit job 永久红。
+    # 与 flowstore / identity / audit 同一处理：integration profile 里照样硬判 75%。
+    internal/store)
+      case ",${COVERAGE_TAGS:-}," in
+        *,integration,*) echo 75 ;;
+        *) echo "" ;;   # 由"未判定"分支显式说明，不许静默跳过
+      esac ;;
     # D8 补登（2026-11-04）：flowstore 是 D5 的 I-F2/F5/F6/F8 唯一落点（锁/校验/amr 累加/两段式清理），
     # 错一处则上层全返工 → 高于 store（75）、与 flow 同级（85）。
     internal/flowstore)
@@ -167,7 +175,7 @@ if [ "$relax" != "1" ]; then
     if [ -z "$floor" ]; then
       # D8 补登模块在 unit profile 下没有下限可判：**显式说明**，不让它变成静默跳过
       case "$m" in
-        internal/flowstore|internal/identity|internal/audit)
+        internal/flowstore|internal/identity|internal/audit|internal/store)
           echo "[INFO] ${m}：下限须由 integration profile 判定（unit profile 不编译 //go:build integration 用例）"
           echo "[INFO]       → 运行方式：COVERAGE_TAGS=integration COVERAGE_PROFILE=<integration 覆盖率> $0" ;;
       esac
@@ -176,7 +184,7 @@ if [ "$relax" != "1" ]; then
     st=${stmts[$m]}; cv=${covered[$m]:-0}
     if [ "$st" -eq 0 ]; then
       case "$m" in
-        internal/flowstore|internal/identity|internal/audit)
+        internal/flowstore|internal/identity|internal/audit|internal/store)
           echo "[FAIL] ${m} 在 integration profile 里没有任何语句 → 下限无法判定（判据不成立即为红）"; fail=1 ;;
       esac
       continue
