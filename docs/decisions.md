@@ -621,6 +621,50 @@
 
 ---
 
+## D25 SDK「非配置命名空间」= **保留命名空间 + 逐条封闭枚举**（禁前缀/后缀通配）
+
+> **触发**：`sdk-contract.md §3.6` 要求「`GUANJIN_` 开头但映射不到 29 项 → 启动失败」。但同一个 `GUANJIN_` 前缀下还有**平台自己的启动配置**（`技术栈 §7.2` 20 项）与**测试/CI 开关**，SDK 若一律判错，同机部署 / CI / 单进程演示就会被误杀；若改用通配豁免（`GUANJIN_TEST_*`、`*_DSN`），又会把真正的拼写错误一起放过去。Spec 已裁本条口径，Ark 落台账（**待 spencer 追认**）。
+
+- **裁定**：**保留命名空间 = 逐条封闭枚举**。清单内的名字 SDK **不报错、也不读**（视为"非配置命名空间"）；**清单外**的 `GUANJIN_*` 仍按 §3.6 **启动失败**。
+- **禁止通配**（硬约束）：不得出现「`GUANJIN_TEST_*` 一律豁免」「`*_DSN` 后缀一律豁免」「`GUANJIN_GATEWAY_*` 前缀豁免」这类规则。理由：通配会把"将来谁把 `JWKS_URI` 拼成 `GW_JWKS`"这类错误一起放过，而这条门禁的全部价值就是抓拼错；**逐条列举会长，但只有长清单能审计**。
+- **保留名清单（唯一出处 = 本表；§7.2 未列而代码在读的也要收进来）**
+  | 来源 | 名字 | 数量 |
+  |---|---|---|
+  | 代码在读（控制面 `internal/config`） | `GUANJIN_DB_DSN`、`GUANJIN_MASTER_KEY`、`GUANJIN_HTTP_ADDR`、`GUANJIN_ISSUER`、`GUANJIN_REDIS_ADDR`、`GUANJIN_REDIS_PASSWORD`、`GUANJIN_TRACE_HEADER` | 7 |
+  | 代码在读（数据面 `cmd/guanjingw`） | `GUANJIN_GATEWAY_CLOCK_SKEW`、`GUANJIN_GATEWAY_DIAL_TIMEOUT`、`GUANJIN_GATEWAY_ROUTES`、`GUANJIN_GATEWAY_UPSTREAM_TIMEOUT` | 4 |
+  | 代码在读（SLO 通知钩子） | `GUANJIN_SLO_NOTIFY_PATH` | 1 |
+  | 基线 `技术栈 §7.2` 冻结但**本仓尚未读** | `GUANJIN_ENV`、`GUANJIN_LOG_LEVEL`、`GUANJIN_LOG_FORMAT`、`GUANJIN_GATEWAY_ADDR`、`GUANJIN_PUBLIC_BASE_URL`、`GUANJIN_DATABASE_URL`、`GUANJIN_DB_MAX_OPEN_CONNS`、`GUANJIN_DB_MAX_IDLE_CONNS`、`GUANJIN_DB_CONN_MAX_LIFETIME`、`GUANJIN_REDIS_URL`、`GUANJIN_REDIS_TIMEOUT`、`GUANJIN_BOOTSTRAP_ADMIN_USERNAME`、`GUANJIN_BOOTSTRAP_ADMIN_PASSWORD`、`GUANJIN_METRICS_ADDR`、`GUANJIN_OTEL_ENDPOINT` | 15 |
+  | **合计（去重后）** | — | **27** |
+  （测试/CI 开关**不在**本表：它们要整族改名，见 **D26**。）
+- **例外不得当配置通道**：SDK **读取**保留名单里的任何键即违约（一旦读了，"非配置"变成"隐性配置项"，绕开 29 项冻结）。**Gate 可断言**：设 `GUANJIN_DB_DSN=…` / `GUANJIN_GATEWAY_ROUTES=…` → SDK 行为不变、不报错；设 `GUANJIN_JWKS_URI`（拼错）→ **启动失败且报键名**。
+- **清单维护纪律**：平台新增一个 `GUANJIN_*` env **必须**同时在本表加一行（同一 PR），否则下一次 SDK 升级会把它误杀。**清单是契约附录**，随 `sdk-contract.md` 一起落盘（不由代码注释单独维护）。
+- **已登记差异（不是本条要解决的，但必须留痕）**：基线 §7.2 冻结的是 `GUANJIN_DATABASE_URL` / `GUANJIN_REDIS_URL`，**代码读的是** `GUANJIN_DB_DSN` / `GUANJIN_REDIS_ADDR` + `GUANJIN_REDIS_PASSWORD`；另有 `GUANJIN_TRACE_HEADER` / `GUANJIN_GATEWAY_ROUTES` / `GUANJIN_GATEWAY_CLOCK_SKEW` / `GUANJIN_SLO_NOTIFY_PATH` **不在 §7.2**。两边都进保留表（`DATABASE_URL`/`REDIS_URL` 与 `DB_DSN`/`REDIS_ADDR` 各占一行），**以代码为准先用、差异待 Spec 定一次（改名或补基线）**，本条不擅自改名。
+- **发布说明（必须有这一行）**：这类收紧是**重启即挂**，用户升级后才能发现——发布说明里逐字写：「**升级后启动失败（进程非 0 退出）：报错含该键名，并说明"该键不属于 SDK 配置命名空间"，同时列出 29 项可用键**」。落盘位置 = `sdk-contract.md §3.6` 的升级提示（Nova 落）+ SDK 交付物发布说明；**本条不改那个文件**。
+- **是否契约变更**：`GUANJIN_X_DSN` 这类键**从来不是 29 项之一**；旧实现里 `HasSuffix("_DSN")` 之类的放行是**实现比基线宽**，本次收紧属**回归 §3.6 原文** → **不进 CH**（按 P8③ 判据：它不让业务方多出任何合法配置方式）。
+- **是否动基线正文**：**不动**（`sdk-contract.md` 是机制文档、由 Nova 补附录；`技术栈 §7.2` 一字不改，差异按上条登记）。
+
+---
+
+## D26 测试/CI/本地开关的前缀：`GUANJIN_TEST_*` → **`GJTEST_*`**（一次性硬切，不留别名）
+
+> **触发**：能把库删干净的开关（`GUANJIN_TEST_DSN` 等）正待在 SDK 会扫的 `GUANJIN_` 命名空间里——D25 立了"逐条封闭枚举"，但把这些键塞进保留表等于把**测试钩子**变成 SDK 的永久白名单条目；而通配豁免又被禁。**Spec 已裁：整族改名**。
+
+- **改名范围（实测口径，比"24 文件"多）**：4 个名字 → `GJTEST_*`
+  | 旧 | 新 | 引用数（`.go/.yml/.sh/.md`） |
+  |---|---|---|
+  | `GUANJIN_TEST_DSN` | `GJTEST_DSN` | 67 |
+  | `GUANJIN_TEST_REDIS_ADDR` | `GJTEST_REDIS_ADDR` | 16 |
+  | `GUANJIN_TEST_REDIS_PASSWORD` | `GJTEST_REDIS_PASSWORD` | 8 |
+  | `GUANJIN_TEST_DURATION` | `GJTEST_DURATION` | 2 |
+  另**同族三个也一并搬**（同属"测试/本地钩子"，留在 `GUANJIN_` 里就是下一批白名单种子）：`GUANJIN_DEV_DSN` → `GJTEST_DEV_DSN`、`GUANJIN_ALLOW_TEST_CLEANUP` → `GJTEST_ALLOW_CLEANUP`、`GUANJIN_AUDIT_NO_ISOLATION` → `GJTEST_AUDIT_NO_ISOLATION`。**实测引用文件 30 个**（含 `.md`/`.yml`/`.sh`；主持人给的 24 是纯 `.go` 口径）。
+- **迁移方式：一次性硬切，不留别名、不留双读**。理由：双读 = 隐性回退（与 P5 / D6(6)「无别名键、无旧键兼容」同一条）；项目未上线、无外部消费者，没有兼容负担。
+- **执行顺序（同一个 PR 内，禁止跨 PR 半截）**：①代码与脚本（`internal/**`、`cmd/**`、`scripts/**`）→ ②CI（`.github/workflows/ci.yml` 的 job `env` 与依赖就绪步骤）→ ③文档（`docs/**`、`README`）→ ④本地 `.env` 由各人自行改（不入库）。任一环漏改 = CI 立即红，**这正是想要的信号**。
+- **与 #51（Go SDK 严格键名白名单）的关系：不阻塞**。#51 的判定只关心"未知 `GUANJIN_*`"，改名把这批变量**移出该命名空间**后两者彻底解耦。**推荐顺序：先合改名、再合 #51**——否则 #51 得为测试变量临时开保留项，刚立的"逐条封闭枚举"立刻就破例；若顺序反过来，#51 必须先在本条 D26 落地前把 CI 里的这批 env 显式清空，**不得**靠 SDK 侧通配豁免。
+- **改名后谁读**：仍是 `internal/testdb`、各 `*_db_test.go`、`scripts/*.sh`、CI job env；**生产代码零处**引用（`grep GUANJIN_TEST_ . --include=*.go` 只应命中 `_test.go` 与 `internal/testdb`）。
+- **是否契约变更**：**不是**（仓库内部变量，不对外）→ 不进 CH；不影响 29 项、不影响 §7.2。
+
+---
+
 ## 契约变更清单（对外可见）—— 状态：**CH-1~CH-5 已追认（经 hugo 追认，2026-11-02）；CH-6 为内部口径；CH-7 已裁定；CH-8 待追认（2026-11-04）；CH-9 待追认（2026-11-10）**
 
 > 本表只收**对外可见**的变更（影响业务系统、SDK、前端或对外错误码的）。基线 `/docs/baseline/` 一个字不改，这些变更以本表为准并在**下版契约文档**（OpenAPI + `sdk-contract.md` + 页面规格口径）一次性落盘；落盘时机 = 全部 M1 判据回填后、M1 编码前。**本表状态：CH-1~CH-5 = 已追认（经 hugo 追认，2026-11-02，记录法见 P8）；CH-6 = 内部口径、无需追认；CH-7 = 已裁定；CH-8 = 待追认（2026-11-04）；CH-9 = 待追认（2026-11-10，SLO 通知）。** 后续新增变更一律按 **P8②** 追加行（编号只增不重排）；作废条目改「已撤回」并保留原行。
@@ -722,6 +766,8 @@
 | `D4-C(5)` | D4 裁定 C 的第 (5) 条 | 链序 = `created_at`；`occurred_at` 原样并**参与 `integrity_tag`**；二者不同不算缺陷；下界守卫防跨月破链（完整裁定 `notes/audit-chain-order-2026-11-10.md`） |
 | `D17` | §**D17** | 能力矩阵与 AC 账目的计数单位：`GJ-CAP-17/20/21` **无 AC 条目**、能力矩阵记 `DEFERRED(M5)`/`N/A(M2)`、与 `AC-AGENT-01~03` **不得双计**、22 能力与 90 判据**不得换算**；`90 = 83/0/0/6/0/1` 不受影响 |
 | `D19` | §**D19** | `disabled_factors` 的物理落点 = `login_policies`（client 级 `client_override`、回落 `tier_default`），`clients` 无此列；`接口清单:211`/`页面规格:533` 的"来自 clients"是笔误、只改措辞不进 CH；**有效禁用集 = 平台级 `runtime_config.factors.disabled`（唯一聚合键，jsonb 数组，见 D22）∪ client 级，互不覆盖** |
+| `D25` | §**D25** | SDK「非配置命名空间」= **保留命名空间 + 逐条封闭枚举（27 名，表见正文）**，**禁前缀/后缀通配**；清单内不报错也不可读（读了即违约）、清单外仍启动失败；新增平台 env 必须同 PR 加一行；发布说明必须写「升级后启动失败：报错含键名 + 该键不属于 SDK 配置命名空间」；**回归 §3.6 原文、不进 CH**；基线正文不动（`DATABASE_URL` vs `DB_DSN` 等差异已登记待 Spec 定） |
+| `D26` | §**D26** | 测试/CI/本地开关整族改名 `GUANJIN_TEST_*` → **`GJTEST_*`**（4 名 + 同族 3 名：`DEV_DSN`/`ALLOW_TEST_CLEANUP`/`AUDIT_NO_ISOLATION`），**一次性硬切、无别名无双读**，同 PR 内改代码→CI→文档；**不阻塞 #51**（推荐先合改名）；不进 CH |
 | `D24` | §**D24** | §5.4 错误分层：**解码层**→`INVALID_REQUEST`、**缺字段层**→`MISSING_PARAMETER`（可空布尔用 `*bool`，禁"零值即未给"）、**值语义层**→`INVALID_PARAMETER`（有专职码用专职码）；顺序固定 **401/403 → 解码 → 缺字段 → 值 → 业务语义**，400 不得先于 401/403，不得为消灭 400 放宽 `DisallowUnknownFields`；不新增码、不进 CH |
 | `D23①②③` | §**D23** | `AC-ENG-07` 三笔账：①**升 Go 1.26**（`go.mod` 是锁定权威、基线版本是建议值）+ **stdlib 一律不得进白名单**（只能升）；②**vue 3.5.42+ 升**（不留豁免，Vue 出回归）；③`sdk/java` **显式打 `[UNCOVERED]`**（立即）+ 一个迭代内改**离线 SBOM**（Nova 产 / Gate 判，2026-12-10 前），逾期则账目降级 |
 | `D22` | §**D22** | 平台级禁用集载体 = `runtime_config.factors.disabled`（jsonb **`[]`**、唯一键名，废除基线示例式的 `factors.<type>.enabled`）；**seed 落行**（迁移 `000020`，`ON CONFLICT DO NOTHING`）+ 启动期校验（缺键/坏值 fail-fast）；运行期缺行 = 500 不静默空集；否决读路径自愈；**`enabled` 是计算值（`enabled=false` ⇔ 在数组里）、无逐因子真值、锁粒度 = 单行 + advisory**；未知类型写入拒 400 / 读取保留 + 启动 WARN |
