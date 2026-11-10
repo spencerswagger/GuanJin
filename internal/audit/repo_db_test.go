@@ -291,7 +291,7 @@ func seedSegmentAnchor(t *testing.T, chain *Chain, db *gorm.DB, anchors *AnchorS
 	}
 }
 
-func appendN(t *testing.T, chain *Chain, db *gorm.DB, month time.Time, n int) []Record {
+func appendN(t *testing.T, chain *Chain, db *gorm.DB, month time.Time, n int) ([]Record, string) {
 	t.Helper()
 	out := make([]Record, 0, n)
 	marker := "appendn-" + uuid.NewString()[:8]
@@ -308,6 +308,23 @@ func appendN(t *testing.T, chain *Chain, db *gorm.DB, month time.Time, n int) []
 			t.Fatalf("Append #%d（月份=%s）: %v", i, month.Format("200601"), err)
 		}
 		out = append(out, rec)
+	}
+	return out, marker
+}
+
+// loadByMarker 只取"本轮写入"的行：`-count>1` 时同一月可能有上一轮的行，
+// 按月份/时间范围统计会把别人算进来（Gate 实测"期望 3 实际 6/9"）。
+func loadByMarker(t *testing.T, chain *Chain, db *gorm.DB, month time.Time, marker string) []Record {
+	t.Helper()
+	all, err := chain.Load(context.Background(), db, month, month.AddDate(0, 1, 0))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	out := make([]Record, 0, len(all))
+	for _, rec := range all {
+		if strings.HasPrefix(rec.TargetID, marker) {
+			out = append(out, rec)
+		}
 	}
 	return out
 }
@@ -329,7 +346,7 @@ func TestAC_AUD_03_DeletedMiddleRecordIsDetected(t *testing.T) {
 	chain := auditTestChain(t)
 	month := freshMonth(t, db)
 	cleanupMonth(t, db, month)
-	appendN(t, chain, db, month, 5)
+	_, _ = appendN(t, chain, db, month, 5)
 	// `Append` 是按值传参，生成的 id 拿不回来；先读一遍拿到**真实 id**再按 id 删。
 	beforeDelete, err := chain.Load(context.Background(), db, month, month.AddDate(0, 1, 0))
 	if err != nil {
@@ -373,7 +390,7 @@ func TestAC_AUD_05_TamperedRecordIsDetectedAndMetricIncrements(t *testing.T) {
 	chain := auditTestChain(t)
 	month := freshMonth(t, db)
 	cleanupMonth(t, db, month)
-	appendN(t, chain, db, month, 4)
+	_, _ = appendN(t, chain, db, month, 4)
 
 	ResetMetricsForTest()
 	allowMutationForTest(t, db, month)
@@ -410,7 +427,7 @@ func TestAC_AUD_11_AnchorAndVerifyMetrics(t *testing.T) {
 	chain := auditTestChain(t)
 	month := freshMonth(t, db)
 	cleanupMonth(t, db, month)
-	appendN(t, chain, db, month, 3)
+	_, _ = appendN(t, chain, db, month, 3)
 
 	anchors := NewAnchorStore(db)
 	verifier, err := NewVerifier(chain, db, anchors, slog.New(slog.NewTextHandler(io.Discard, nil)))
@@ -472,7 +489,7 @@ func TestAnchorMismatchBreaksAtFirstRecord(t *testing.T) {
 	chain := auditTestChain(t)
 	month := freshMonth(t, db)
 	cleanupMonth(t, db, month)
-	appendN(t, chain, db, month, 3)
+	_, _ = appendN(t, chain, db, month, 3)
 
 	anchors := NewAnchorStore(db)
 	bad := make([]byte, 32)
@@ -554,7 +571,7 @@ func TestAC_AUD_11_JobRunsOnTickerAndSkipsEmptyMonth(t *testing.T) {
 	}
 
 	// 有数据 + 真 Job 跑一拍：覆盖 ticker → RunOnce → AnchorCurrentMonth 的整条路径。
-	appendN(t, chain, db, month, 2)
+	_, _ = appendN(t, chain, db, month, 2)
 	// **必须清零"最近成功复核时刻"**（包级指标，前面用例已设过），否则等待循环会读到旧值。
 	ResetMetricsForTest()
 	seedSegmentAnchor(t, chain, db, anchors, month)
