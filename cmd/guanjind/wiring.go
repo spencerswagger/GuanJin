@@ -20,6 +20,7 @@ import (
 	"github.com/spencerswagger/guanjin/internal/identity"
 	"github.com/spencerswagger/guanjin/internal/protocol"
 	"github.com/spencerswagger/guanjin/internal/risk"
+	"github.com/spencerswagger/guanjin/internal/session"
 	"github.com/spencerswagger/guanjin/internal/signing"
 	"github.com/spencerswagger/guanjin/internal/store"
 	"github.com/spencerswagger/guanjin/internal/store/model"
@@ -38,23 +39,27 @@ import (
 type wiring struct {
 	flowHandler     *flow.HTTPHandler
 	registerHandler *identity.RegisterHTTP
-	riskGuard       *risk.Guard
+	// meIdentifiers 是自助面 `POST /api/v1/me/identifiers`（AC-FLOW-09）。
+	meIdentifiers *identity.MeIdentifiersHTTP
+	riskGuard     *risk.Guard
 	// registry 是启动期建好的因子注册表：管理面 `GET/PATCH /api/v1/factors` 要复用它，
 	// **不能**第二个地方再 Register 一遍（两份注册表 = 两份能力声明，迟早不一致）。
 	registry *factor.Registry
 }
 
 // newWiring 装出本进程的全部业务面。
-func newWiring(ctx context.Context, db *gorm.DB, cfg *config.Config, startup store.StartupConfig, logger *slog.Logger) (*wiring, error) {
+func newWiring(ctx context.Context, db *gorm.DB, cfg *config.Config, startup store.StartupConfig,
+	resolver session.TokenResolver, logger *slog.Logger) (*wiring, error) {
 	flowHandler, guard, registry, err := newFlowHandler(ctx, db, cfg, startup, logger)
 	if err != nil {
 		return nil, err
 	}
-	registerHandler, err := newRegisterHandler(ctx, db, cfg, startup, logger)
+	registerHandler, meIdentifiers, err := newRegisterHandler(ctx, db, cfg, startup, resolver, logger)
 	if err != nil {
 		return nil, err
 	}
-	return &wiring{flowHandler: flowHandler, registerHandler: registerHandler, riskGuard: guard, registry: registry}, nil
+	return &wiring{flowHandler: flowHandler, registerHandler: registerHandler, meIdentifiers: meIdentifiers,
+		riskGuard: guard, registry: registry}, nil
 }
 
 // newFlowHandler 装出因子与挑战面（S5）。
@@ -131,18 +136,19 @@ func newFlowHandler(ctx context.Context, db *gorm.DB, cfg *config.Config, startu
 }
 
 // newRegisterHandler 装出注册面（S4：`/auth/register/start|complete`）。
-func newRegisterHandler(ctx context.Context, db *gorm.DB, cfg *config.Config, startup store.StartupConfig, logger *slog.Logger) (*identity.RegisterHTTP, error) {
+func newRegisterHandler(ctx context.Context, db *gorm.DB, cfg *config.Config, startup store.StartupConfig,
+	resolver session.TokenResolver, logger *slog.Logger) (*identity.RegisterHTTP, *identity.MeIdentifiersHTTP, error) {
 	indexKey, err := cfg.MasterKey.DeriveHMAC(crypto.PurposeHMACIdentifier)
 	if err != nil {
-		return nil, fmt.Errorf("startup: derive identifier key: %w", err)
+		return nil, nil, fmt.Errorf("startup: derive identifier key: %w", err)
 	}
 	fieldKey, err := cfg.MasterKey.DeriveSM4(crypto.PurposeSM4Field)
 	if err != nil {
-		return nil, fmt.Errorf("startup: derive field key: %w", err)
+		return nil, nil, fmt.Errorf("startup: derive field key: %w", err)
 	}
 	registerKey, err := cfg.MasterKey.DeriveHMAC(crypto.PurposeHMACRegister)
 	if err != nil {
-		return nil, fmt.Errorf("startup: derive register token key: %w", err)
+		return nil, nil, fmt.Errorf("startup: derive register token key: %w", err)
 	}
 	svc, err := identity.New(db, identity.Config{
 		IndexKey:         indexKey,
@@ -155,13 +161,26 @@ func newRegisterHandler(ctx context.Context, db *gorm.DB, cfg *config.Config, st
 		ChallengeMaxAttempts: startup.ChallengeMaxAttempts,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("startup: identity service: %w", err)
+		return nil, nil, fmt.Errorf("startup: identity service: %w", err)
 	}
 	handler, err := identity.NewRegisterHTTP(svc, logger)
 	if err != nil {
-		return nil, fmt.Errorf("startup: register handler: %w", err)
+		return nil, nil, fmt.Errorf("startup: register handler: %w", err)
 	}
-	return handler, nil
+	// 自助面 `POST /api/v1/me/identifiers`（AC-FLOW-09）：ACR 前置按"访问过的最高档位"推。
+	visited, err := store.NewEffectiveACRRepo(db)
+	if err != nil {
+		return nil, nil, fmt.Errorf("startup: effective ACR repo: %w", err)
+	}
+	gate, err := identity.NewACRGate(visited, store.PlatformDefaultTier)
+	if err != nil {
+		return nil, nil, fmt.Errorf("startup: ACR gate: %w", err)
+	}
+	meHandler, err := identity.NewMeIdentifiersHTTP(svc, store.NewSessionOpsRepo(db), gate, resolver, logger)
+	if err != nil {
+		return nil, nil, fmt.Errorf("startup: me/identifiers handler: %w", err)
+	}
+	return handler, meHandler, nil
 }
 
 // riskGuardAdapter 把 `internal/risk` 接到编排层的窄接口上。

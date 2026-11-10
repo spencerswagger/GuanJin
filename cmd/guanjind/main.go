@@ -97,7 +97,7 @@ func startup(ctx context.Context, getenv func(string) string, logger *slog.Logge
 	}
 
 	mux := http.NewServeMux()
-	w, err := newWiring(ctx, db, cfg, startupCfg, logger)
+	w, err := newWiring(ctx, db, cfg, startupCfg, callerResolver, logger)
 	if err != nil {
 		_ = store.Close(db)
 		return nil, err
@@ -106,6 +106,8 @@ func startup(ctx context.Context, getenv func(string) string, logger *slog.Logge
 	w.flowHandler.Routes(mux)
 	// 注册面（S4）：`/auth/register/start|complete`。
 	w.registerHandler.Routes(mux)
+	// 自助面（AC-FLOW-09）：`POST /api/v1/me/identifiers`，ACR 前置按访问过的最高档位推。
+	w.meIdentifiers.Routes(mux)
 	// 协议面（S6）：discovery / jwks / token / revoke / introspect / userinfo。
 	protoSrv.Routes(mux)
 	// 会话自助面 + 管理面 sessions 段（S7）：`/api/v1/me/sessions*`、`/api/v1/sessions*`。

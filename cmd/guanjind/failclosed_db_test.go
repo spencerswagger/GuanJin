@@ -187,7 +187,8 @@ func fcServer(t *testing.T, cfg *config.Config) (*httptest.Server, *gorm.DB) {
 	if err != nil {
 		t.Fatalf("ValidateStartup: %v", err)
 	}
-	w, err := newWiring(ctx, db, cfg, startupCfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	w, err := newWiring(ctx, db, cfg, startupCfg, rejectResolver{},
+		slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatalf("newWiring（Redis 走转发器）：%v", err)
 	}
