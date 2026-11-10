@@ -156,8 +156,10 @@ func appendWithReanchor(chain *Chain, db *gorm.DB, rec Record) ([]byte, error) {
 			return nil, err
 		}
 		retriesTotal.Add(1)
+		// 重锚**只按当前链尾**取 `tail+1`（不消耗"进程内独占月份"）：
+		// 否则每条重试都推进一次月份，100 个 goroutine 会互相把月份推到 2048+。
 		m := freshMonthNoTest(chain, db)
-		cur.OccurredAt = m.Add(time.Duration(cur.OccurredAt.UnixNano()%1000) * time.Millisecond)
+		cur.OccurredAt = m
 	}
 	return nil, lastErr
 }
@@ -174,10 +176,6 @@ func freshMonthNoTest(_ *Chain, db *gorm.DB) time.Time {
 			month = tm
 		}
 	}
-	if last, ok := lastUsedMonth.Load().(time.Time); ok && !last.IsZero() && !month.After(last) {
-		month = last.AddDate(0, 1, 0)
-	}
-	lastUsedMonth.Store(month)
 	return month
 }
 
@@ -261,10 +259,12 @@ func requirePartition(t *testing.T, db *gorm.DB, month time.Time) time.Time {
 			t.Fatalf("check partition: %v", err)
 		}
 		if !exists {
-			if err := EnsurePartitions(context.Background(), db, []time.Time{month}); err != nil {
-				t.Fatalf("补建分区 %s 失败：%v", name, err)
-			}
-			continue // 再核一遍（顺便重新检查链尾有没有被推高）
+			// **运行期零 DDL**：不再现场建分区；缺了就当场失败并打出范围与链尾，
+			// 便于一眼看出是"预建窗口不够"还是"月份被推远"。
+			var tr sql.NullTime
+			_ = db.Raw(`SELECT max(occurred_at) FROM audit_logs`).Scan(&tr).Error
+			t.Fatalf("分区 %s 不存在（预建窗口 %d 个月，链尾=%v）：调大 partitionMonthCount 或改用 freshMonth",
+				name, partitionMonthCount, tr)
 		}
 		return month
 	}
@@ -612,7 +612,7 @@ func TestAppendHandlesOptionalColumns(t *testing.T) {
 	t.Cleanup(func() { _ = db.Exec(`DELETE FROM users WHERE id = ?`, actor).Error })
 
 	// ① 带 actor + before/after。
-	if _, err := chain.Append(context.Background(), db, Record{
+	if _, err := appendWithReanchor(chain, db, Record{
 		ID: mustID(t), ActorUserID: &actor, ActorRole: "sec_admin", Action: "role.bind", Result: "success",
 		TargetType: "role_binding", TargetID: "rb-1", ClientID: "s10-audit",
 		Before: map[string]any{"role": "viewer"}, After: map[string]any{"role": "admin"},
@@ -622,7 +622,7 @@ func TestAppendHandlesOptionalColumns(t *testing.T) {
 		t.Fatalf("Append(with actor): %v", err)
 	}
 	// ② 全空的"匿名/无快照"记录。
-	if _, err := chain.Append(context.Background(), db, Record{
+	if _, err := appendWithReanchor(chain, db, Record{
 		ID: mustID(t), Action: "system.cleanup", Result: "success",
 		OccurredAt: month.Add(2 * time.Second),
 	}); err != nil {
@@ -670,13 +670,13 @@ func TestOccurredAtIsPreservedAndHashed(t *testing.T) {
 
 	want := month.Add(3 * time.Second).Truncate(time.Microsecond)
 	first := Record{Action: "user.disable", Result: "success", TargetID: "same", OccurredAt: want}
-	if _, err := chain.Append(context.Background(), db, first); err != nil {
+	if _, err := appendWithReanchor(chain, db, first); err != nil {
 		t.Fatalf("Append: %v", err)
 	}
 	// 同一秒内再来一条（**调用方时间不比链尾晚**）：`occurred_at` 必须原样保留，
 	// 由 `created_at` 保证链序（这正是裁定的要点）。
 	second := Record{Action: "user.disable", Result: "success", TargetID: "same", OccurredAt: want}
-	if _, err := chain.Append(context.Background(), db, second); err != nil {
+	if _, err := appendWithReanchor(chain, db, second); err != nil {
 		t.Fatalf("Append(second): %v", err)
 	}
 
@@ -726,7 +726,7 @@ func TestOccurredAtBeforeTailMonthIsRejected(t *testing.T) {
 	month := freshMonth(t, db)
 	cleanupMonth(t, db, month)
 
-	if _, err := chain.Append(context.Background(), db, Record{
+	if _, err := appendWithReanchor(chain, db, Record{
 		Action: "a", Result: "success", OccurredAt: month.Add(time.Second),
 	}); err != nil {
 		t.Fatalf("Append: %v", err)
@@ -795,12 +795,12 @@ func TestSameMonthMicrosecondRollbackIsAccepted(t *testing.T) {
 
 	first := month.Add(10 * time.Second)
 	second := first.Add(-time.Microsecond) // 微秒级回退，仍在本月内
-	if _, err := chain.Append(context.Background(), db, Record{
+	if _, err := appendWithReanchor(chain, db, Record{
 		Action: "a", Result: "success", OccurredAt: first,
 	}); err != nil {
 		t.Fatalf("Append(first): %v", err)
 	}
-	if _, err := chain.Append(context.Background(), db, Record{
+	if _, err := appendWithReanchor(chain, db, Record{
 		Action: "b", Result: "success", OccurredAt: second,
 	}); err != nil {
 		t.Fatalf("同月内微秒级回退应被接受，实际 %v", err)
