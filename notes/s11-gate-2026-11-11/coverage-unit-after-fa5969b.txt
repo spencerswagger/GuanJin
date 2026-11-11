@@ -1,0 +1,20 @@
+[coverage] internal/admin = 83% (floor 70%)
+[coverage] internal/agent = 100% (floor 70%)
+[INFO] internal/audit：下限须由 integration profile 判定（unit profile 不编译 //go:build integration 用例）
+[INFO]       → 运行方式：COVERAGE_TAGS=integration COVERAGE_PROFILE=<integration 覆盖率> ./scripts/coverage-gate.sh
+[coverage] internal/credential = 93% (floor 85%)
+[coverage] internal/crypto = 91% (floor 90%)
+[coverage] internal/factor = 95% (floor 85%)
+[coverage] internal/flow = 87% (floor 85%)
+[INFO] internal/flowstore：下限须由 integration profile 判定（unit profile 不编译 //go:build integration 用例）
+[INFO]       → 运行方式：COVERAGE_TAGS=integration COVERAGE_PROFILE=<integration 覆盖率> ./scripts/coverage-gate.sh
+[coverage] internal/gateway = 87% (floor 80%)
+[coverage] internal/identifier = 93% (floor 85%)
+[INFO] internal/identity：下限须由 integration profile 判定（unit profile 不编译 //go:build integration 用例）
+[INFO]       → 运行方式：COVERAGE_TAGS=integration COVERAGE_PROFILE=<integration 覆盖率> ./scripts/coverage-gate.sh
+[coverage] internal/protocol = 76% (floor 70%)
+[coverage] internal/risk = 91% (floor 80%)
+[INFO] internal/store：下限须由 integration profile 判定（unit profile 不编译 //go:build integration 用例）
+[INFO]       → 运行方式：COVERAGE_TAGS=integration COVERAGE_PROFILE=<integration 覆盖率> ./scripts/coverage-gate.sh
+[coverage] total=67.8% min=60% profile=/.octop/workspaces/8WZP9H/generated/s11-gate/cov/after-fa5969b/unit.out
+[OK] coverage gate（逐模块下限 + 总闸）

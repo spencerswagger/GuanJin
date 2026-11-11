@@ -1,0 +1,500 @@
+[audit.TestMain] truncate isolated schema: truncate audit_test.audit_logs: ERROR: schema "audit_test" does not exist (SQLSTATE 3F000)
+[audit.TestMain] skip future-partition cleanup: 未设置 GUANJIN_ALLOW_TEST_CLEANUP=1
+[audit.TestMain] shared max(occurred_at): before="" after=""
+=== RUN   TestAnchorContinuitySameMonth
+--- PASS: TestAnchorContinuitySameMonth (0.06s)
+=== RUN   TestCanonicalEncodingUnified
+--- PASS: TestCanonicalEncodingUnified (0.00s)
+=== RUN   TestAnchorContinuityAfterSameMonthAppend
+--- PASS: TestAnchorContinuityAfterSameMonthAppend (0.10s)
+=== RUN   TestSealedMonthTailDeletedIsDetected
+--- PASS: TestSealedMonthTailDeletedIsDetected (0.06s)
+=== RUN   TestSealedMonthEmptiedIsDetected
+--- PASS: TestSealedMonthEmptiedIsDetected (0.05s)
+=== RUN   TestCanonicalSurvivesDBRoundTrip
+--- PASS: TestCanonicalSurvivesDBRoundTrip (0.04s)
+=== RUN   TestAnchorHeadUsesRealPredecessor
+--- PASS: TestAnchorHeadUsesRealPredecessor (0.07s)
+=== RUN   TestSameMonthRepeatVerifyNoFalseAlarm
+--- PASS: TestSameMonthRepeatVerifyNoFalseAlarm (0.10s)
+=== RUN   TestAnchorHeadDetectsSealedTailDeletion
+--- PASS: TestAnchorHeadDetectsSealedTailDeletion (0.08s)
+=== RUN   TestAnchorHeadHandlesCreatedAtTie
+--- PASS: TestAnchorHeadHandlesCreatedAtTie (0.04s)
+=== RUN   TestAppendConcurrentSerializedNoFork
+SUMMARY workers=20 elapsed=459ms dup_prev_tag=0 broken=false
+--- PASS: TestAppendConcurrentSerializedNoFork (0.50s)
+=== RUN   TestAppendB1AdvisoryRemovedRowLockHolds
+    append_window_db_test.go:149: dup_prev_tag=3 broken=true n=20
+    append_window_db_test.go:153: b1（只摘 advisory，保留 FOR UPDATE）：条数=20 forks=true
+--- PASS: TestAppendB1AdvisoryRemovedRowLockHolds (0.23s)
+=== RUN   TestAppendB2BothLocksRemovedMustFork
+    append_window_db_test.go:161: dup_prev_tag=3 broken=true n=20
+    append_window_db_test.go:171: b2 成立：两道锁摘掉后检出分叉（n=20）
+--- PASS: TestAppendB2BothLocksRemovedMustFork (0.23s)
+=== RUN   TestAC_AUD_03_DeletedMiddleRecordIsDetected
+--- PASS: TestAC_AUD_03_DeletedMiddleRecordIsDetected (0.07s)
+=== RUN   TestAC_AUD_05_TamperedRecordIsDetectedAndMetricIncrements
+--- PASS: TestAC_AUD_05_TamperedRecordIsDetectedAndMetricIncrements (0.05s)
+=== RUN   TestAC_AUD_11_AnchorAndVerifyMetrics
+--- PASS: TestAC_AUD_11_AnchorAndVerifyMetrics (0.05s)
+=== RUN   TestAC_AUD_11_JobRunsOnTickerAndSkipsEmptyMonth
+--- PASS: TestAC_AUD_11_JobRunsOnTickerAndSkipsEmptyMonth (0.06s)
+=== RUN   TestChainRealPathsForCoverage
+--- PASS: TestChainRealPathsForCoverage (0.04s)
+=== RUN   TestLoadEmptyRangeAndAnchorOverwrite
+--- PASS: TestLoadEmptyRangeAndAnchorOverwrite (0.05s)
+=== RUN   TestOccurredAtBeforeTailMonthIsRejected
+--- PASS: TestOccurredAtBeforeTailMonthIsRejected (0.04s)
+=== RUN   TestOccurredAtIsPreservedAndHashed
+--- PASS: TestOccurredAtIsPreservedAndHashed (0.04s)
+=== RUN   TestAppendHandlesOptionalColumns
+--- PASS: TestAppendHandlesOptionalColumns (0.04s)
+=== RUN   TestSameMonthMicrosecondRollbackIsAccepted
+--- PASS: TestSameMonthMicrosecondRollbackIsAccepted (0.04s)
+=== RUN   TestAnchorMismatchBreaksAtTail
+--- PASS: TestAnchorMismatchBreaksAtTail (0.05s)
+=== RUN   TestVerifyCleanChain
+--- PASS: TestVerifyCleanChain (0.00s)
+=== RUN   TestVerifyDetectsDeletedMiddleRecord
+--- PASS: TestVerifyDetectsDeletedMiddleRecord (0.00s)
+=== RUN   TestVerifyDetectsTamperedContent
+--- PASS: TestVerifyDetectsTamperedContent (0.00s)
+=== RUN   TestVerifyDetectsReordering
+--- PASS: TestVerifyDetectsReordering (0.00s)
+=== RUN   TestVerifyUsesAnchorForSegmentStart
+--- PASS: TestVerifyUsesAnchorForSegmentStart (0.00s)
+=== RUN   TestCanonicalIsDeterministicAndOrderInsensitive
+--- PASS: TestCanonicalIsDeterministicAndOrderInsensitive (0.00s)
+=== RUN   TestNewChainRejectsZeroKey
+--- PASS: TestNewChainRejectsZeroKey (0.00s)
+=== RUN   TestBrokenPointErrorCarriesLocation
+--- PASS: TestBrokenPointErrorCarriesLocation (0.00s)
+=== RUN   TestAnchorAndSegmentKeys
+--- PASS: TestAnchorAndSegmentKeys (0.00s)
+=== RUN   TestCanonicalCoversValueKinds
+--- PASS: TestCanonicalCoversValueKinds (0.00s)
+=== RUN   TestAuditNilSafety
+--- PASS: TestAuditNilSafety (0.00s)
+=== RUN   TestNewIDIsV7AndUnique
+--- PASS: TestNewIDIsV7AndUnique (0.00s)
+=== RUN   TestVerifyEmptyChainPasses
+--- PASS: TestVerifyEmptyChainPasses (0.00s)
+=== RUN   TestAC_AUD_04_Concurrent100AppendsKeepChainIntact
+    concurrent_serial_db_test.go:54: retries_total=0（重锚重试次数；> 总写入 10% 说明结构性问题仍在）
+--- PASS: TestAC_AUD_04_Concurrent100AppendsKeepChainIntact (0.79s)
+=== RUN   TestEnsureAndDropPartitionsRoundTrip
+--- PASS: TestEnsureAndDropPartitionsRoundTrip (0.05s)
+=== RUN   TestAppendAndLoadRejectBadInput
+--- PASS: TestAppendAndLoadRejectBadInput (0.00s)
+=== RUN   TestAnchorStoreRejectsNil
+--- PASS: TestAnchorStoreRejectsNil (0.00s)
+=== RUN   TestNewVerifierValidation
+--- PASS: TestNewVerifierValidation (0.00s)
+=== RUN   TestMonthOfTruncatesToUTCFirstDay
+--- PASS: TestMonthOfTruncatesToUTCFirstDay (0.00s)
+=== RUN   TestAnchorAgeSemantics
+--- PASS: TestAnchorAgeSemantics (0.00s)
+=== RUN   TestStartJobStopsOnCancel
+
+2026/11/11 16:44:08 [31;1m/worktrees/GJ-QA/internal/audit/repo.go:285 [35;1mfailed to connect to `user=user database=guanjin_test`: 127.0.0.1:1 (127.0.0.1): dial error: dial tcp 127.0.0.1:1: connect: connection refused
+[0m[33m[0.294ms] [34;1m[rows:-][0m SELECT value #>> '{}' FROM runtime_config WHERE key = 'audit.chain.anchor.202611'
+2026/11/11 16:44:08 WARN audit: verify job failed error="audit: load anchor: failed to connect to `user=user database=guanjin_test`: 127.0.0.1:1 (127.0.0.1): dial error: dial tcp 127.0.0.1:1: connect: connection refused"
+
+2026/11/11 16:44:08 [31;1m/worktrees/GJ-QA/internal/audit/repo.go:285 [35;1mfailed to connect to `user=user database=guanjin_test`: 127.0.0.1:1 (127.0.0.1): dial error: dial tcp 127.0.0.1:1: connect: connection refused
+[0m[33m[0.171ms] [34;1m[rows:-][0m SELECT value #>> '{}' FROM runtime_config WHERE key = 'audit.chain.anchor.202611'
+2026/11/11 16:44:08 WARN audit: verify job failed error="audit: load anchor: failed to connect to `user=user database=guanjin_test`: 127.0.0.1:1 (127.0.0.1): dial error: dial tcp 127.0.0.1:1: connect: connection refused"
+
+2026/11/11 16:44:08 [31;1m/worktrees/GJ-QA/internal/audit/repo.go:285 [35;1mcontext canceled
+[0m[33m[0.021ms] [34;1m[rows:-][0m SELECT value #>> '{}' FROM runtime_config WHERE key = 'audit.chain.anchor.202611'
+2026/11/11 16:44:08 WARN audit: verify job failed error="audit: load anchor: context canceled"
+--- PASS: TestStartJobStopsOnCancel (0.05s)
+=== RUN   TestRunRangeFailsClosedWhenAnchorUnreadable
+
+2026/11/11 16:44:08 [31;1m/worktrees/GJ-QA/internal/audit/repo.go:285 [35;1mfailed to connect to `user=user database=guanjin_test`: 127.0.0.1:1 (127.0.0.1): dial error: dial tcp 127.0.0.1:1: connect: connection refused
+[0m[33m[0.228ms] [34;1m[rows:-][0m SELECT value #>> '{}' FROM runtime_config WHERE key = 'audit.chain.anchor.202611'
+--- PASS: TestRunRangeFailsClosedWhenAnchorUnreadable (0.00s)
+=== RUN   TestChainGuardsOnZeroKey
+--- PASS: TestChainGuardsOnZeroKey (0.00s)
+=== RUN   TestBrokenPointIsErrChainBroken
+--- PASS: TestBrokenPointIsErrChainBroken (0.00s)
+=== RUN   TestJSONHelpersEdgeCases
+--- PASS: TestJSONHelpersEdgeCases (0.00s)
+=== RUN   TestNewVerifierMissingDeps
+--- PASS: TestNewVerifierMissingDeps (0.00s)
+=== RUN   TestStartJobDefaultInterval
+--- PASS: TestStartJobDefaultInterval (0.00s)
+=== RUN   TestAnchorPutEmptyTag
+--- PASS: TestAnchorPutEmptyTag (0.00s)
+=== RUN   TestPartitionHelpersValidation
+--- PASS: TestPartitionHelpersValidation (0.00s)
+=== RUN   TestIsNoRows
+--- PASS: TestIsNoRows (0.00s)
+=== RUN   TestAppendSurfacesDBError
+--- PASS: TestAppendSurfacesDBError (0.00s)
+=== RUN   TestAnchorPutSurfacesDBError
+
+2026/11/11 16:44:08 [31;1m/worktrees/GJ-QA/internal/audit/repo.go:270 [35;1mfailed to connect to `user=user database=guanjin_test`: 127.0.0.1:1 (127.0.0.1): dial error: dial tcp 127.0.0.1:1: connect: connection refused
+[0m[33m[0.093ms] [34;1m[rows:0][0m INSERT INTO runtime_config (key, value, value_type, description)
+		 VALUES ('audit.chain.anchor.202611', '"eA=="'::jsonb, 'string', '审计链月度锚点（D4-C）')
+		 ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+--- PASS: TestAnchorPutSurfacesDBError (0.00s)
+=== RUN   TestRunRangeSurfacesLoadError
+
+2026/11/11 16:44:08 [31;1m/worktrees/GJ-QA/internal/audit/repo.go:285 [35;1mfailed to connect to `user=user database=guanjin_test`: 127.0.0.1:1 (127.0.0.1): dial error: dial tcp 127.0.0.1:1: connect: connection refused
+[0m[33m[0.087ms] [34;1m[rows:-][0m SELECT value #>> '{}' FROM runtime_config WHERE key = 'audit.chain.anchor.202611'
+--- PASS: TestRunRangeSurfacesLoadError (0.00s)
+=== RUN   TestErrorBranchesReach
+--- PASS: TestErrorBranchesReach (0.00s)
+=== RUN   TestVerifyFromUnknownPrevStillChecksContent
+--- PASS: TestVerifyFromUnknownPrevStillChecksContent (0.00s)
+=== RUN   TestCanonicalHugeNumberIsDeterministic
+--- PASS: TestCanonicalHugeNumberIsDeterministic (0.00s)
+=== RUN   TestStartJobSurvivesDependencyFailure
+2026/11/11 16:44:08 WARN audit: verify job failed error="audit: load anchor: failed to connect to `user=user database=guanjin_test`: 127.0.0.1:1 (127.0.0.1): dial error: dial tcp 127.0.0.1:1: connect: connection refused"
+2026/11/11 16:44:08 WARN audit: verify job failed error="audit: load anchor: failed to connect to `user=user database=guanjin_test`: 127.0.0.1:1 (127.0.0.1): dial error: dial tcp 127.0.0.1:1: connect: connection refused"
+2026/11/11 16:44:08 WARN audit: verify job failed error="audit: load anchor: failed to connect to `user=user database=guanjin_test`: 127.0.0.1:1 (127.0.0.1): dial error: dial tcp 127.0.0.1:1: connect: connection refused"
+2026/11/11 16:44:08 WARN audit: verify job failed error="audit: load anchor: failed to connect to `user=user database=guanjin_test`: 127.0.0.1:1 (127.0.0.1): dial error: dial tcp 127.0.0.1:1: connect: connection refused"
+2026/11/11 16:44:08 WARN audit: verify job failed error="audit: load anchor: failed to connect to `user=user database=guanjin_test`: 127.0.0.1:1 (127.0.0.1): dial error: dial tcp 127.0.0.1:1: connect: connection refused"
+2026/11/11 16:44:08 WARN audit: verify job failed error="audit: load anchor: failed to connect to `user=user database=guanjin_test`: 127.0.0.1:1 (127.0.0.1): dial error: dial tcp 127.0.0.1:1: connect: connection refused"
+2026/11/11 16:44:08 WARN audit: verify job failed error="audit: load anchor: failed to connect to `user=user database=guanjin_test`: 127.0.0.1:1 (127.0.0.1): dial error: dial tcp 127.0.0.1:1: connect: connection refused"
+2026/11/11 16:44:08 WARN audit: verify job failed error="audit: load anchor: failed to connect to `user=user database=guanjin_test`: 127.0.0.1:1 (127.0.0.1): dial error: dial tcp 127.0.0.1:1: operation was canceled"
+--- PASS: TestStartJobSurvivesDependencyFailure (0.06s)
+=== RUN   TestAnchorCurrentMonthSurfacesDBError
+--- PASS: TestAnchorCurrentMonthSurfacesDBError (0.00s)
+=== RUN   TestCanonicalBigIntegersKeepPrecision
+--- PASS: TestCanonicalBigIntegersKeepPrecision (0.00s)
+=== RUN   TestCanonicalWriteReadAgree
+--- PASS: TestCanonicalWriteReadAgree (0.01s)
+=== RUN   TestAnchorContinuitySameMonth
+--- PASS: TestAnchorContinuitySameMonth (0.08s)
+=== RUN   TestCanonicalEncodingUnified
+--- PASS: TestCanonicalEncodingUnified (0.00s)
+=== RUN   TestAnchorContinuityAfterSameMonthAppend
+--- PASS: TestAnchorContinuityAfterSameMonthAppend (0.07s)
+=== RUN   TestSealedMonthTailDeletedIsDetected
+--- PASS: TestSealedMonthTailDeletedIsDetected (0.07s)
+=== RUN   TestSealedMonthEmptiedIsDetected
+--- PASS: TestSealedMonthEmptiedIsDetected (0.05s)
+=== RUN   TestCanonicalSurvivesDBRoundTrip
+--- PASS: TestCanonicalSurvivesDBRoundTrip (0.04s)
+=== RUN   TestAnchorHeadUsesRealPredecessor
+--- PASS: TestAnchorHeadUsesRealPredecessor (0.08s)
+=== RUN   TestSameMonthRepeatVerifyNoFalseAlarm
+--- PASS: TestSameMonthRepeatVerifyNoFalseAlarm (0.08s)
+=== RUN   TestAnchorHeadDetectsSealedTailDeletion
+--- PASS: TestAnchorHeadDetectsSealedTailDeletion (0.08s)
+=== RUN   TestAnchorHeadHandlesCreatedAtTie
+--- PASS: TestAnchorHeadHandlesCreatedAtTie (0.05s)
+=== RUN   TestAppendConcurrentSerializedNoFork
+SUMMARY workers=20 elapsed=637ms dup_prev_tag=0 broken=false
+--- PASS: TestAppendConcurrentSerializedNoFork (0.67s)
+=== RUN   TestAppendB1AdvisoryRemovedRowLockHolds
+    append_window_db_test.go:149: dup_prev_tag=4 broken=true n=20
+    append_window_db_test.go:153: b1（只摘 advisory，保留 FOR UPDATE）：条数=20 forks=true
+--- PASS: TestAppendB1AdvisoryRemovedRowLockHolds (0.24s)
+=== RUN   TestAppendB2BothLocksRemovedMustFork
+    append_window_db_test.go:161: dup_prev_tag=4 broken=true n=20
+    append_window_db_test.go:171: b2 成立：两道锁摘掉后检出分叉（n=20）
+--- PASS: TestAppendB2BothLocksRemovedMustFork (0.24s)
+=== RUN   TestAC_AUD_03_DeletedMiddleRecordIsDetected
+--- PASS: TestAC_AUD_03_DeletedMiddleRecordIsDetected (0.07s)
+=== RUN   TestAC_AUD_05_TamperedRecordIsDetectedAndMetricIncrements
+--- PASS: TestAC_AUD_05_TamperedRecordIsDetectedAndMetricIncrements (0.06s)
+=== RUN   TestAC_AUD_11_AnchorAndVerifyMetrics
+--- PASS: TestAC_AUD_11_AnchorAndVerifyMetrics (0.06s)
+=== RUN   TestAC_AUD_11_JobRunsOnTickerAndSkipsEmptyMonth
+--- PASS: TestAC_AUD_11_JobRunsOnTickerAndSkipsEmptyMonth (0.05s)
+=== RUN   TestChainRealPathsForCoverage
+--- PASS: TestChainRealPathsForCoverage (0.04s)
+=== RUN   TestLoadEmptyRangeAndAnchorOverwrite
+--- PASS: TestLoadEmptyRangeAndAnchorOverwrite (0.04s)
+=== RUN   TestOccurredAtBeforeTailMonthIsRejected
+--- PASS: TestOccurredAtBeforeTailMonthIsRejected (0.07s)
+=== RUN   TestOccurredAtIsPreservedAndHashed
+--- PASS: TestOccurredAtIsPreservedAndHashed (0.05s)
+=== RUN   TestAppendHandlesOptionalColumns
+--- PASS: TestAppendHandlesOptionalColumns (0.05s)
+=== RUN   TestSameMonthMicrosecondRollbackIsAccepted
+--- PASS: TestSameMonthMicrosecondRollbackIsAccepted (0.06s)
+=== RUN   TestAnchorMismatchBreaksAtTail
+--- PASS: TestAnchorMismatchBreaksAtTail (0.07s)
+=== RUN   TestVerifyCleanChain
+--- PASS: TestVerifyCleanChain (0.00s)
+=== RUN   TestVerifyDetectsDeletedMiddleRecord
+--- PASS: TestVerifyDetectsDeletedMiddleRecord (0.00s)
+=== RUN   TestVerifyDetectsTamperedContent
+--- PASS: TestVerifyDetectsTamperedContent (0.00s)
+=== RUN   TestVerifyDetectsReordering
+--- PASS: TestVerifyDetectsReordering (0.00s)
+=== RUN   TestVerifyUsesAnchorForSegmentStart
+--- PASS: TestVerifyUsesAnchorForSegmentStart (0.00s)
+=== RUN   TestCanonicalIsDeterministicAndOrderInsensitive
+--- PASS: TestCanonicalIsDeterministicAndOrderInsensitive (0.00s)
+=== RUN   TestNewChainRejectsZeroKey
+--- PASS: TestNewChainRejectsZeroKey (0.00s)
+=== RUN   TestBrokenPointErrorCarriesLocation
+--- PASS: TestBrokenPointErrorCarriesLocation (0.00s)
+=== RUN   TestAnchorAndSegmentKeys
+--- PASS: TestAnchorAndSegmentKeys (0.00s)
+=== RUN   TestCanonicalCoversValueKinds
+--- PASS: TestCanonicalCoversValueKinds (0.00s)
+=== RUN   TestAuditNilSafety
+--- PASS: TestAuditNilSafety (0.00s)
+=== RUN   TestNewIDIsV7AndUnique
+--- PASS: TestNewIDIsV7AndUnique (0.00s)
+=== RUN   TestVerifyEmptyChainPasses
+--- PASS: TestVerifyEmptyChainPasses (0.00s)
+=== RUN   TestAC_AUD_04_Concurrent100AppendsKeepChainIntact
+    concurrent_serial_db_test.go:54: retries_total=0（重锚重试次数；> 总写入 10% 说明结构性问题仍在）
+--- PASS: TestAC_AUD_04_Concurrent100AppendsKeepChainIntact (0.69s)
+=== RUN   TestEnsureAndDropPartitionsRoundTrip
+--- PASS: TestEnsureAndDropPartitionsRoundTrip (0.04s)
+=== RUN   TestAppendAndLoadRejectBadInput
+--- PASS: TestAppendAndLoadRejectBadInput (0.00s)
+=== RUN   TestAnchorStoreRejectsNil
+--- PASS: TestAnchorStoreRejectsNil (0.00s)
+=== RUN   TestNewVerifierValidation
+--- PASS: TestNewVerifierValidation (0.00s)
+=== RUN   TestMonthOfTruncatesToUTCFirstDay
+--- PASS: TestMonthOfTruncatesToUTCFirstDay (0.00s)
+=== RUN   TestAnchorAgeSemantics
+--- PASS: TestAnchorAgeSemantics (0.00s)
+=== RUN   TestStartJobStopsOnCancel
+
+2026/11/11 16:44:11 [31;1m/worktrees/GJ-QA/internal/audit/repo.go:285 [35;1mfailed to connect to `user=user database=guanjin_test`: 127.0.0.1:1 (127.0.0.1): dial error: dial tcp 127.0.0.1:1: connect: connection refused
+[0m[33m[0.279ms] [34;1m[rows:-][0m SELECT value #>> '{}' FROM runtime_config WHERE key = 'audit.chain.anchor.202611'
+2026/11/11 16:44:11 WARN audit: verify job failed error="audit: load anchor: failed to connect to `user=user database=guanjin_test`: 127.0.0.1:1 (127.0.0.1): dial error: dial tcp 127.0.0.1:1: connect: connection refused"
+
+2026/11/11 16:44:11 [31;1m/worktrees/GJ-QA/internal/audit/repo.go:285 [35;1mfailed to connect to `user=user database=guanjin_test`: 127.0.0.1:1 (127.0.0.1): dial error: dial tcp 127.0.0.1:1: connect: connection refused
+[0m[33m[0.252ms] [34;1m[rows:-][0m SELECT value #>> '{}' FROM runtime_config WHERE key = 'audit.chain.anchor.202611'
+2026/11/11 16:44:11 WARN audit: verify job failed error="audit: load anchor: failed to connect to `user=user database=guanjin_test`: 127.0.0.1:1 (127.0.0.1): dial error: dial tcp 127.0.0.1:1: connect: connection refused"
+
+2026/11/11 16:44:11 [31;1m/worktrees/GJ-QA/internal/audit/repo.go:285 [35;1mcontext canceled
+[0m[33m[0.021ms] [34;1m[rows:-][0m SELECT value #>> '{}' FROM runtime_config WHERE key = 'audit.chain.anchor.202611'
+2026/11/11 16:44:11 WARN audit: verify job failed error="audit: load anchor: context canceled"
+--- PASS: TestStartJobStopsOnCancel (0.05s)
+=== RUN   TestRunRangeFailsClosedWhenAnchorUnreadable
+
+2026/11/11 16:44:11 [31;1m/worktrees/GJ-QA/internal/audit/repo.go:285 [35;1mfailed to connect to `user=user database=guanjin_test`: 127.0.0.1:1 (127.0.0.1): dial error: dial tcp 127.0.0.1:1: connect: connection refused
+[0m[33m[0.253ms] [34;1m[rows:-][0m SELECT value #>> '{}' FROM runtime_config WHERE key = 'audit.chain.anchor.202611'
+--- PASS: TestRunRangeFailsClosedWhenAnchorUnreadable (0.00s)
+=== RUN   TestChainGuardsOnZeroKey
+--- PASS: TestChainGuardsOnZeroKey (0.00s)
+=== RUN   TestBrokenPointIsErrChainBroken
+--- PASS: TestBrokenPointIsErrChainBroken (0.00s)
+=== RUN   TestJSONHelpersEdgeCases
+--- PASS: TestJSONHelpersEdgeCases (0.00s)
+=== RUN   TestNewVerifierMissingDeps
+--- PASS: TestNewVerifierMissingDeps (0.00s)
+=== RUN   TestStartJobDefaultInterval
+--- PASS: TestStartJobDefaultInterval (0.00s)
+=== RUN   TestAnchorPutEmptyTag
+--- PASS: TestAnchorPutEmptyTag (0.00s)
+=== RUN   TestPartitionHelpersValidation
+--- PASS: TestPartitionHelpersValidation (0.00s)
+=== RUN   TestIsNoRows
+--- PASS: TestIsNoRows (0.00s)
+=== RUN   TestAppendSurfacesDBError
+--- PASS: TestAppendSurfacesDBError (0.00s)
+=== RUN   TestAnchorPutSurfacesDBError
+
+2026/11/11 16:44:11 [31;1m/worktrees/GJ-QA/internal/audit/repo.go:270 [35;1mfailed to connect to `user=user database=guanjin_test`: 127.0.0.1:1 (127.0.0.1): dial error: dial tcp 127.0.0.1:1: connect: connection refused
+[0m[33m[0.095ms] [34;1m[rows:0][0m INSERT INTO runtime_config (key, value, value_type, description)
+		 VALUES ('audit.chain.anchor.202611', '"eA=="'::jsonb, 'string', '审计链月度锚点（D4-C）')
+		 ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+--- PASS: TestAnchorPutSurfacesDBError (0.00s)
+=== RUN   TestRunRangeSurfacesLoadError
+
+2026/11/11 16:44:11 [31;1m/worktrees/GJ-QA/internal/audit/repo.go:285 [35;1mfailed to connect to `user=user database=guanjin_test`: 127.0.0.1:1 (127.0.0.1): dial error: dial tcp 127.0.0.1:1: connect: connection refused
+[0m[33m[0.120ms] [34;1m[rows:-][0m SELECT value #>> '{}' FROM runtime_config WHERE key = 'audit.chain.anchor.202611'
+--- PASS: TestRunRangeSurfacesLoadError (0.00s)
+=== RUN   TestErrorBranchesReach
+--- PASS: TestErrorBranchesReach (0.00s)
+=== RUN   TestVerifyFromUnknownPrevStillChecksContent
+--- PASS: TestVerifyFromUnknownPrevStillChecksContent (0.00s)
+=== RUN   TestCanonicalHugeNumberIsDeterministic
+--- PASS: TestCanonicalHugeNumberIsDeterministic (0.00s)
+=== RUN   TestStartJobSurvivesDependencyFailure
+2026/11/11 16:44:11 WARN audit: verify job failed error="audit: load anchor: failed to connect to `user=user database=guanjin_test`: 127.0.0.1:1 (127.0.0.1): dial error: dial tcp 127.0.0.1:1: connect: connection refused"
+2026/11/11 16:44:11 WARN audit: verify job failed error="audit: load anchor: failed to connect to `user=user database=guanjin_test`: 127.0.0.1:1 (127.0.0.1): dial error: dial tcp 127.0.0.1:1: connect: connection refused"
+2026/11/11 16:44:11 WARN audit: verify job failed error="audit: load anchor: failed to connect to `user=user database=guanjin_test`: 127.0.0.1:1 (127.0.0.1): dial error: dial tcp 127.0.0.1:1: connect: connection refused"
+2026/11/11 16:44:11 WARN audit: verify job failed error="audit: load anchor: failed to connect to `user=user database=guanjin_test`: 127.0.0.1:1 (127.0.0.1): dial error: dial tcp 127.0.0.1:1: connect: connection refused"
+2026/11/11 16:44:11 WARN audit: verify job failed error="audit: load anchor: failed to connect to `user=user database=guanjin_test`: 127.0.0.1:1 (127.0.0.1): dial error: dial tcp 127.0.0.1:1: connect: connection refused"
+2026/11/11 16:44:11 WARN audit: verify job failed error="audit: load anchor: failed to connect to `user=user database=guanjin_test`: 127.0.0.1:1 (127.0.0.1): dial error: dial tcp 127.0.0.1:1: connect: connection refused"
+2026/11/11 16:44:11 WARN audit: verify job failed error="audit: load anchor: failed to connect to `user=user database=guanjin_test`: 127.0.0.1:1 (127.0.0.1): dial error: dial tcp 127.0.0.1:1: connect: connection refused"
+2026/11/11 16:44:11 WARN audit: verify job failed error="audit: load anchor: context canceled"
+--- PASS: TestStartJobSurvivesDependencyFailure (0.06s)
+=== RUN   TestAnchorCurrentMonthSurfacesDBError
+--- PASS: TestAnchorCurrentMonthSurfacesDBError (0.00s)
+=== RUN   TestCanonicalBigIntegersKeepPrecision
+--- PASS: TestCanonicalBigIntegersKeepPrecision (0.00s)
+=== RUN   TestCanonicalWriteReadAgree
+--- PASS: TestCanonicalWriteReadAgree (0.01s)
+=== RUN   TestAnchorContinuitySameMonth
+--- PASS: TestAnchorContinuitySameMonth (0.08s)
+=== RUN   TestCanonicalEncodingUnified
+--- PASS: TestCanonicalEncodingUnified (0.00s)
+=== RUN   TestAnchorContinuityAfterSameMonthAppend
+--- PASS: TestAnchorContinuityAfterSameMonthAppend (0.09s)
+=== RUN   TestSealedMonthTailDeletedIsDetected
+--- PASS: TestSealedMonthTailDeletedIsDetected (0.09s)
+=== RUN   TestSealedMonthEmptiedIsDetected
+--- PASS: TestSealedMonthEmptiedIsDetected (0.05s)
+=== RUN   TestCanonicalSurvivesDBRoundTrip
+--- PASS: TestCanonicalSurvivesDBRoundTrip (0.05s)
+=== RUN   TestAnchorHeadUsesRealPredecessor
+--- PASS: TestAnchorHeadUsesRealPredecessor (0.08s)
+=== RUN   TestSameMonthRepeatVerifyNoFalseAlarm
+--- PASS: TestSameMonthRepeatVerifyNoFalseAlarm (0.06s)
+=== RUN   TestAnchorHeadDetectsSealedTailDeletion
+--- PASS: TestAnchorHeadDetectsSealedTailDeletion (0.06s)
+=== RUN   TestAnchorHeadHandlesCreatedAtTie
+--- PASS: TestAnchorHeadHandlesCreatedAtTie (0.04s)
+=== RUN   TestAppendConcurrentSerializedNoFork
+SUMMARY workers=20 elapsed=477ms dup_prev_tag=0 broken=false
+--- PASS: TestAppendConcurrentSerializedNoFork (0.52s)
+=== RUN   TestAppendB1AdvisoryRemovedRowLockHolds
+    append_window_db_test.go:149: dup_prev_tag=3 broken=true n=20
+    append_window_db_test.go:153: b1（只摘 advisory，保留 FOR UPDATE）：条数=20 forks=true
+--- PASS: TestAppendB1AdvisoryRemovedRowLockHolds (0.23s)
+=== RUN   TestAppendB2BothLocksRemovedMustFork
+    append_window_db_test.go:161: dup_prev_tag=6 broken=true n=20
+    append_window_db_test.go:171: b2 成立：两道锁摘掉后检出分叉（n=20）
+--- PASS: TestAppendB2BothLocksRemovedMustFork (0.22s)
+=== RUN   TestAC_AUD_03_DeletedMiddleRecordIsDetected
+--- PASS: TestAC_AUD_03_DeletedMiddleRecordIsDetected (0.07s)
+=== RUN   TestAC_AUD_05_TamperedRecordIsDetectedAndMetricIncrements
+--- PASS: TestAC_AUD_05_TamperedRecordIsDetectedAndMetricIncrements (0.07s)
+=== RUN   TestAC_AUD_11_AnchorAndVerifyMetrics
+--- PASS: TestAC_AUD_11_AnchorAndVerifyMetrics (0.06s)
+=== RUN   TestAC_AUD_11_JobRunsOnTickerAndSkipsEmptyMonth
+--- PASS: TestAC_AUD_11_JobRunsOnTickerAndSkipsEmptyMonth (0.05s)
+=== RUN   TestChainRealPathsForCoverage
+--- PASS: TestChainRealPathsForCoverage (0.08s)
+=== RUN   TestLoadEmptyRangeAndAnchorOverwrite
+--- PASS: TestLoadEmptyRangeAndAnchorOverwrite (0.04s)
+=== RUN   TestOccurredAtBeforeTailMonthIsRejected
+--- PASS: TestOccurredAtBeforeTailMonthIsRejected (0.05s)
+=== RUN   TestOccurredAtIsPreservedAndHashed
+--- PASS: TestOccurredAtIsPreservedAndHashed (0.05s)
+=== RUN   TestAppendHandlesOptionalColumns
+--- PASS: TestAppendHandlesOptionalColumns (0.08s)
+=== RUN   TestSameMonthMicrosecondRollbackIsAccepted
+--- PASS: TestSameMonthMicrosecondRollbackIsAccepted (0.05s)
+=== RUN   TestAnchorMismatchBreaksAtTail
+--- PASS: TestAnchorMismatchBreaksAtTail (0.05s)
+=== RUN   TestVerifyCleanChain
+--- PASS: TestVerifyCleanChain (0.00s)
+=== RUN   TestVerifyDetectsDeletedMiddleRecord
+--- PASS: TestVerifyDetectsDeletedMiddleRecord (0.00s)
+=== RUN   TestVerifyDetectsTamperedContent
+--- PASS: TestVerifyDetectsTamperedContent (0.00s)
+=== RUN   TestVerifyDetectsReordering
+--- PASS: TestVerifyDetectsReordering (0.00s)
+=== RUN   TestVerifyUsesAnchorForSegmentStart
+--- PASS: TestVerifyUsesAnchorForSegmentStart (0.00s)
+=== RUN   TestCanonicalIsDeterministicAndOrderInsensitive
+--- PASS: TestCanonicalIsDeterministicAndOrderInsensitive (0.00s)
+=== RUN   TestNewChainRejectsZeroKey
+--- PASS: TestNewChainRejectsZeroKey (0.00s)
+=== RUN   TestBrokenPointErrorCarriesLocation
+--- PASS: TestBrokenPointErrorCarriesLocation (0.00s)
+=== RUN   TestAnchorAndSegmentKeys
+--- PASS: TestAnchorAndSegmentKeys (0.00s)
+=== RUN   TestCanonicalCoversValueKinds
+--- PASS: TestCanonicalCoversValueKinds (0.00s)
+=== RUN   TestAuditNilSafety
+--- PASS: TestAuditNilSafety (0.00s)
+=== RUN   TestNewIDIsV7AndUnique
+--- PASS: TestNewIDIsV7AndUnique (0.00s)
+=== RUN   TestVerifyEmptyChainPasses
+--- PASS: TestVerifyEmptyChainPasses (0.00s)
+=== RUN   TestAC_AUD_04_Concurrent100AppendsKeepChainIntact
+    concurrent_serial_db_test.go:54: retries_total=0（重锚重试次数；> 总写入 10% 说明结构性问题仍在）
+--- PASS: TestAC_AUD_04_Concurrent100AppendsKeepChainIntact (0.91s)
+=== RUN   TestEnsureAndDropPartitionsRoundTrip
+--- PASS: TestEnsureAndDropPartitionsRoundTrip (0.03s)
+=== RUN   TestAppendAndLoadRejectBadInput
+--- PASS: TestAppendAndLoadRejectBadInput (0.00s)
+=== RUN   TestAnchorStoreRejectsNil
+--- PASS: TestAnchorStoreRejectsNil (0.00s)
+=== RUN   TestNewVerifierValidation
+--- PASS: TestNewVerifierValidation (0.00s)
+=== RUN   TestMonthOfTruncatesToUTCFirstDay
+--- PASS: TestMonthOfTruncatesToUTCFirstDay (0.00s)
+=== RUN   TestAnchorAgeSemantics
+--- PASS: TestAnchorAgeSemantics (0.00s)
+=== RUN   TestStartJobStopsOnCancel
+
+2026/11/11 16:44:14 [31;1m/worktrees/GJ-QA/internal/audit/repo.go:285 [35;1mfailed to connect to `user=user database=guanjin_test`: 127.0.0.1:1 (127.0.0.1): dial error: dial tcp 127.0.0.1:1: connect: connection refused
+[0m[33m[0.278ms] [34;1m[rows:-][0m SELECT value #>> '{}' FROM runtime_config WHERE key = 'audit.chain.anchor.202611'
+2026/11/11 16:44:14 WARN audit: verify job failed error="audit: load anchor: failed to connect to `user=user database=guanjin_test`: 127.0.0.1:1 (127.0.0.1): dial error: dial tcp 127.0.0.1:1: connect: connection refused"
+
+2026/11/11 16:44:14 [31;1m/worktrees/GJ-QA/internal/audit/repo.go:285 [35;1mfailed to connect to `user=user database=guanjin_test`: 127.0.0.1:1 (127.0.0.1): dial error: dial tcp 127.0.0.1:1: connect: connection refused
+[0m[33m[0.207ms] [34;1m[rows:-][0m SELECT value #>> '{}' FROM runtime_config WHERE key = 'audit.chain.anchor.202611'
+2026/11/11 16:44:14 WARN audit: verify job failed error="audit: load anchor: failed to connect to `user=user database=guanjin_test`: 127.0.0.1:1 (127.0.0.1): dial error: dial tcp 127.0.0.1:1: connect: connection refused"
+
+2026/11/11 16:44:14 [31;1m/worktrees/GJ-QA/internal/audit/repo.go:285 [35;1mcontext canceled
+[0m[33m[0.030ms] [34;1m[rows:-][0m SELECT value #>> '{}' FROM runtime_config WHERE key = 'audit.chain.anchor.202611'
+2026/11/11 16:44:14 WARN audit: verify job failed error="audit: load anchor: context canceled"
+--- PASS: TestStartJobStopsOnCancel (0.05s)
+=== RUN   TestRunRangeFailsClosedWhenAnchorUnreadable
+
+2026/11/11 16:44:14 [31;1m/worktrees/GJ-QA/internal/audit/repo.go:285 [35;1mfailed to connect to `user=user database=guanjin_test`: 127.0.0.1:1 (127.0.0.1): dial error: dial tcp 127.0.0.1:1: connect: connection refused
+[0m[33m[0.260ms] [34;1m[rows:-][0m SELECT value #>> '{}' FROM runtime_config WHERE key = 'audit.chain.anchor.202611'
+--- PASS: TestRunRangeFailsClosedWhenAnchorUnreadable (0.00s)
+=== RUN   TestChainGuardsOnZeroKey
+--- PASS: TestChainGuardsOnZeroKey (0.00s)
+=== RUN   TestBrokenPointIsErrChainBroken
+--- PASS: TestBrokenPointIsErrChainBroken (0.00s)
+=== RUN   TestJSONHelpersEdgeCases
+--- PASS: TestJSONHelpersEdgeCases (0.00s)
+=== RUN   TestNewVerifierMissingDeps
+--- PASS: TestNewVerifierMissingDeps (0.00s)
+=== RUN   TestStartJobDefaultInterval
+--- PASS: TestStartJobDefaultInterval (0.00s)
+=== RUN   TestAnchorPutEmptyTag
+--- PASS: TestAnchorPutEmptyTag (0.00s)
+=== RUN   TestPartitionHelpersValidation
+--- PASS: TestPartitionHelpersValidation (0.00s)
+=== RUN   TestIsNoRows
+--- PASS: TestIsNoRows (0.00s)
+=== RUN   TestAppendSurfacesDBError
+--- PASS: TestAppendSurfacesDBError (0.00s)
+=== RUN   TestAnchorPutSurfacesDBError
+
+2026/11/11 16:44:14 [31;1m/worktrees/GJ-QA/internal/audit/repo.go:270 [35;1mfailed to connect to `user=user database=guanjin_test`: 127.0.0.1:1 (127.0.0.1): dial error: dial tcp 127.0.0.1:1: connect: connection refused
+[0m[33m[0.216ms] [34;1m[rows:0][0m INSERT INTO runtime_config (key, value, value_type, description)
+		 VALUES ('audit.chain.anchor.202611', '"eA=="'::jsonb, 'string', '审计链月度锚点（D4-C）')
+		 ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+--- PASS: TestAnchorPutSurfacesDBError (0.00s)
+=== RUN   TestRunRangeSurfacesLoadError
+
+2026/11/11 16:44:14 [31;1m/worktrees/GJ-QA/internal/audit/repo.go:285 [35;1mfailed to connect to `user=user database=guanjin_test`: 127.0.0.1:1 (127.0.0.1): dial error: dial tcp 127.0.0.1:1: connect: connection refused
+[0m[33m[0.308ms] [34;1m[rows:-][0m SELECT value #>> '{}' FROM runtime_config WHERE key = 'audit.chain.anchor.202611'
+--- PASS: TestRunRangeSurfacesLoadError (0.00s)
+=== RUN   TestErrorBranchesReach
+--- PASS: TestErrorBranchesReach (0.00s)
+=== RUN   TestVerifyFromUnknownPrevStillChecksContent
+--- PASS: TestVerifyFromUnknownPrevStillChecksContent (0.00s)
+=== RUN   TestCanonicalHugeNumberIsDeterministic
+--- PASS: TestCanonicalHugeNumberIsDeterministic (0.00s)
+=== RUN   TestStartJobSurvivesDependencyFailure
+2026/11/11 16:44:14 WARN audit: verify job failed error="audit: load anchor: failed to connect to `user=user database=guanjin_test`: 127.0.0.1:1 (127.0.0.1): dial error: dial tcp 127.0.0.1:1: connect: connection refused"
+2026/11/11 16:44:14 WARN audit: verify job failed error="audit: load anchor: failed to connect to `user=user database=guanjin_test`: 127.0.0.1:1 (127.0.0.1): dial error: dial tcp 127.0.0.1:1: connect: connection refused"
+2026/11/11 16:44:14 WARN audit: verify job failed error="audit: load anchor: failed to connect to `user=user database=guanjin_test`: 127.0.0.1:1 (127.0.0.1): dial error: dial tcp 127.0.0.1:1: connect: connection refused"
+2026/11/11 16:44:14 WARN audit: verify job failed error="audit: load anchor: failed to connect to `user=user database=guanjin_test`: 127.0.0.1:1 (127.0.0.1): dial error: dial tcp 127.0.0.1:1: connect: connection refused"
+2026/11/11 16:44:14 WARN audit: verify job failed error="audit: load anchor: failed to connect to `user=user database=guanjin_test`: 127.0.0.1:1 (127.0.0.1): dial error: dial tcp 127.0.0.1:1: connect: connection refused"
+2026/11/11 16:44:14 WARN audit: verify job failed error="audit: load anchor: failed to connect to `user=user database=guanjin_test`: 127.0.0.1:1 (127.0.0.1): dial error: dial tcp 127.0.0.1:1: connect: connection refused"
+2026/11/11 16:44:14 WARN audit: verify job failed error="audit: load anchor: failed to connect to `user=user database=guanjin_test`: 127.0.0.1:1 (127.0.0.1): dial error: dial tcp 127.0.0.1:1: connect: connection refused"
+2026/11/11 16:44:14 WARN audit: verify job failed error="audit: load anchor: failed to connect to `user=user database=guanjin_test`: 127.0.0.1:1 (127.0.0.1): dial error: dial tcp 127.0.0.1:1: operation was canceled"
+--- PASS: TestStartJobSurvivesDependencyFailure (0.06s)
+=== RUN   TestAnchorCurrentMonthSurfacesDBError
+--- PASS: TestAnchorCurrentMonthSurfacesDBError (0.00s)
+=== RUN   TestCanonicalBigIntegersKeepPrecision
+--- PASS: TestCanonicalBigIntegersKeepPrecision (0.00s)
+=== RUN   TestCanonicalWriteReadAgree
+--- PASS: TestCanonicalWriteReadAgree (0.01s)
+PASS
+ok  	github.com/spencerswagger/guanjin/internal/audit	9.983s
