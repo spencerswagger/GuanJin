@@ -1,0 +1,17 @@
+[coverage] 已按两套标签并集判定：/.octop/workspaces/8WZP9H/generated/s11-gate/cov/before-3b1d4fb/integration.out + /.octop/workspaces/8WZP9H/generated/s11-gate/cov/before-3b1d4fb/audit-serial.out
+[coverage] internal/admin = 83% (floor 70%)
+[coverage] internal/agent = 100% (floor 70%)
+[coverage] internal/audit = 91% (floor 90%)
+[coverage] internal/credential = 93% (floor 85%)
+[coverage] internal/crypto = 91% (floor 90%)
+[coverage] internal/factor = 95% (floor 85%)
+[coverage] internal/flow = 87% (floor 85%)
+[coverage] internal/flowstore = 87% (floor 85%)
+[coverage] internal/gateway = 89% (floor 80%)
+[coverage] internal/identifier = 93% (floor 85%)
+[coverage] internal/identity = 86% (floor 85%)
+[coverage] internal/protocol = 76% (floor 70%)
+[coverage] internal/risk = 91% (floor 80%)
+[coverage] internal/store = 80% (floor 75%)
+[coverage] total=81.3% min=60% profile=/tmp/guanjin-cover-merged.4GOStg.out
+[OK] coverage gate（逐模块下限 + 总闸）

@@ -1,0 +1,25 @@
+ok  	github.com/spencerswagger/guanjin/cmd/guanjind	35.803s
+ok  	github.com/spencerswagger/guanjin/cmd/guanjingw	1.038s
+ok  	github.com/spencerswagger/guanjin/internal/admin	1.057s
+ok  	github.com/spencerswagger/guanjin/internal/agent	1.040s
+ok  	github.com/spencerswagger/guanjin/internal/audit	1.869s
+?   	github.com/spencerswagger/guanjin/internal/authz	[no test files]
+ok  	github.com/spencerswagger/guanjin/internal/config	1.027s
+ok  	github.com/spencerswagger/guanjin/internal/credential	28.692s
+ok  	github.com/spencerswagger/guanjin/internal/crypto	29.898s
+ok  	github.com/spencerswagger/guanjin/internal/factor	1.041s
+ok  	github.com/spencerswagger/guanjin/internal/factor/holding	8.407s
+ok  	github.com/spencerswagger/guanjin/internal/flow	2.413s
+ok  	github.com/spencerswagger/guanjin/internal/flowstore	6.707s
+ok  	github.com/spencerswagger/guanjin/internal/gateway	6.371s
+ok  	github.com/spencerswagger/guanjin/internal/gateway/adapter	5.406s
+ok  	github.com/spencerswagger/guanjin/internal/httpx	1.029s
+ok  	github.com/spencerswagger/guanjin/internal/identifier	1.031s
+ok  	github.com/spencerswagger/guanjin/internal/identity	39.992s
+ok  	github.com/spencerswagger/guanjin/internal/protocol	2.377s
+ok  	github.com/spencerswagger/guanjin/internal/risk	1.834s
+ok  	github.com/spencerswagger/guanjin/internal/session	1.837s
+ok  	github.com/spencerswagger/guanjin/internal/signing	1.172s
+ok  	github.com/spencerswagger/guanjin/internal/store	9.067s
+ok  	github.com/spencerswagger/guanjin/internal/store/model	1.056s
+?   	github.com/spencerswagger/guanjin/internal/testdb	[no test files]

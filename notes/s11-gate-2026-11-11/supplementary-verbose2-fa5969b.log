@@ -1,0 +1,2346 @@
+=== RUN   TestACFLOW05_01_PatchContractAndIdempotency
+    acflow05_db_test.go:267: 差异（已报）：判据要求 404，实现返回 422（统一码表把 FACTOR_NOT_SUPPORTED 归在 422 组）
+    acflow05_db_test.go:298: 差异（已报）：判据要求 INVALID_PARAMETER，实现返回 INVALID_REQUEST —— 状态码与「必须 400」一致，仅码值不同
+--- PASS: TestACFLOW05_01_PatchContractAndIdempotency (0.09s)
+=== RUN   TestACFLOW05_02_UnionWithClientDisabled
+--- PASS: TestACFLOW05_02_UnionWithClientDisabled (4.35s)
+=== RUN   TestACFLOW05_03_AuditExactlyOnceInSameTx
+--- PASS: TestACFLOW05_03_AuditExactlyOnceInSameTx (0.09s)
+=== RUN   TestACFLOW12_01_L3TierTargetsAAL2AndL2TargetsAAL1
+--- PASS: TestACFLOW12_01_L3TierTargetsAAL2AndL2TargetsAAL1 (0.13s)
+=== RUN   TestACFLOW12_02_NoAAL3RowAnywhere
+--- PASS: TestACFLOW12_02_NoAAL3RowAnywhere (3.80s)
+=== RUN   TestACFLOW12_03_AAL0NeverLandsButAAL3IsReserved
+--- PASS: TestACFLOW12_03_AAL0NeverLandsButAAL3IsReserved (0.07s)
+=== RUN   TestAuditPartitionJobCreatesMissingMonth
+--- PASS: TestAuditPartitionJobCreatesMissingMonth (0.07s)
+=== RUN   TestAuditPartitionJobRunsOnceAtStartup
+--- PASS: TestAuditPartitionJobRunsOnceAtStartup (0.07s)
+=== RUN   TestE2E_AC_FLOW_07_UnreachableIsHTTP200
+--- PASS: TestE2E_AC_FLOW_07_UnreachableIsHTTP200 (0.12s)
+=== RUN   TestE2E_AC_FLOW_01_03_DescriptorAndDoneStep
+--- PASS: TestE2E_AC_FLOW_01_03_DescriptorAndDoneStep (0.12s)
+=== RUN   TestE2E_AC_FLOW_02_10_VerifyAndExpiry
+--- PASS: TestE2E_AC_FLOW_02_10_VerifyAndExpiry (5.80s)
+=== RUN   TestE2E_RegisterHTTPLine
+--- PASS: TestE2E_RegisterHTTPLine (1.74s)
+=== RUN   TestE2E_AC_LOGIN_03_Lockout
+--- PASS: TestE2E_AC_LOGIN_03_Lockout (4.85s)
+=== RUN   TestE2E_AC_LOGIN_02_WrongPasswordIs401WithTraceID
+--- PASS: TestE2E_AC_LOGIN_02_WrongPasswordIs401WithTraceID (3.13s)
+=== RUN   TestE2E_AC_REG_04_DuplicateEmailIs409AlreadyBound
+--- PASS: TestE2E_AC_REG_04_DuplicateEmailIs409AlreadyBound (1.38s)
+=== RUN   TestE2E_SessionRevokeMakesTokenUseless
+--- PASS: TestE2E_SessionRevokeMakesTokenUseless (0.19s)
+=== RUN   TestE2E_AC_FLOW_05_AuditorWriteIs403ThreePowerViolation
+--- PASS: TestE2E_AC_FLOW_05_AuditorWriteIs403ThreePowerViolation (0.00s)
+=== RUN   TestE2E_AC_FLOW_05_AuditorReadIs200
+--- PASS: TestE2E_AC_FLOW_05_AuditorReadIs200 (0.00s)
+=== RUN   TestAC_FC_01_AuthEndpointRedisUnavailable
+--- PASS: TestAC_FC_01_AuthEndpointRedisUnavailable (0.23s)
+=== RUN   TestAC_FC_02_AuthEndpointDBUnavailable
+--- PASS: TestAC_FC_02_AuthEndpointDBUnavailable (0.15s)
+=== RUN   TestAC_FC_08_UserinfoIs200WithZeroSQLWhenDBDown
+--- PASS: TestAC_FC_08_UserinfoIs200WithZeroSQLWhenDBDown (0.09s)
+=== RUN   TestAC_FC_07_NoIdentityOnFailurePaths
+--- PASS: TestAC_FC_07_NoIdentityOnFailurePaths (0.02s)
+=== RUN   TestAC_AUD_12_FullChainGuomi
+--- PASS: TestAC_AUD_12_FullChainGuomi (2.87s)
+=== RUN   TestStartupFailsOnMissingConfig
+--- PASS: TestStartupFailsOnMissingConfig (0.00s)
+=== RUN   TestStartupFailsOnUnreachableDB
+--- PASS: TestStartupFailsOnUnreachableDB (0.00s)
+=== RUN   TestAppCloseNilSafe
+--- PASS: TestAppCloseNilSafe (0.00s)
+=== RUN   TestReadyzDBMissingIs503
+--- PASS: TestReadyzDBMissingIs503 (0.00s)
+=== RUN   TestReadyzRedisDownIs503
+--- PASS: TestReadyzRedisDownIs503 (0.00s)
+=== RUN   TestReadyzRedisNotWired
+--- PASS: TestReadyzRedisNotWired (0.00s)
+=== RUN   TestLivezIsIndependentOfDependencies
+--- PASS: TestLivezIsIndependentOfDependencies (0.00s)
+=== RUN   TestAC_DP_12_DeliversSignedNotice
+--- PASS: TestAC_DP_12_DeliversSignedNotice (0.25s)
+=== RUN   TestAC_DP_12_UpstreamFailureDoesNotBlockRevocation
+--- PASS: TestAC_DP_12_UpstreamFailureDoesNotBlockRevocation (0.20s)
+=== RUN   TestParseFactorTypes
+--- PASS: TestParseFactorTypes (0.00s)
+=== RUN   TestClientErrorMapsToInvalidClient
+--- PASS: TestClientErrorMapsToInvalidClient (0.00s)
+=== RUN   TestMapRiskError
+--- PASS: TestMapRiskError (0.00s)
+=== RUN   TestToRiskPolicy
+--- PASS: TestToRiskPolicy (0.00s)
+=== RUN   TestNewFlowHandlerRequiresDependencies
+--- PASS: TestNewFlowHandlerRequiresDependencies (0.00s)
+=== RUN   TestMergeDisabledFactorsIsUnion
+--- PASS: TestMergeDisabledFactorsIsUnion (0.00s)
+=== RUN   TestMergeDisabledFactorsFailsClosed
+--- PASS: TestMergeDisabledFactorsFailsClosed (0.00s)
+PASS
+ok  	github.com/spencerswagger/guanjin/cmd/guanjind	30.841s
+=== RUN   TestDurationEnv
+=== RUN   TestDurationEnv/未设置用默认值
+=== RUN   TestDurationEnv/显式值生效
+=== RUN   TestDurationEnv/非法时长报错
+=== RUN   TestDurationEnv/零值报错（不允许关掉超时）
+=== RUN   TestDurationEnv/负值报错
+=== RUN   TestDurationEnv/默认值为_0_且未设置（时钟偏移的合法默认）
+--- PASS: TestDurationEnv (0.00s)
+    --- PASS: TestDurationEnv/未设置用默认值 (0.00s)
+    --- PASS: TestDurationEnv/显式值生效 (0.00s)
+    --- PASS: TestDurationEnv/非法时长报错 (0.00s)
+    --- PASS: TestDurationEnv/零值报错（不允许关掉超时） (0.00s)
+    --- PASS: TestDurationEnv/负值报错 (0.00s)
+    --- PASS: TestDurationEnv/默认值为_0_且未设置（时钟偏移的合法默认） (0.00s)
+PASS
+ok  	github.com/spencerswagger/guanjin/cmd/guanjingw	1.039s
+=== RUN   TestFactorsListShowsPlatformEnabled
+--- PASS: TestFactorsListShowsPlatformEnabled (0.00s)
+=== RUN   TestFactorsUnknownTypeIsNotSupported
+--- PASS: TestFactorsUnknownTypeIsNotSupported (0.00s)
+=== RUN   TestFactorsAuditorWriteIsThreePowerViolation
+--- PASS: TestFactorsAuditorWriteIsThreePowerViolation (0.00s)
+=== RUN   TestFactorsSecurityAdminCanDisable
+--- PASS: TestFactorsSecurityAdminCanDisable (0.00s)
+=== RUN   TestFactorsPatchValidation
+=== RUN   TestFactorsPatchValidation/缺_enabled
+=== RUN   TestFactorsPatchValidation/缺_reason
+=== RUN   TestFactorsPatchValidation/reason_全空白
+=== RUN   TestFactorsPatchValidation/畸形_JSON
+--- PASS: TestFactorsPatchValidation (0.00s)
+    --- PASS: TestFactorsPatchValidation/缺_enabled (0.00s)
+    --- PASS: TestFactorsPatchValidation/缺_reason (0.00s)
+    --- PASS: TestFactorsPatchValidation/reason_全空白 (0.00s)
+    --- PASS: TestFactorsPatchValidation/畸形_JSON (0.00s)
+=== RUN   TestFactorsPatchStoreFailurePropagates
+--- PASS: TestFactorsPatchStoreFailurePropagates (0.00s)
+=== RUN   TestFactorsRuntimeMissingOrBadRowIsInternalError
+=== RUN   TestFactorsRuntimeMissingOrBadRowIsInternalError/缺行：GET_list
+=== RUN   TestFactorsRuntimeMissingOrBadRowIsInternalError/缺行：PATCH_写成功后回读失败
+=== RUN   TestFactorsRuntimeMissingOrBadRowIsInternalError/坏值：GET_list
+=== RUN   TestFactorsRuntimeMissingOrBadRowIsInternalError/坏值：PATCH_写成功后回读失败
+--- PASS: TestFactorsRuntimeMissingOrBadRowIsInternalError (0.00s)
+    --- PASS: TestFactorsRuntimeMissingOrBadRowIsInternalError/缺行：GET_list (0.00s)
+    --- PASS: TestFactorsRuntimeMissingOrBadRowIsInternalError/缺行：PATCH_写成功后回读失败 (0.00s)
+    --- PASS: TestFactorsRuntimeMissingOrBadRowIsInternalError/坏值：GET_list (0.00s)
+    --- PASS: TestFactorsRuntimeMissingOrBadRowIsInternalError/坏值：PATCH_写成功后回读失败 (0.00s)
+=== RUN   TestAuthorizeSessionsMatrix
+=== RUN   TestAuthorizeSessionsMatrix/sys_admin_read
+=== RUN   TestAuthorizeSessionsMatrix/sys_admin_write
+=== RUN   TestAuthorizeSessionsMatrix/sec_admin_read
+=== RUN   TestAuthorizeSessionsMatrix/sec_admin_write
+=== RUN   TestAuthorizeSessionsMatrix/auditor_read
+=== RUN   TestAuthorizeSessionsMatrix/auditor_write
+=== RUN   TestAuthorizeSessionsMatrix/auditor+sys_write
+=== RUN   TestAuthorizeSessionsMatrix/no_role_read
+=== RUN   TestAuthorizeSessionsMatrix/no_role_write
+=== RUN   TestAuthorizeSessionsMatrix/business_role_only_read
+=== RUN   TestAuthorizeSessionsMatrix/business_role_only_write
+--- PASS: TestAuthorizeSessionsMatrix (0.00s)
+    --- PASS: TestAuthorizeSessionsMatrix/sys_admin_read (0.00s)
+    --- PASS: TestAuthorizeSessionsMatrix/sys_admin_write (0.00s)
+    --- PASS: TestAuthorizeSessionsMatrix/sec_admin_read (0.00s)
+    --- PASS: TestAuthorizeSessionsMatrix/sec_admin_write (0.00s)
+    --- PASS: TestAuthorizeSessionsMatrix/auditor_read (0.00s)
+    --- PASS: TestAuthorizeSessionsMatrix/auditor_write (0.00s)
+    --- PASS: TestAuthorizeSessionsMatrix/auditor+sys_write (0.00s)
+    --- PASS: TestAuthorizeSessionsMatrix/no_role_read (0.00s)
+    --- PASS: TestAuthorizeSessionsMatrix/no_role_write (0.00s)
+    --- PASS: TestAuthorizeSessionsMatrix/business_role_only_read (0.00s)
+    --- PASS: TestAuthorizeSessionsMatrix/business_role_only_write (0.00s)
+=== RUN   TestAuthorizeSessionsNilCaller
+--- PASS: TestAuthorizeSessionsNilCaller (0.00s)
+=== RUN   TestCodeOf
+--- PASS: TestCodeOf (0.00s)
+=== RUN   TestRoleConstantsAreDistinct
+--- PASS: TestRoleConstantsAreDistinct (0.00s)
+=== RUN   TestAuditorWriteCannotBeEnabled
+--- PASS: TestAuditorWriteCannotBeEnabled (0.00s)
+=== RUN   TestNewSessionsHTTPRequiresDependencies
+--- PASS: TestNewSessionsHTTPRequiresDependencies (0.00s)
+=== RUN   TestAdminSessionsRequireCaller
+--- PASS: TestAdminSessionsRequireCaller (0.00s)
+=== RUN   TestAdminSessionsRoleMatrix
+=== RUN   TestAdminSessionsRoleMatrix/auditor_read
+=== RUN   TestAdminSessionsRoleMatrix/auditor_write
+=== RUN   TestAdminSessionsRoleMatrix/no_role_read
+=== RUN   TestAdminSessionsRoleMatrix/no_role_write
+=== RUN   TestAdminSessionsRoleMatrix/sys_admin_write
+=== RUN   TestAdminSessionsRoleMatrix/sec_admin_write
+--- PASS: TestAdminSessionsRoleMatrix (0.00s)
+    --- PASS: TestAdminSessionsRoleMatrix/auditor_read (0.00s)
+    --- PASS: TestAdminSessionsRoleMatrix/auditor_write (0.00s)
+    --- PASS: TestAdminSessionsRoleMatrix/no_role_read (0.00s)
+    --- PASS: TestAdminSessionsRoleMatrix/no_role_write (0.00s)
+    --- PASS: TestAdminSessionsRoleMatrix/sys_admin_write (0.00s)
+    --- PASS: TestAdminSessionsRoleMatrix/sec_admin_write (0.00s)
+=== RUN   TestAdminListFiltersAndShape
+--- PASS: TestAdminListFiltersAndShape (0.00s)
+=== RUN   TestAdminListRejectsBadParams
+--- PASS: TestAdminListRejectsBadParams (0.00s)
+=== RUN   TestAdminRevokeOne
+--- PASS: TestAdminRevokeOne (0.00s)
+=== RUN   TestAdminRevokeOneNotFound
+--- PASS: TestAdminRevokeOneNotFound (0.00s)
+=== RUN   TestAdminRevokeOneMalformedID
+--- PASS: TestAdminRevokeOneMalformedID (0.00s)
+=== RUN   TestAdminRevokeByUser
+--- PASS: TestAdminRevokeByUser (0.00s)
+=== RUN   TestAdminRevokeByUserErrors
+=== RUN   TestAdminRevokeByUserErrors/missing_user_id
+=== RUN   TestAdminRevokeByUserErrors/bad_user_id
+=== RUN   TestAdminRevokeByUserErrors/unknown_user
+--- PASS: TestAdminRevokeByUserErrors (0.00s)
+    --- PASS: TestAdminRevokeByUserErrors/missing_user_id (0.00s)
+    --- PASS: TestAdminRevokeByUserErrors/bad_user_id (0.00s)
+    --- PASS: TestAdminRevokeByUserErrors/unknown_user (0.00s)
+=== RUN   TestAdminUnmappedErrorIsInternal
+--- PASS: TestAdminUnmappedErrorIsInternal (0.00s)
+=== RUN   TestAdminMessageOf
+--- PASS: TestAdminMessageOf (0.00s)
+PASS
+ok  	github.com/spencerswagger/guanjin/internal/admin	1.062s
+=== RUN   TestCanonicalShape
+--- PASS: TestCanonicalShape (0.00s)
+=== RUN   TestCanonicalPathRules
+--- PASS: TestCanonicalPathRules (0.00s)
+=== RUN   TestSortedQuery
+--- PASS: TestSortedQuery (0.00s)
+=== RUN   TestPercentEncode
+--- PASS: TestPercentEncode (0.00s)
+PASS
+ok  	github.com/spencerswagger/guanjin/internal/agent	1.026s
+[audit.TestMain] truncate isolated schema: truncate audit_test.audit_logs: ERROR: schema "audit_test" does not exist (SQLSTATE 3F000)
+[audit.TestMain] skip future-partition cleanup: 未设置 GUANJIN_ALLOW_TEST_CLEANUP=1
+[audit.TestMain] shared max(occurred_at): before="" after=""
+=== RUN   TestVerifyCleanChain
+--- PASS: TestVerifyCleanChain (0.00s)
+=== RUN   TestVerifyDetectsDeletedMiddleRecord
+--- PASS: TestVerifyDetectsDeletedMiddleRecord (0.00s)
+=== RUN   TestVerifyDetectsTamperedContent
+--- PASS: TestVerifyDetectsTamperedContent (0.00s)
+=== RUN   TestVerifyDetectsReordering
+--- PASS: TestVerifyDetectsReordering (0.00s)
+=== RUN   TestVerifyUsesAnchorForSegmentStart
+--- PASS: TestVerifyUsesAnchorForSegmentStart (0.00s)
+=== RUN   TestCanonicalIsDeterministicAndOrderInsensitive
+--- PASS: TestCanonicalIsDeterministicAndOrderInsensitive (0.00s)
+=== RUN   TestNewChainRejectsZeroKey
+--- PASS: TestNewChainRejectsZeroKey (0.00s)
+=== RUN   TestBrokenPointErrorCarriesLocation
+--- PASS: TestBrokenPointErrorCarriesLocation (0.00s)
+=== RUN   TestAnchorAndSegmentKeys
+--- PASS: TestAnchorAndSegmentKeys (0.00s)
+=== RUN   TestCanonicalCoversValueKinds
+--- PASS: TestCanonicalCoversValueKinds (0.00s)
+=== RUN   TestAuditNilSafety
+--- PASS: TestAuditNilSafety (0.00s)
+=== RUN   TestNewIDIsV7AndUnique
+--- PASS: TestNewIDIsV7AndUnique (0.00s)
+=== RUN   TestVerifyEmptyChainPasses
+--- PASS: TestVerifyEmptyChainPasses (0.00s)
+=== RUN   TestAppendAndLoadRejectBadInput
+--- PASS: TestAppendAndLoadRejectBadInput (0.00s)
+=== RUN   TestAnchorStoreRejectsNil
+--- PASS: TestAnchorStoreRejectsNil (0.00s)
+=== RUN   TestNewVerifierValidation
+--- PASS: TestNewVerifierValidation (0.00s)
+=== RUN   TestMonthOfTruncatesToUTCFirstDay
+--- PASS: TestMonthOfTruncatesToUTCFirstDay (0.00s)
+=== RUN   TestAnchorAgeSemantics
+--- PASS: TestAnchorAgeSemantics (0.00s)
+=== RUN   TestStartJobStopsOnCancel
+
+2026/11/11 16:47:34 [31;1m/worktrees/GJ-QA/internal/audit/repo.go:285 [35;1mfailed to connect to `user=user database=guanjin_test`: 127.0.0.1:1 (127.0.0.1): dial error: dial tcp 127.0.0.1:1: connect: connection refused
+[0m[33m[0.668ms] [34;1m[rows:-][0m SELECT value #>> '{}' FROM runtime_config WHERE key = 'audit.chain.anchor.202611'
+2026/11/11 16:47:34 WARN audit: verify job failed error="audit: load anchor: failed to connect to `user=user database=guanjin_test`: 127.0.0.1:1 (127.0.0.1): dial error: dial tcp 127.0.0.1:1: connect: connection refused"
+
+2026/11/11 16:47:34 [31;1m/worktrees/GJ-QA/internal/audit/repo.go:285 [35;1mfailed to connect to `user=user database=guanjin_test`: 127.0.0.1:1 (127.0.0.1): dial error: dial tcp 127.0.0.1:1: connect: connection refused
+[0m[33m[0.551ms] [34;1m[rows:-][0m SELECT value #>> '{}' FROM runtime_config WHERE key = 'audit.chain.anchor.202611'
+2026/11/11 16:47:34 WARN audit: verify job failed error="audit: load anchor: failed to connect to `user=user database=guanjin_test`: 127.0.0.1:1 (127.0.0.1): dial error: dial tcp 127.0.0.1:1: connect: connection refused"
+
+2026/11/11 16:47:34 [31;1m/worktrees/GJ-QA/internal/audit/repo.go:285 [35;1mcontext canceled
+[0m[33m[0.251ms] [34;1m[rows:-][0m SELECT value #>> '{}' FROM runtime_config WHERE key = 'audit.chain.anchor.202611'
+2026/11/11 16:47:34 WARN audit: verify job failed error="audit: load anchor: context canceled"
+--- PASS: TestStartJobStopsOnCancel (0.05s)
+=== RUN   TestRunRangeFailsClosedWhenAnchorUnreadable
+
+2026/11/11 16:47:34 [31;1m/worktrees/GJ-QA/internal/audit/repo.go:285 [35;1mfailed to connect to `user=user database=guanjin_test`: 127.0.0.1:1 (127.0.0.1): dial error: dial tcp 127.0.0.1:1: connect: connection refused
+[0m[33m[0.358ms] [34;1m[rows:-][0m SELECT value #>> '{}' FROM runtime_config WHERE key = 'audit.chain.anchor.202611'
+--- PASS: TestRunRangeFailsClosedWhenAnchorUnreadable (0.00s)
+=== RUN   TestChainGuardsOnZeroKey
+--- PASS: TestChainGuardsOnZeroKey (0.00s)
+=== RUN   TestBrokenPointIsErrChainBroken
+--- PASS: TestBrokenPointIsErrChainBroken (0.00s)
+=== RUN   TestJSONHelpersEdgeCases
+--- PASS: TestJSONHelpersEdgeCases (0.00s)
+=== RUN   TestNewVerifierMissingDeps
+--- PASS: TestNewVerifierMissingDeps (0.00s)
+=== RUN   TestStartJobDefaultInterval
+--- PASS: TestStartJobDefaultInterval (0.00s)
+=== RUN   TestAnchorPutEmptyTag
+--- PASS: TestAnchorPutEmptyTag (0.00s)
+=== RUN   TestPartitionHelpersValidation
+--- PASS: TestPartitionHelpersValidation (0.00s)
+=== RUN   TestIsNoRows
+--- PASS: TestIsNoRows (0.00s)
+=== RUN   TestAppendSurfacesDBError
+--- PASS: TestAppendSurfacesDBError (0.00s)
+=== RUN   TestAnchorPutSurfacesDBError
+
+2026/11/11 16:47:34 [31;1m/worktrees/GJ-QA/internal/audit/repo.go:270 [35;1mfailed to connect to `user=user database=guanjin_test`: 127.0.0.1:1 (127.0.0.1): dial error: dial tcp 127.0.0.1:1: connect: connection refused
+[0m[33m[0.225ms] [34;1m[rows:0][0m INSERT INTO runtime_config (key, value, value_type, description)
+		 VALUES ('audit.chain.anchor.202611', '"eA=="'::jsonb, 'string', '审计链月度锚点（D4-C）')
+		 ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+--- PASS: TestAnchorPutSurfacesDBError (0.00s)
+=== RUN   TestRunRangeSurfacesLoadError
+
+2026/11/11 16:47:34 [31;1m/worktrees/GJ-QA/internal/audit/repo.go:285 [35;1mfailed to connect to `user=user database=guanjin_test`: 127.0.0.1:1 (127.0.0.1): dial error: dial tcp 127.0.0.1:1: connect: connection refused
+[0m[33m[0.280ms] [34;1m[rows:-][0m SELECT value #>> '{}' FROM runtime_config WHERE key = 'audit.chain.anchor.202611'
+--- PASS: TestRunRangeSurfacesLoadError (0.00s)
+=== RUN   TestErrorBranchesReach
+--- PASS: TestErrorBranchesReach (0.00s)
+=== RUN   TestVerifyFromUnknownPrevStillChecksContent
+--- PASS: TestVerifyFromUnknownPrevStillChecksContent (0.00s)
+=== RUN   TestCanonicalHugeNumberIsDeterministic
+--- PASS: TestCanonicalHugeNumberIsDeterministic (0.00s)
+=== RUN   TestStartJobSurvivesDependencyFailure
+2026/11/11 16:47:34 WARN audit: verify job failed error="audit: load anchor: failed to connect to `user=user database=guanjin_test`: 127.0.0.1:1 (127.0.0.1): dial error: dial tcp 127.0.0.1:1: connect: connection refused"
+2026/11/11 16:47:34 WARN audit: verify job failed error="audit: load anchor: failed to connect to `user=user database=guanjin_test`: 127.0.0.1:1 (127.0.0.1): dial error: dial tcp 127.0.0.1:1: connect: connection refused"
+2026/11/11 16:47:34 WARN audit: verify job failed error="audit: load anchor: failed to connect to `user=user database=guanjin_test`: 127.0.0.1:1 (127.0.0.1): dial error: dial tcp 127.0.0.1:1: connect: connection refused"
+2026/11/11 16:47:34 WARN audit: verify job failed error="audit: load anchor: failed to connect to `user=user database=guanjin_test`: 127.0.0.1:1 (127.0.0.1): dial error: dial tcp 127.0.0.1:1: connect: connection refused"
+2026/11/11 16:47:34 WARN audit: verify job failed error="audit: load anchor: failed to connect to `user=user database=guanjin_test`: 127.0.0.1:1 (127.0.0.1): dial error: dial tcp 127.0.0.1:1: connect: connection refused"
+2026/11/11 16:47:34 WARN audit: verify job failed error="audit: load anchor: failed to connect to `user=user database=guanjin_test`: 127.0.0.1:1 (127.0.0.1): dial error: dial tcp 127.0.0.1:1: connect: connection refused"
+2026/11/11 16:47:34 WARN audit: verify job failed error="audit: load anchor: failed to connect to `user=user database=guanjin_test`: 127.0.0.1:1 (127.0.0.1): dial error: dial tcp 127.0.0.1:1: connect: connection refused"
+2026/11/11 16:47:34 WARN audit: verify job failed error="audit: load anchor: failed to connect to `user=user database=guanjin_test`: 127.0.0.1:1 (127.0.0.1): dial error: dial tcp 127.0.0.1:1: connect: connection refused"
+--- PASS: TestStartJobSurvivesDependencyFailure (0.06s)
+=== RUN   TestAnchorCurrentMonthSurfacesDBError
+--- PASS: TestAnchorCurrentMonthSurfacesDBError (0.00s)
+=== RUN   TestCanonicalBigIntegersKeepPrecision
+--- PASS: TestCanonicalBigIntegersKeepPrecision (0.00s)
+=== RUN   TestCanonicalWriteReadAgree
+--- PASS: TestCanonicalWriteReadAgree (0.03s)
+PASS
+ok  	github.com/spencerswagger/guanjin/internal/audit	1.821s
+?   	github.com/spencerswagger/guanjin/internal/authz	[no test files]
+=== RUN   TestLoadOK
+--- PASS: TestLoadOK (0.00s)
+=== RUN   TestLoadFailsClosed
+=== RUN   TestLoadFailsClosed/no_db_dsn
+=== RUN   TestLoadFailsClosed/no_redis_addr
+=== RUN   TestLoadFailsClosed/no_master_key
+--- PASS: TestLoadFailsClosed (0.00s)
+    --- PASS: TestLoadFailsClosed/no_db_dsn (0.00s)
+    --- PASS: TestLoadFailsClosed/no_redis_addr (0.00s)
+    --- PASS: TestLoadFailsClosed/no_master_key (0.00s)
+=== RUN   TestMasterKeyRejectsShortAndBadBase64
+--- PASS: TestMasterKeyRejectsShortAndBadBase64 (0.00s)
+=== RUN   TestParseSeconds
+--- PASS: TestParseSeconds (0.00s)
+PASS
+ok  	github.com/spencerswagger/guanjin/internal/config	1.026s
+=== RUN   TestCodeOf
+--- PASS: TestCodeOf (0.00s)
+=== RUN   TestCodeOfUnknownError
+--- PASS: TestCodeOfUnknownError (0.00s)
+=== RUN   TestAC_AUD_12_PasswordEnvelopeRoundTripsInDB
+--- PASS: TestAC_AUD_12_PasswordEnvelopeRoundTripsInDB (5.42s)
+=== RUN   TestTOTPEnvelopeRoundTripsInDB
+--- PASS: TestTOTPEnvelopeRoundTripsInDB (0.06s)
+=== RUN   TestNewPasswordEnvelopeAndVerify
+--- PASS: TestNewPasswordEnvelopeAndVerify (7.07s)
+=== RUN   TestNewPasswordEnvelopeRejectsBadInput
+--- PASS: TestNewPasswordEnvelopeRejectsBadInput (0.00s)
+=== RUN   TestPasswordEnvelopeValidateRejects
+=== RUN   TestPasswordEnvelopeValidateRejects/算法不是_PBKDF2-SM3
+=== RUN   TestPasswordEnvelopeValidateRejects/算法为空
+=== RUN   TestPasswordEnvelopeValidateRejects/迭代被降到_1000
+=== RUN   TestPasswordEnvelopeValidateRejects/key_len_低于下限
+=== RUN   TestPasswordEnvelopeValidateRejects/盐不是_base64
+=== RUN   TestPasswordEnvelopeValidateRejects/盐太短
+=== RUN   TestPasswordEnvelopeValidateRejects/派生值不是_base64
+=== RUN   TestPasswordEnvelopeValidateRejects/派生值长度与_key_len_不符
+=== RUN   TestPasswordEnvelopeValidateRejects/updated_at_不是_RFC3339
+--- PASS: TestPasswordEnvelopeValidateRejects (0.00s)
+    --- PASS: TestPasswordEnvelopeValidateRejects/算法不是_PBKDF2-SM3 (0.00s)
+    --- PASS: TestPasswordEnvelopeValidateRejects/算法为空 (0.00s)
+    --- PASS: TestPasswordEnvelopeValidateRejects/迭代被降到_1000 (0.00s)
+    --- PASS: TestPasswordEnvelopeValidateRejects/key_len_低于下限 (0.00s)
+    --- PASS: TestPasswordEnvelopeValidateRejects/盐不是_base64 (0.00s)
+    --- PASS: TestPasswordEnvelopeValidateRejects/盐太短 (0.00s)
+    --- PASS: TestPasswordEnvelopeValidateRejects/派生值不是_base64 (0.00s)
+    --- PASS: TestPasswordEnvelopeValidateRejects/派生值长度与_key_len_不符 (0.00s)
+    --- PASS: TestPasswordEnvelopeValidateRejects/updated_at_不是_RFC3339 (0.00s)
+=== RUN   TestPasswordEnvelopeVerifyEdgeCases
+--- PASS: TestPasswordEnvelopeVerifyEdgeCases (0.00s)
+=== RUN   TestPasswordEnvelopeNeedsRehash
+--- PASS: TestPasswordEnvelopeNeedsRehash (0.00s)
+=== RUN   TestPasswordEnvelopeMarshalParse
+--- PASS: TestPasswordEnvelopeMarshalParse (1.65s)
+=== RUN   TestPasswordEnvelopeUpdatedAtTime
+--- PASS: TestPasswordEnvelopeUpdatedAtTime (0.00s)
+=== RUN   TestPasswordEnvelopeRedaction
+--- PASS: TestPasswordEnvelopeRedaction (0.00s)
+=== RUN   TestPolicyValidate
+=== RUN   TestPolicyValidate/min_length_太小
+=== RUN   TestPolicyValidate/max_length_超过硬上限
+=== RUN   TestPolicyValidate/char_classes_太少
+=== RUN   TestPolicyValidate/history_count_为负
+=== RUN   TestPolicyValidate/min_length_超过硬上限
+=== RUN   TestPolicyValidate/max_length_小于_min
+=== RUN   TestPolicyValidate/char_classes_太多
+=== RUN   TestPolicyValidate/max_age_days_为负
+=== RUN   TestPolicyValidate/char_classes_为_0
+=== RUN   TestPolicyValidate/min_length_刚好_8_可接受
+--- PASS: TestPolicyValidate (0.00s)
+    --- PASS: TestPolicyValidate/min_length_太小 (0.00s)
+    --- PASS: TestPolicyValidate/max_length_超过硬上限 (0.00s)
+    --- PASS: TestPolicyValidate/char_classes_太少 (0.00s)
+    --- PASS: TestPolicyValidate/history_count_为负 (0.00s)
+    --- PASS: TestPolicyValidate/min_length_超过硬上限 (0.00s)
+    --- PASS: TestPolicyValidate/max_length_小于_min (0.00s)
+    --- PASS: TestPolicyValidate/char_classes_太多 (0.00s)
+    --- PASS: TestPolicyValidate/max_age_days_为负 (0.00s)
+    --- PASS: TestPolicyValidate/char_classes_为_0 (0.00s)
+    --- PASS: TestPolicyValidate/min_length_刚好_8_可接受 (0.00s)
+=== RUN   TestEvaluateAcceptsCompliantPassword
+--- PASS: TestEvaluateAcceptsCompliantPassword (0.00s)
+=== RUN   TestAC_REG_10_PasswordCodeOrder
+--- PASS: TestAC_REG_10_PasswordCodeOrder (3.40s)
+=== RUN   TestEvaluateHistoryWindow
+=== RUN   TestEvaluateHistoryWindow/命中在窗口内
+=== RUN   TestEvaluateHistoryWindow/命中在窗口外
+=== RUN   TestEvaluateHistoryWindow/HistoryCount=0_不查历史
+--- PASS: TestEvaluateHistoryWindow (5.70s)
+    --- PASS: TestEvaluateHistoryWindow/命中在窗口内 (1.37s)
+    --- PASS: TestEvaluateHistoryWindow/命中在窗口外 (1.43s)
+    --- PASS: TestEvaluateHistoryWindow/HistoryCount=0_不查历史 (0.00s)
+=== RUN   TestEvaluateBrokenHistoryFailsClosed
+--- PASS: TestEvaluateBrokenHistoryFailsClosed (0.00s)
+=== RUN   TestEvaluateCustomWeakListReplacesBuiltin
+--- PASS: TestEvaluateCustomWeakListReplacesBuiltin (0.00s)
+=== RUN   TestEvaluateEmptyPassword
+--- PASS: TestEvaluateEmptyPassword (0.00s)
+=== RUN   TestEvaluateMaxLength
+--- PASS: TestEvaluateMaxLength (0.00s)
+=== RUN   TestPolicyExpired
+--- PASS: TestPolicyExpired (0.00s)
+=== RUN   TestCharClassCount
+--- PASS: TestCharClassCount (0.00s)
+=== RUN   TestNewTOTPEnvelopeAndOpen
+--- PASS: TestNewTOTPEnvelopeAndOpen (0.00s)
+=== RUN   TestTOTPMissingKeyFailsClosed
+--- PASS: TestTOTPMissingKeyFailsClosed (0.00s)
+=== RUN   TestTOTPOpenWithWrongKey
+--- PASS: TestTOTPOpenWithWrongKey (0.00s)
+=== RUN   TestTOTPEnvelopeValidateRejects
+=== RUN   TestTOTPEnvelopeValidateRejects/hash_用_SHA1
+=== RUN   TestTOTPEnvelopeValidateRejects/hash_为空
+=== RUN   TestTOTPEnvelopeValidateRejects/algo_不对
+=== RUN   TestTOTPEnvelopeValidateRejects/位数太少
+=== RUN   TestTOTPEnvelopeValidateRejects/位数太多
+=== RUN   TestTOTPEnvelopeValidateRejects/周期太短
+=== RUN   TestTOTPEnvelopeValidateRejects/周期太长
+=== RUN   TestTOTPEnvelopeValidateRejects/密文为空
+=== RUN   TestTOTPEnvelopeValidateRejects/密文不是_base64
+=== RUN   TestTOTPEnvelopeValidateRejects/bound_at_不是_RFC3339
+--- PASS: TestTOTPEnvelopeValidateRejects (0.00s)
+    --- PASS: TestTOTPEnvelopeValidateRejects/hash_用_SHA1 (0.00s)
+    --- PASS: TestTOTPEnvelopeValidateRejects/hash_为空 (0.00s)
+    --- PASS: TestTOTPEnvelopeValidateRejects/algo_不对 (0.00s)
+    --- PASS: TestTOTPEnvelopeValidateRejects/位数太少 (0.00s)
+    --- PASS: TestTOTPEnvelopeValidateRejects/位数太多 (0.00s)
+    --- PASS: TestTOTPEnvelopeValidateRejects/周期太短 (0.00s)
+    --- PASS: TestTOTPEnvelopeValidateRejects/周期太长 (0.00s)
+    --- PASS: TestTOTPEnvelopeValidateRejects/密文为空 (0.00s)
+    --- PASS: TestTOTPEnvelopeValidateRejects/密文不是_base64 (0.00s)
+    --- PASS: TestTOTPEnvelopeValidateRejects/bound_at_不是_RFC3339 (0.00s)
+=== RUN   TestTOTPMarshalParse
+--- PASS: TestTOTPMarshalParse (0.00s)
+=== RUN   TestGenerateTOTP
+--- PASS: TestGenerateTOTP (0.00s)
+=== RUN   TestGenerateTOTPRejectsBadParams
+--- PASS: TestGenerateTOTPRejectsBadParams (0.00s)
+=== RUN   TestVerifyTOTP
+--- PASS: TestVerifyTOTP (0.00s)
+=== RUN   TestReplayStateAccept
+--- PASS: TestReplayStateAccept (0.00s)
+=== RUN   TestDriftOrder
+--- PASS: TestDriftOrder (0.00s)
+=== RUN   TestHOTPDeterminism
+--- PASS: TestHOTPDeterminism (0.00s)
+=== RUN   TestTOTPEnvelopeRedaction
+--- PASS: TestTOTPEnvelopeRedaction (0.00s)
+=== RUN   TestTOTPOpenShortSecret
+--- PASS: TestTOTPOpenShortSecret (0.00s)
+=== RUN   TestTOTPEnvelopeKeepsCryptoVersionSentinel
+--- PASS: TestTOTPEnvelopeKeepsCryptoVersionSentinel (0.00s)
+PASS
+ok  	github.com/spencerswagger/guanjin/internal/credential	24.338s
+=== RUN   TestDeriveIsDeterministic
+--- PASS: TestDeriveIsDeterministic (0.00s)
+=== RUN   TestDerivePurposesAreIsolated
+--- PASS: TestDerivePurposesAreIsolated (0.00s)
+=== RUN   TestRegisterPurposeIsDistinctFromTheOtherFive
+--- PASS: TestRegisterPurposeIsDistinctFromTheOtherFive (0.00s)
+=== RUN   TestDeriveDependsOnMasterKey
+--- PASS: TestDeriveDependsOnMasterKey (0.00s)
+=== RUN   TestPurposeLengths
+--- PASS: TestPurposeLengths (0.00s)
+=== RUN   TestPurposeSpecsAreConsistent
+--- PASS: TestPurposeSpecsAreConsistent (0.00s)
+=== RUN   TestSM4EnvelopeMacKeyIsThePairedPurpose
+--- PASS: TestSM4EnvelopeMacKeyIsThePairedPurpose (0.00s)
+=== RUN   TestUnknownPurposeRejected
+--- PASS: TestUnknownPurposeRejected (0.00s)
+=== RUN   TestKeyKindMismatch
+--- PASS: TestKeyKindMismatch (0.00s)
+=== RUN   TestNewMasterKeyValidation
+--- PASS: TestNewMasterKeyValidation (0.00s)
+=== RUN   TestKeyMaterialNeverPrinted
+--- PASS: TestKeyMaterialNeverPrinted (0.00s)
+=== RUN   TestNoExportedMethodReturnsRawBytes
+--- PASS: TestNoExportedMethodReturnsRawBytes (0.00s)
+=== RUN   TestKeyStructsHaveNoExportedFields
+--- PASS: TestKeyStructsHaveNoExportedFields (0.00s)
+=== RUN   TestZeroClearsMaterial
+--- PASS: TestZeroClearsMaterial (0.00s)
+=== RUN   TestMasterKeyLenAndNilSafety
+--- PASS: TestMasterKeyLenAndNilSafety (0.00s)
+=== RUN   TestKeyKindAndPurposeString
+--- PASS: TestKeyKindAndPurposeString (0.00s)
+=== RUN   TestDerivePasswordMatchesReference
+--- PASS: TestDerivePasswordMatchesReference (3.65s)
+=== RUN   TestDerivePasswordMultiBlock
+--- PASS: TestDerivePasswordMultiBlock (7.37s)
+=== RUN   TestPasswordParamsFloor
+=== RUN   TestPasswordParamsFloor/short_salt
+=== RUN   TestPasswordParamsFloor/no_salt
+=== RUN   TestPasswordParamsFloor/iterations_too_low
+=== RUN   TestPasswordParamsFloor/zero_iterations
+=== RUN   TestPasswordParamsFloor/key_too_short
+--- PASS: TestPasswordParamsFloor (0.00s)
+    --- PASS: TestPasswordParamsFloor/short_salt (0.00s)
+    --- PASS: TestPasswordParamsFloor/no_salt (0.00s)
+    --- PASS: TestPasswordParamsFloor/iterations_too_low (0.00s)
+    --- PASS: TestPasswordParamsFloor/zero_iterations (0.00s)
+    --- PASS: TestPasswordParamsFloor/key_too_short (0.00s)
+=== RUN   TestDerivePasswordSensitivity
+--- PASS: TestDerivePasswordSensitivity (6.39s)
+=== RUN   TestVerifyPassword
+--- PASS: TestVerifyPassword (5.91s)
+=== RUN   TestNewPasswordSalt
+--- PASS: TestNewPasswordSalt (0.00s)
+=== RUN   TestPasswordParamsValidate
+--- PASS: TestPasswordParamsValidate (0.00s)
+=== RUN   TestSM2SignVerify
+--- PASS: TestSM2SignVerify (0.10s)
+=== RUN   TestSM2SignEdgeCases
+--- PASS: TestSM2SignEdgeCases (0.11s)
+=== RUN   TestSM2PublicKeyMarshalRoundTrip
+--- PASS: TestSM2PublicKeyMarshalRoundTrip (0.04s)
+=== RUN   TestSM2PublicKeyRejectsMalformed
+--- PASS: TestSM2PublicKeyRejectsMalformed (0.00s)
+=== RUN   TestSM3StandardVectors
+--- PASS: TestSM3StandardVectors (0.00s)
+=== RUN   TestSM3EmptyBodyIsFixedValue
+--- PASS: TestSM3EmptyBodyIsFixedValue (0.00s)
+=== RUN   TestHMACSM3MatchesStdlibConstruction
+--- PASS: TestHMACSM3MatchesStdlibConstruction (0.00s)
+=== RUN   TestHMACSM3LongKey
+--- PASS: TestHMACSM3LongKey (0.00s)
+=== RUN   TestHMACSM3KeyAndMessageSensitivity
+--- PASS: TestHMACSM3KeyAndMessageSensitivity (0.00s)
+=== RUN   TestHMACSM3WithUserSecret
+--- PASS: TestHMACSM3WithUserSecret (0.00s)
+=== RUN   TestHMACSM3WithUserSecretRejectsEmptyKey
+--- PASS: TestHMACSM3WithUserSecretRejectsEmptyKey (0.00s)
+=== RUN   TestHKDFSM3MatchesReference
+--- PASS: TestHKDFSM3MatchesReference (0.00s)
+=== RUN   TestHKDFSM3IsPrefixStable
+--- PASS: TestHKDFSM3IsPrefixStable (0.00s)
+=== RUN   TestHexLower
+--- PASS: TestHexLower (0.00s)
+=== RUN   TestSM4StandardVectorViaCBC
+--- PASS: TestSM4StandardVectorViaCBC (0.00s)
+=== RUN   TestSM4EnvelopeLayout
+--- PASS: TestSM4EnvelopeLayout (0.00s)
+=== RUN   TestSM4RandomIV
+--- PASS: TestSM4RandomIV (0.00s)
+=== RUN   TestSM4RoundTripEdgeCases
+--- PASS: TestSM4RoundTripEdgeCases (0.00s)
+=== RUN   TestSM4WrongKeyAlwaysFails
+--- PASS: TestSM4WrongKeyAlwaysFails (0.03s)
+=== RUN   TestSM4CrossPurposeEnvelopeRejected
+--- PASS: TestSM4CrossPurposeEnvelopeRejected (0.00s)
+=== RUN   TestSM4TamperDetected
+--- PASS: TestSM4TamperDetected (0.00s)
+=== RUN   TestSM4LegacyV1Rejected
+--- PASS: TestSM4LegacyV1Rejected (0.00s)
+=== RUN   TestSM4MalformedCiphertext
+--- PASS: TestSM4MalformedCiphertext (0.00s)
+=== RUN   TestPKCS7Helpers
+--- PASS: TestPKCS7Helpers (0.00s)
+PASS
+ok  	github.com/spencerswagger/guanjin/internal/crypto	24.646s
+=== RUN   TestCapabilityMatrixMatchesBaseline
+=== RUN   TestCapabilityMatrixMatchesBaseline/password
+=== RUN   TestCapabilityMatrixMatchesBaseline/recovery_code
+=== RUN   TestCapabilityMatrixMatchesBaseline/sms_otp
+--- PASS: TestCapabilityMatrixMatchesBaseline (0.00s)
+    --- PASS: TestCapabilityMatrixMatchesBaseline/password (0.00s)
+    --- PASS: TestCapabilityMatrixMatchesBaseline/recovery_code (0.00s)
+    --- PASS: TestCapabilityMatrixMatchesBaseline/sms_otp (0.00s)
+=== RUN   TestAllCapabilitiesFrozen
+--- PASS: TestAllCapabilitiesFrozen (0.00s)
+=== RUN   TestCapabilitiesNilAndEmpty
+--- PASS: TestCapabilitiesNilAndEmpty (0.00s)
+=== RUN   TestDescribeFillsSpecsFromImplementation
+--- PASS: TestDescribeFillsSpecsFromImplementation (0.00s)
+=== RUN   TestDescribeRejectsViolations
+=== RUN   TestDescribeRejectsViolations/nil_provider
+=== RUN   TestDescribeRejectsViolations/proofing_kind_不属本平台
+=== RUN   TestDescribeRejectsViolations/未知_kind
+=== RUN   TestDescribeRejectsViolations/非法_FactorType（大写）
+=== RUN   TestDescribeRejectsViolations/channel_缺_IdentifierVerifying
+=== RUN   TestDescribeRejectsViolations/channel_targets_为空
+=== RUN   TestDescribeRejectsViolations/channel_targets_含_username
+=== RUN   TestDescribeRejectsViolations/channel_targets_含非法格式
+=== RUN   TestDescribeRejectsViolations/channel_缺_Enrollable
+=== RUN   TestDescribeRejectsViolations/channel_未声明前置标识符
+=== RUN   TestDescribeRejectsViolations/channel_实现_Resettable
+=== RUN   TestDescribeRejectsViolations/channel_缺限流
+=== RUN   TestDescribeRejectsViolations/channel_日配额为_0
+=== RUN   TestDescribeRejectsViolations/channel_注册未强制验证
+=== RUN   TestDescribeRejectsViolations/holding_实现_IdentifierVerifying
+=== RUN   TestDescribeRejectsViolations/holding_要求前置标识符
+=== RUN   TestDescribeRejectsViolations/authenticatable_既不能当第一也不能当第二
+=== RUN   TestDescribeRejectsViolations/authenticatable_缺_acr.sole
+=== RUN   TestDescribeRejectsViolations/acr.sole_=_AAL3（D12_不得产出）
+=== RUN   TestDescribeRejectsViolations/acr.combined_=_AAL3（D12_不得产出）
+=== RUN   TestDescribeRejectsViolations/acr.combined_弱于_acr.sole
+=== RUN   TestDescribeRejectsViolations/recoverable.trust_level_=_0
+=== RUN   TestDescribeRejectsViolations/recoverable.trust_level_=_4
+=== RUN   TestDescribeRejectsViolations/resettable.min_acr_=_AAL0
+=== RUN   TestDescribeRejectsViolations/resettable.min_trust_level_=_4
+=== RUN   TestDescribeRejectsViolations/registrable_但没有_authenticatable
+=== RUN   TestDescribeRejectsViolations/revocable.on_identifier_unbind_非法
+=== RUN   TestDescribeRejectsViolations/revocable.require_acr_不可产出
+=== RUN   TestDescribeRejectsViolations/revocable.cooldown_hours_为负
+=== RUN   TestDescribeRejectsViolations/rate_limit_为负
+=== RUN   TestDescribeRejectsViolations/send_per_window_没有_send_window
+=== RUN   TestDescribeRejectsViolations/verify_per_window_没有_verify_window
+=== RUN   TestDescribeRejectsViolations/空风险信号
+--- PASS: TestDescribeRejectsViolations (0.01s)
+    --- PASS: TestDescribeRejectsViolations/nil_provider (0.00s)
+    --- PASS: TestDescribeRejectsViolations/proofing_kind_不属本平台 (0.00s)
+    --- PASS: TestDescribeRejectsViolations/未知_kind (0.00s)
+    --- PASS: TestDescribeRejectsViolations/非法_FactorType（大写） (0.00s)
+    --- PASS: TestDescribeRejectsViolations/channel_缺_IdentifierVerifying (0.00s)
+    --- PASS: TestDescribeRejectsViolations/channel_targets_为空 (0.00s)
+    --- PASS: TestDescribeRejectsViolations/channel_targets_含_username (0.00s)
+    --- PASS: TestDescribeRejectsViolations/channel_targets_含非法格式 (0.00s)
+    --- PASS: TestDescribeRejectsViolations/channel_缺_Enrollable (0.00s)
+    --- PASS: TestDescribeRejectsViolations/channel_未声明前置标识符 (0.00s)
+    --- PASS: TestDescribeRejectsViolations/channel_实现_Resettable (0.00s)
+    --- PASS: TestDescribeRejectsViolations/channel_缺限流 (0.00s)
+    --- PASS: TestDescribeRejectsViolations/channel_日配额为_0 (0.00s)
+    --- PASS: TestDescribeRejectsViolations/channel_注册未强制验证 (0.00s)
+    --- PASS: TestDescribeRejectsViolations/holding_实现_IdentifierVerifying (0.00s)
+    --- PASS: TestDescribeRejectsViolations/holding_要求前置标识符 (0.00s)
+    --- PASS: TestDescribeRejectsViolations/authenticatable_既不能当第一也不能当第二 (0.00s)
+    --- PASS: TestDescribeRejectsViolations/authenticatable_缺_acr.sole (0.00s)
+    --- PASS: TestDescribeRejectsViolations/acr.sole_=_AAL3（D12_不得产出） (0.00s)
+    --- PASS: TestDescribeRejectsViolations/acr.combined_=_AAL3（D12_不得产出） (0.00s)
+    --- PASS: TestDescribeRejectsViolations/acr.combined_弱于_acr.sole (0.00s)
+    --- PASS: TestDescribeRejectsViolations/recoverable.trust_level_=_0 (0.00s)
+    --- PASS: TestDescribeRejectsViolations/recoverable.trust_level_=_4 (0.00s)
+    --- PASS: TestDescribeRejectsViolations/resettable.min_acr_=_AAL0 (0.00s)
+    --- PASS: TestDescribeRejectsViolations/resettable.min_trust_level_=_4 (0.00s)
+    --- PASS: TestDescribeRejectsViolations/registrable_但没有_authenticatable (0.00s)
+    --- PASS: TestDescribeRejectsViolations/revocable.on_identifier_unbind_非法 (0.00s)
+    --- PASS: TestDescribeRejectsViolations/revocable.require_acr_不可产出 (0.00s)
+    --- PASS: TestDescribeRejectsViolations/revocable.cooldown_hours_为负 (0.00s)
+    --- PASS: TestDescribeRejectsViolations/rate_limit_为负 (0.00s)
+    --- PASS: TestDescribeRejectsViolations/send_per_window_没有_send_window (0.00s)
+    --- PASS: TestDescribeRejectsViolations/verify_per_window_没有_verify_window (0.00s)
+    --- PASS: TestDescribeRejectsViolations/空风险信号 (0.00s)
+=== RUN   TestDescribeAcceptsValidShapes
+--- PASS: TestDescribeAcceptsValidShapes (0.00s)
+=== RUN   TestRegistryRegisterAndLookup
+--- PASS: TestRegistryRegisterAndLookup (0.00s)
+=== RUN   TestRegistryRejectsBadRegistration
+--- PASS: TestRegistryRejectsBadRegistration (0.00s)
+=== RUN   TestRegistryMustRegisterPanics
+--- PASS: TestRegistryMustRegisterPanics (0.00s)
+=== RUN   TestRegistryDescriptors
+--- PASS: TestRegistryDescriptors (0.00s)
+=== RUN   TestRegistryCapabilitySelection
+--- PASS: TestRegistryCapabilitySelection (0.00s)
+=== RUN   TestRegistryConcurrentReads
+--- PASS: TestRegistryConcurrentReads (0.01s)
+=== RUN   TestFactorTypeValidate
+--- PASS: TestFactorTypeValidate (0.00s)
+=== RUN   TestPurposeVocabulary
+--- PASS: TestPurposeVocabulary (0.00s)
+=== RUN   TestACRDomain
+--- PASS: TestACRDomain (0.00s)
+=== RUN   TestRoleAndIdentifierType
+--- PASS: TestRoleAndIdentifierType (0.00s)
+=== RUN   TestNextActionAndKind
+--- PASS: TestNextActionAndKind (0.00s)
+=== RUN   TestAMRFor
+--- PASS: TestAMRFor (0.00s)
+PASS
+ok  	github.com/spencerswagger/guanjin/internal/factor	1.083s
+=== RUN   TestProvidersMatchCapabilityMatrix
+--- PASS: TestProvidersMatchCapabilityMatrix (0.00s)
+=== RUN   TestRegisterAssembly
+--- PASS: TestRegisterAssembly (0.00s)
+=== RUN   TestConstructorsFailFast
+--- PASS: TestConstructorsFailFast (0.00s)
+=== RUN   TestBeginChallengeAndRecovery
+--- PASS: TestBeginChallengeAndRecovery (0.00s)
+=== RUN   TestPasswordVerifyResponse
+--- PASS: TestPasswordVerifyResponse (5.90s)
+=== RUN   TestTOTPVerifyResponseAndReplay
+--- PASS: TestTOTPVerifyResponseAndReplay (0.00s)
+=== RUN   TestTOTPVerifyTriesAllRecords
+--- PASS: TestTOTPVerifyTriesAllRecords (0.00s)
+=== RUN   TestParseUserID
+--- PASS: TestParseUserID (0.00s)
+PASS
+ok  	github.com/spencerswagger/guanjin/internal/factor/holding	6.926s
+=== RUN   TestBeginChallengeRequiresPurposeAndFlowID
+--- PASS: TestBeginChallengeRequiresPurposeAndFlowID (0.00s)
+=== RUN   TestBeginChallengePasswordNeedsNoRow
+--- PASS: TestBeginChallengePasswordNeedsNoRow (0.00s)
+=== RUN   TestBeginChallengeAlreadySatisfiedDoesNotReachFactor
+--- PASS: TestBeginChallengeAlreadySatisfiedDoesNotReachFactor (0.00s)
+=== RUN   TestBeginChallengeDisabledAndUnsupported
+--- PASS: TestBeginChallengeDisabledAndUnsupported (0.00s)
+=== RUN   TestBeginChallengeFlowStateGuards
+=== RUN   TestBeginChallengeFlowStateGuards/expires_at_已过
+=== RUN   TestBeginChallengeFlowStateGuards/status=expired
+=== RUN   TestBeginChallengeFlowStateGuards/status=completed
+=== RUN   TestBeginChallengeFlowStateGuards/status=abandoned
+--- PASS: TestBeginChallengeFlowStateGuards (0.00s)
+    --- PASS: TestBeginChallengeFlowStateGuards/expires_at_已过 (0.00s)
+    --- PASS: TestBeginChallengeFlowStateGuards/status=expired (0.00s)
+    --- PASS: TestBeginChallengeFlowStateGuards/status=completed (0.00s)
+    --- PASS: TestBeginChallengeFlowStateGuards/status=abandoned (0.00s)
+=== RUN   TestBeginChallengeStatefulTicketRequiresRow
+--- PASS: TestBeginChallengeStatefulTicketRequiresRow (0.00s)
+=== RUN   TestBeginChallengeRejectsInvalidNextAction
+--- PASS: TestBeginChallengeRejectsInvalidNextAction (0.00s)
+=== RUN   TestBeginChallengeWithoutFlow
+--- PASS: TestBeginChallengeWithoutFlow (0.00s)
+=== RUN   TestVerifyChallengeStatelessDelegates
+--- PASS: TestVerifyChallengeStatelessDelegates (0.00s)
+=== RUN   TestVerifyChallengeDrivesStateMachine
+=== RUN   TestVerifyChallengeDrivesStateMachine/过期
+=== RUN   TestVerifyChallengeDrivesStateMachine/已消费
+=== RUN   TestVerifyChallengeDrivesStateMachine/次数用尽
+=== RUN   TestVerifyChallengeDrivesStateMachine/成功即一次性消费
+=== RUN   TestVerifyChallengeDrivesStateMachine/并发抢先（0_行）
+--- PASS: TestVerifyChallengeDrivesStateMachine (0.00s)
+    --- PASS: TestVerifyChallengeDrivesStateMachine/过期 (0.00s)
+    --- PASS: TestVerifyChallengeDrivesStateMachine/已消费 (0.00s)
+    --- PASS: TestVerifyChallengeDrivesStateMachine/次数用尽 (0.00s)
+    --- PASS: TestVerifyChallengeDrivesStateMachine/成功即一次性消费 (0.00s)
+    --- PASS: TestVerifyChallengeDrivesStateMachine/并发抢先（0_行） (0.00s)
+=== RUN   TestVerifyChallengeCountsAttemptsOnlyOnWrongCredential
+--- PASS: TestVerifyChallengeCountsAttemptsOnlyOnWrongCredential (0.00s)
+=== RUN   TestVerifyChallengeBusinessErrorDoesNotCountAttempts
+--- PASS: TestVerifyChallengeBusinessErrorDoesNotCountAttempts (0.00s)
+=== RUN   TestVerifyChallengeRequiresStore
+--- PASS: TestVerifyChallengeRequiresStore (0.00s)
+=== RUN   TestVerifyChallengeRejectsMalformedID
+--- PASS: TestVerifyChallengeRejectsMalformedID (0.00s)
+=== RUN   TestDescribeGuardsFlowState
+--- PASS: TestDescribeGuardsFlowState (0.00s)
+=== RUN   TestEnsureFlowUsableRejectsUnknownStatus
+--- PASS: TestEnsureFlowUsableRejectsUnknownStatus (0.00s)
+=== RUN   TestChallengeOfRowValidatesPurpose
+--- PASS: TestChallengeOfRowValidatesPurpose (0.00s)
+=== RUN   TestVerifyStepFlowUserWinsOverCaller
+--- PASS: TestVerifyStepFlowUserWinsOverCaller (0.00s)
+=== RUN   TestNewChallenge
+--- PASS: TestNewChallenge (0.00s)
+=== RUN   TestChallengeCheckOrder
+--- PASS: TestChallengeCheckOrder (0.00s)
+=== RUN   TestChallengeFailAndConsume
+--- PASS: TestChallengeFailAndConsume (0.00s)
+=== RUN   TestRequiresFlow
+--- PASS: TestRequiresFlow (0.00s)
+=== RUN   TestParsePurpose
+--- PASS: TestParsePurpose (0.00s)
+=== RUN   TestCodeOf
+--- PASS: TestCodeOf (0.00s)
+=== RUN   TestACRInsufficientErrorMessage
+--- PASS: TestACRInsufficientErrorMessage (0.00s)
+=== RUN   TestBuildDescriptorSatisfied
+--- PASS: TestBuildDescriptorSatisfied (0.00s)
+=== RUN   TestBuildDescriptorNeedMore
+--- PASS: TestBuildDescriptorNeedMore (0.00s)
+=== RUN   TestBuildDescriptorDisabledNotCounted
+--- PASS: TestBuildDescriptorDisabledNotCounted (0.00s)
+=== RUN   TestBuildDescriptorUnreachable
+--- PASS: TestBuildDescriptorUnreachable (0.00s)
+=== RUN   TestBuildDescriptorReachableByCombination
+--- PASS: TestBuildDescriptorReachableByCombination (0.00s)
+=== RUN   TestBuildDescriptorCombinedACR
+--- PASS: TestBuildDescriptorCombinedACR (0.00s)
+=== RUN   TestBuildDescriptorRejectsBadTarget
+--- PASS: TestBuildDescriptorRejectsBadTarget (0.00s)
+=== RUN   TestDescriptorOfFlow
+--- PASS: TestDescriptorOfFlow (0.00s)
+=== RUN   TestFactorInfoOf
+--- PASS: TestFactorInfoOf (0.00s)
+=== RUN   TestSortedFactors
+--- PASS: TestSortedFactors (0.00s)
+=== RUN   TestHTTPCodeFor
+--- PASS: TestHTTPCodeFor (0.00s)
+=== RUN   TestHTTPChallengePassword
+--- PASS: TestHTTPChallengePassword (0.00s)
+=== RUN   TestHTTPChallengeMissingFlowID
+--- PASS: TestHTTPChallengeMissingFlowID (0.00s)
+=== RUN   TestHTTPChallengeAlreadySatisfiedIs409
+--- PASS: TestHTTPChallengeAlreadySatisfiedIs409 (0.00s)
+=== RUN   TestHTTPChallengeBadInput
+--- PASS: TestHTTPChallengeBadInput (0.00s)
+=== RUN   TestHTTPVerifyPasswordSatisfied
+--- PASS: TestHTTPVerifyPasswordSatisfied (0.00s)
+=== RUN   TestHTTPVerifyInsufficientReturnsDescriptor
+--- PASS: TestHTTPVerifyInsufficientReturnsDescriptor (0.00s)
+=== RUN   TestHTTPChallengeUnsupportedFactor
+--- PASS: TestHTTPChallengeUnsupportedFactor (0.00s)
+=== RUN   TestHTTPInternalErrorIsOpaque
+--- PASS: TestHTTPInternalErrorIsOpaque (0.00s)
+=== RUN   TestHTTPDescribe
+--- PASS: TestHTTPDescribe (0.00s)
+=== RUN   TestNewHTTPHandlerRequiresDeps
+--- PASS: TestNewHTTPHandlerRequiresDeps (0.00s)
+=== RUN   TestHTTPIntegrityMismatchIsNonRetryable
+    http_test.go:372: integrity log line: {"time":"2026-11-11T16:47:36.765609462Z","level":"ERROR","msg":"flow: envelope integrity check failed","trace_id":"01a1cb81-ff3d-7780-9b3f-e5b0430a3ebb","path":"/auth/verify/password","code":"INTERNAL_ERROR","crypto_sentinel":"mac_mismatch","retryable":false,"metric":"integrity_mismatch_total","count":1}
+        {"time":"2026-11-11T16:47:36.765812895Z","level":"INFO","msg":"request","trace_id":"01a1cb81-ff3d-7780-9b3f-e5b0430a3ebb","method":"POST","path":"/auth/verify/password","status":500}
+--- PASS: TestHTTPIntegrityMismatchIsNonRetryable (0.00s)
+=== RUN   TestBeginCreatesFlowWithTargetFromTier
+--- PASS: TestBeginCreatesFlowWithTargetFromTier (0.00s)
+=== RUN   TestBeginL3TargetsAAL2
+--- PASS: TestBeginL3TargetsAAL2 (0.00s)
+=== RUN   TestBeginResumesExistingFlow
+--- PASS: TestBeginResumesExistingFlow (0.00s)
+=== RUN   TestBeginRequiresClient
+--- PASS: TestBeginRequiresClient (0.00s)
+=== RUN   TestVerifyStepAlreadySatisfied
+--- PASS: TestVerifyStepAlreadySatisfied (0.00s)
+=== RUN   TestVerifyStepDisabledAndUnsupported
+--- PASS: TestVerifyStepDisabledAndUnsupported (0.00s)
+=== RUN   TestVerifyStepFailureDoesNotAdvance
+--- PASS: TestVerifyStepFailureDoesNotAdvance (0.00s)
+=== RUN   TestVerifyStepInsufficientCarriesDescriptor
+--- PASS: TestVerifyStepInsufficientCarriesDescriptor (0.00s)
+=== RUN   TestVerifyStepSatisfied
+--- PASS: TestVerifyStepSatisfied (0.00s)
+=== RUN   TestVerifyStepAdvanceErrorPropagates
+--- PASS: TestVerifyStepAdvanceErrorPropagates (0.00s)
+=== RUN   TestVerifyStepRequiresFlow
+--- PASS: TestVerifyStepRequiresFlow (0.00s)
+=== RUN   TestFinishConsumes
+--- PASS: TestFinishConsumes (0.00s)
+=== RUN   TestNewValidatesDeps
+--- PASS: TestNewValidatesDeps (0.00s)
+=== RUN   TestTargetACRForTier
+--- PASS: TestTargetACRForTier (0.00s)
+=== RUN   TestVerifyStepLockedAccountRejectsBeforeVerify
+--- PASS: TestVerifyStepLockedAccountRejectsBeforeVerify (0.00s)
+=== RUN   TestVerifyStepCountsCredentialFailures
+--- PASS: TestVerifyStepCountsCredentialFailures (0.00s)
+=== RUN   TestVerifyStepBusinessRejectionDoesNotCount
+--- PASS: TestVerifyStepBusinessRejectionDoesNotCount (0.00s)
+=== RUN   TestVerifyStepSuccessResetsCounters
+--- PASS: TestVerifyStepSuccessResetsCounters (0.00s)
+=== RUN   TestVerifyStepAnonymousFlowSkipsCounters
+--- PASS: TestVerifyStepAnonymousFlowSkipsCounters (0.00s)
+=== RUN   TestVerifyStepRiskUnavailablePropagates
+--- PASS: TestVerifyStepRiskUnavailablePropagates (0.00s)
+=== RUN   TestBeginChallengeAttemptsLeftFromGuard
+=== RUN   TestBeginChallengeAttemptsLeftFromGuard/attempts_left_只表示单挑战次数（不是账号级）
+=== RUN   TestBeginChallengeAttemptsLeftFromGuard/已锁定不下发
+=== RUN   TestBeginChallengeAttemptsLeftFromGuard/匿名流不适用
+--- PASS: TestBeginChallengeAttemptsLeftFromGuard (0.00s)
+    --- PASS: TestBeginChallengeAttemptsLeftFromGuard/attempts_left_只表示单挑战次数（不是账号级） (0.00s)
+    --- PASS: TestBeginChallengeAttemptsLeftFromGuard/已锁定不下发 (0.00s)
+    --- PASS: TestBeginChallengeAttemptsLeftFromGuard/匿名流不适用 (0.00s)
+=== RUN   TestAddAMRIsMonotonicAndIdempotent
+--- PASS: TestAddAMRIsMonotonicAndIdempotent (0.00s)
+=== RUN   TestCanTransition
+--- PASS: TestCanTransition (0.00s)
+=== RUN   TestAppendStepRejectsDuplicateFactor
+--- PASS: TestAppendStepRejectsDuplicateFactor (0.00s)
+=== RUN   TestEndpointDialBlackholeYields503
+    unavailable_db_test.go:46: 黑洞拨号：*net.OpError: dial tcp 192.0.2.1:5432: i/o timeout（Op="dial", Timeout=true, 耗时=300.790899ms）
+--- PASS: TestEndpointDialBlackholeYields503 (0.30s)
+=== RUN   TestCodeOfDependencyUnavailable
+=== RUN   TestCodeOfDependencyUnavailable/仓储已判_DB_UNAVAILABLE
+=== RUN   TestCodeOfDependencyUnavailable/原始连接层错误（未过_MapError）
+=== RUN   TestCodeOfDependencyUnavailable/风控_Redis_不可用
+=== RUN   TestCodeOfDependencyUnavailable/包裹后的_Redis_不可用
+--- PASS: TestCodeOfDependencyUnavailable (0.00s)
+    --- PASS: TestCodeOfDependencyUnavailable/仓储已判_DB_UNAVAILABLE (0.00s)
+    --- PASS: TestCodeOfDependencyUnavailable/原始连接层错误（未过_MapError） (0.00s)
+    --- PASS: TestCodeOfDependencyUnavailable/风控_Redis_不可用 (0.00s)
+    --- PASS: TestCodeOfDependencyUnavailable/包裹后的_Redis_不可用 (0.00s)
+=== RUN   TestHTTPChallengeSocketReadTimeoutIsNot503
+--- PASS: TestHTTPChallengeSocketReadTimeoutIsNot503 (0.01s)
+=== RUN   TestHTTPChallengeDialTimeoutIs503
+--- PASS: TestHTTPChallengeDialTimeoutIs503 (0.00s)
+=== RUN   TestCodeOfBusinessErrorIsNotUnavailable
+--- PASS: TestCodeOfBusinessErrorIsNotUnavailable (0.00s)
+=== RUN   TestHTTPChallengeDBUnavailableIs503
+--- PASS: TestHTTPChallengeDBUnavailableIs503 (0.00s)
+=== RUN   TestHTTPChallengeRawConnectErrorIs503
+--- PASS: TestHTTPChallengeRawConnectErrorIs503 (0.00s)
+=== RUN   TestHTTPVerifyRedisUnavailableIs503
+--- PASS: TestHTTPVerifyRedisUnavailableIs503 (0.00s)
+=== RUN   TestAC_FLOW_02_InsufficientReturnsDescriptor
+--- PASS: TestAC_FLOW_02_InsufficientReturnsDescriptor (0.13s)
+=== RUN   TestAC_FLOW_03_StepAlreadySatisfied
+--- PASS: TestAC_FLOW_03_StepAlreadySatisfied (0.16s)
+=== RUN   TestAC_FLOW_04_DisabledFactorNotCounted
+--- PASS: TestAC_FLOW_04_DisabledFactorNotCounted (0.11s)
+=== RUN   TestAC_FLOW_07_Unreachable
+--- PASS: TestAC_FLOW_07_Unreachable (0.19s)
+=== RUN   TestFinishConsumesFlow
+--- PASS: TestFinishConsumesFlow (0.18s)
+=== RUN   TestChallengeLifecycleInDB
+--- PASS: TestChallengeLifecycleInDB (0.11s)
+PASS
+ok  	github.com/spencerswagger/guanjin/internal/flow	2.348s
+=== RUN   TestNewAdapterRequiresBothDeps
+--- PASS: TestNewAdapterRequiresBothDeps (0.00s)
+=== RUN   TestDBAdapterGet
+--- PASS: TestDBAdapterGet (0.09s)
+=== RUN   TestDBAdapterStartReusesActiveFlow
+--- PASS: TestDBAdapterStartReusesActiveFlow (0.09s)
+=== RUN   TestDBAdapterAdvanceAccumulates
+--- PASS: TestDBAdapterAdvanceAccumulates (0.15s)
+=== RUN   TestDBAdapterAdvanceExpiredKeepsRow
+--- PASS: TestDBAdapterAdvanceExpiredKeepsRow (0.14s)
+=== RUN   TestDBAdapterConsumeBackfillsSessionOnce
+--- PASS: TestDBAdapterConsumeBackfillsSessionOnce (0.17s)
+=== RUN   TestDBAdapterConsumeUnknownFlow
+--- PASS: TestDBAdapterConsumeUnknownFlow (0.06s)
+=== RUN   TestMapFlowError
+=== RUN   TestMapFlowError/过期_→_FLOW_EXPIRED
+=== RUN   TestMapFlowError/非活跃_→_FLOW_NOT_FOUND
+=== RUN   TestMapFlowError/已消费_→_FLOW_NOT_FOUND
+--- PASS: TestMapFlowError (0.00s)
+    --- PASS: TestMapFlowError/过期_→_FLOW_EXPIRED (0.00s)
+    --- PASS: TestMapFlowError/非活跃_→_FLOW_NOT_FOUND (0.00s)
+    --- PASS: TestMapFlowError/已消费_→_FLOW_NOT_FOUND (0.00s)
+=== RUN   TestNewChallengeAdapterRequiresRepo
+--- PASS: TestNewChallengeAdapterRequiresRepo (0.00s)
+=== RUN   TestDBChallengeAdapterGetByID
+--- PASS: TestDBChallengeAdapterGetByID (0.07s)
+=== RUN   TestDBChallengeAdapterConsumeIsOneShot
+--- PASS: TestDBChallengeAdapterConsumeIsOneShot (0.06s)
+=== RUN   TestDBChallengeAdapterRecordAttempt
+--- PASS: TestDBChallengeAdapterRecordAttempt (0.13s)
+=== RUN   TestDBFlowstoreHeavyWorkRunsOutsideFlowLock
+--- PASS: TestDBFlowstoreHeavyWorkRunsOutsideFlowLock (2.92s)
+=== RUN   TestDBFlowstoreStartUsesDBClock
+--- PASS: TestDBFlowstoreStartUsesDBClock (0.07s)
+=== RUN   TestDBFlowstoreStartReusesActiveFlow
+--- PASS: TestDBFlowstoreStartReusesActiveFlow (0.11s)
+=== RUN   TestDBFlowstoreAdvanceAccumulates
+--- PASS: TestDBFlowstoreAdvanceAccumulates (0.19s)
+=== RUN   TestDBFlowstoreAdvanceRejectsDuplicateStep
+--- PASS: TestDBFlowstoreAdvanceRejectsDuplicateStep (0.09s)
+=== RUN   TestDBFlowstoreAdvanceExpiredKeepsRow
+--- PASS: TestDBFlowstoreAdvanceExpiredKeepsRow (0.10s)
+=== RUN   TestDBFlowstoreConsumeOnce
+--- PASS: TestDBFlowstoreConsumeOnce (0.10s)
+=== RUN   TestDBFlowstoreConsumeRequiresUser
+--- PASS: TestDBFlowstoreConsumeRequiresUser (0.07s)
+=== RUN   TestDBFlowstoreConsumeSessionBackfillOnce
+--- PASS: TestDBFlowstoreConsumeSessionBackfillOnce (0.09s)
+=== RUN   TestDBFlowstoreConcurrentAdvanceKeepsAllAMR
+--- PASS: TestDBFlowstoreConcurrentAdvanceKeepsAllAMR (0.11s)
+=== RUN   TestDBFlowstoreAbandonedFlowCannotAdvance
+--- PASS: TestDBFlowstoreAbandonedFlowCannotAdvance (0.07s)
+=== RUN   TestDBFlowstoreStartDefaultsToAAL1
+--- PASS: TestDBFlowstoreStartDefaultsToAAL1 (0.06s)
+=== RUN   TestDBFlowstoreConsumeExpiredFlow
+--- PASS: TestDBFlowstoreConsumeExpiredFlow (0.07s)
+=== RUN   TestDBFlowstoreConsumeSessionSameValueIsIdempotent
+--- PASS: TestDBFlowstoreConsumeSessionSameValueIsIdempotent (0.08s)
+=== RUN   TestDBFlowstoreAdvanceAbandonedFlow
+--- PASS: TestDBFlowstoreAdvanceAbandonedFlow (0.10s)
+=== RUN   TestNewRequiresPositiveTTL
+=== RUN   TestNewRequiresPositiveTTL/zero
+=== RUN   TestNewRequiresPositiveTTL/negative
+--- PASS: TestNewRequiresPositiveTTL (0.00s)
+    --- PASS: TestNewRequiresPositiveTTL/zero (0.00s)
+    --- PASS: TestNewRequiresPositiveTTL/negative (0.00s)
+=== RUN   TestNewRequiresDependencies
+--- PASS: TestNewRequiresDependencies (0.00s)
+=== RUN   TestStartValidatesBeforeTouchingDB
+--- PASS: TestStartValidatesBeforeTouchingDB (0.00s)
+=== RUN   TestAdvanceValidatesInput
+--- PASS: TestAdvanceValidatesInput (0.00s)
+=== RUN   TestConsumeValidatesInput
+--- PASS: TestConsumeValidatesInput (0.00s)
+=== RUN   TestStatusVocabularyMatchesD5
+--- PASS: TestStatusVocabularyMatchesD5 (0.00s)
+=== RUN   TestTTLExposed
+--- PASS: TestTTLExposed (0.00s)
+PASS
+ok  	github.com/spencerswagger/guanjin/internal/flowstore	6.246s
+=== RUN   TestAC_DP_05_MissingTokenIsDeniedByDefault
+=== RUN   TestAC_DP_05_MissingTokenIsDeniedByDefault/完全没有_Authorization
+=== RUN   TestAC_DP_05_MissingTokenIsDeniedByDefault/不是_Bearer
+=== RUN   TestAC_DP_05_MissingTokenIsDeniedByDefault/Bearer_后为空
+--- PASS: TestAC_DP_05_MissingTokenIsDeniedByDefault (0.11s)
+    --- PASS: TestAC_DP_05_MissingTokenIsDeniedByDefault/完全没有_Authorization (0.03s)
+    --- PASS: TestAC_DP_05_MissingTokenIsDeniedByDefault/不是_Bearer (0.04s)
+    --- PASS: TestAC_DP_05_MissingTokenIsDeniedByDefault/Bearer_后为空 (0.04s)
+=== RUN   TestAC_DP_04_TamperedTokenIsRejected
+=== RUN   TestAC_DP_04_TamperedTokenIsRejected/篡改_payload（签名仍是原样）
+=== RUN   TestAC_DP_04_TamperedTokenIsRejected/未知_kid（用另一把_oidc_钥签）
+=== RUN   TestAC_DP_04_TamperedTokenIsRejected/结构坏了（不是三段）
+--- PASS: TestAC_DP_04_TamperedTokenIsRejected (0.30s)
+    --- PASS: TestAC_DP_04_TamperedTokenIsRejected/篡改_payload（签名仍是原样） (0.16s)
+    --- PASS: TestAC_DP_04_TamperedTokenIsRejected/未知_kid（用另一把_oidc_钥签） (0.11s)
+    --- PASS: TestAC_DP_04_TamperedTokenIsRejected/结构坏了（不是三段） (0.03s)
+=== RUN   TestAC_DP_06_ClockSkewBoundaries
+=== RUN   TestAC_DP_06_ClockSkewBoundaries/exp_已过期（1_秒前）
+=== RUN   TestAC_DP_06_ClockSkewBoundaries/iat_超前_4s（skew_5s_内）
+=== RUN   TestAC_DP_06_ClockSkewBoundaries/iat_超前_6s（超出_skew_5s）
+--- PASS: TestAC_DP_06_ClockSkewBoundaries (0.22s)
+    --- PASS: TestAC_DP_06_ClockSkewBoundaries/exp_已过期（1_秒前） (0.07s)
+    --- PASS: TestAC_DP_06_ClockSkewBoundaries/iat_超前_4s（skew_5s_内） (0.09s)
+    --- PASS: TestAC_DP_06_ClockSkewBoundaries/iat_超前_6s（超出_skew_5s） (0.07s)
+=== RUN   TestAC_DP_07_IssuerAndAudienceMismatch
+=== RUN   TestAC_DP_07_IssuerAndAudienceMismatch/iss_不是本平台
+=== RUN   TestAC_DP_07_IssuerAndAudienceMismatch/aud_是别的业务系统
+=== RUN   TestAC_DP_07_IssuerAndAudienceMismatch/aud_缺失
+=== RUN   TestAC_DP_07_IssuerAndAudienceMismatch/iss_缺失
+--- PASS: TestAC_DP_07_IssuerAndAudienceMismatch (0.42s)
+    --- PASS: TestAC_DP_07_IssuerAndAudienceMismatch/iss_不是本平台 (0.07s)
+    --- PASS: TestAC_DP_07_IssuerAndAudienceMismatch/aud_是别的业务系统 (0.11s)
+    --- PASS: TestAC_DP_07_IssuerAndAudienceMismatch/aud_缺失 (0.17s)
+    --- PASS: TestAC_DP_07_IssuerAndAudienceMismatch/iss_缺失 (0.07s)
+=== RUN   TestAC_DP_09_ACRInsufficientCarriesFlowDescriptor
+--- PASS: TestAC_DP_09_ACRInsufficientCarriesFlowDescriptor (0.08s)
+=== RUN   TestAC_DP_09_TerminalStateUnreachableInM1
+--- PASS: TestAC_DP_09_TerminalStateUnreachableInM1 (0.10s)
+=== RUN   TestAC_DP_09_UsesActiveFlowIDWhenPresent
+--- PASS: TestAC_DP_09_UsesActiveFlowIDWhenPresent (0.07s)
+=== RUN   TestSessionLivenessGates
+=== RUN   TestSessionLivenessGates/已撤销
+=== RUN   TestSessionLivenessGates/已过期（status）
+=== RUN   TestSessionLivenessGates/绝对超时已到点
+=== RUN   TestSessionLivenessGates/空闲超时已到点
+=== RUN   TestSessionLivenessGates/未知状态（fail-closed）
+=== RUN   TestSessionLivenessGates/会话不存在
+=== RUN   TestSessionLivenessGates/令牌_sub_与会话归属不一致
+--- PASS: TestSessionLivenessGates (0.56s)
+    --- PASS: TestSessionLivenessGates/已撤销 (0.07s)
+    --- PASS: TestSessionLivenessGates/已过期（status） (0.07s)
+    --- PASS: TestSessionLivenessGates/绝对超时已到点 (0.06s)
+    --- PASS: TestSessionLivenessGates/空闲超时已到点 (0.08s)
+    --- PASS: TestSessionLivenessGates/未知状态（fail-closed） (0.09s)
+    --- PASS: TestSessionLivenessGates/会话不存在 (0.10s)
+    --- PASS: TestSessionLivenessGates/令牌_sub_与会话归属不一致 (0.08s)
+=== RUN   TestSessionIsReadPerRequestNoCache
+--- PASS: TestSessionIsReadPerRequestNoCache (0.18s)
+=== RUN   TestAdmissionPolicyMissingIsServerError
+--- PASS: TestAdmissionPolicyMissingIsServerError (0.22s)
+=== RUN   TestDependencyFailureIsDBUnavailable
+=== RUN   TestDependencyFailureIsDBUnavailable/会话读取失败
+=== RUN   TestDependencyFailureIsDBUnavailable/角色读取失败
+=== RUN   TestDependencyFailureIsDBUnavailable/用户名读取失败
+=== RUN   TestDependencyFailureIsDBUnavailable/门槛读取失败
+--- PASS: TestDependencyFailureIsDBUnavailable (0.27s)
+    --- PASS: TestDependencyFailureIsDBUnavailable/会话读取失败 (0.07s)
+    --- PASS: TestDependencyFailureIsDBUnavailable/角色读取失败 (0.07s)
+    --- PASS: TestDependencyFailureIsDBUnavailable/用户名读取失败 (0.07s)
+    --- PASS: TestDependencyFailureIsDBUnavailable/门槛读取失败 (0.07s)
+=== RUN   TestNonIssuableSessionACRIsInternalError
+--- PASS: TestNonIssuableSessionACRIsInternalError (0.24s)
+=== RUN   TestDetailsFlowTopLevelShape
+--- PASS: TestDetailsFlowTopLevelShape (0.07s)
+=== RUN   TestDetailsFlowCurrentACRIsNeverOmitted
+--- PASS: TestDetailsFlowCurrentACRIsNeverOmitted (0.07s)
+=== RUN   TestDetailsFlowUnreachableReasonOnlyWhenUnreachable
+--- PASS: TestDetailsFlowUnreachableReasonOnlyWhenUnreachable (0.14s)
+=== RUN   TestNewGuardRequiresEveryDependency
+--- PASS: TestNewGuardRequiresEveryDependency (0.00s)
+=== RUN   TestVisitFailureDoesNotBlockRequest
+--- PASS: TestVisitFailureDoesNotBlockRequest (0.09s)
+=== RUN   TestApplyRejectsEmptyAssertion
+--- PASS: TestApplyRejectsEmptyAssertion (0.00s)
+=== RUN   TestCheckAudienceAcceptsArrayForm
+=== RUN   TestCheckAudienceAcceptsArrayForm/字符串命中
+=== RUN   TestCheckAudienceAcceptsArrayForm/数组命中
+=== RUN   TestCheckAudienceAcceptsArrayForm/数组未命中
+=== RUN   TestCheckAudienceAcceptsArrayForm/aud_类型错误
+=== RUN   TestCheckAudienceAcceptsArrayForm/无_claims
+=== RUN   TestCheckAudienceAcceptsArrayForm/无_iss
+--- PASS: TestCheckAudienceAcceptsArrayForm (0.00s)
+    --- PASS: TestCheckAudienceAcceptsArrayForm/字符串命中 (0.00s)
+    --- PASS: TestCheckAudienceAcceptsArrayForm/数组命中 (0.00s)
+    --- PASS: TestCheckAudienceAcceptsArrayForm/数组未命中 (0.00s)
+    --- PASS: TestCheckAudienceAcceptsArrayForm/aud_类型错误 (0.00s)
+    --- PASS: TestCheckAudienceAcceptsArrayForm/无_claims (0.00s)
+    --- PASS: TestCheckAudienceAcceptsArrayForm/无_iss (0.00s)
+=== RUN   TestAssertionSignerRejectsBadInput
+--- PASS: TestAssertionSignerRejectsBadInput (0.05s)
+=== RUN   TestGatewayImplementsNoTLSOrResilience
+--- PASS: TestGatewayImplementsNoTLSOrResilience (0.00s)
+=== RUN   TestGoModHasNoResilienceOrCertDeps
+--- PASS: TestGoModHasNoResilienceOrCertDeps (0.00s)
+=== RUN   TestGatewayNeverStoresOrComparesJTI
+--- PASS: TestGatewayNeverStoresOrComparesJTI (0.00s)
+=== RUN   TestAC_DP_01_AssertionIsCompleteAndVerifiable
+--- PASS: TestAC_DP_01_AssertionIsCompleteAndVerifiable (0.15s)
+=== RUN   TestAC_DP_02_ForgedAssertionIsReplacedNotAppended
+--- PASS: TestAC_DP_02_ForgedAssertionIsReplacedNotAppended (0.12s)
+=== RUN   TestAssertionJtiIsPerRequest
+--- PASS: TestAssertionJtiIsPerRequest (0.31s)
+=== RUN   TestSignerFailureIsKeyUnavailableAndNotForwarded
+--- PASS: TestSignerFailureIsKeyUnavailableAndNotForwarded (0.10s)
+=== RUN   TestAC_DP_10_AccessLogCarriesNoTokenOrAssertion
+--- PASS: TestAC_DP_10_AccessLogCarriesNoTokenOrAssertion (0.08s)
+=== RUN   TestAC_DP_13_UpstreamUnavailableKeepsSemantics
+--- PASS: TestAC_DP_13_UpstreamUnavailableKeepsSemantics (0.07s)
+=== RUN   TestNoRouteThroughPipelineIs404ClientNotFound
+--- PASS: TestNoRouteThroughPipelineIs404ClientNotFound (0.03s)
+=== RUN   TestInboundAssertionHeaderIsStripped
+2026/11/11 16:47:41 INFO data-plane request trace_id=01a1cb82-11cf-7090-8e0f-b2ae8cc5f383 method=GET path=/svc/orders status=200 duration_ms=1 client_id=svc
+--- PASS: TestInboundAssertionHeaderIsStripped (0.00s)
+=== RUN   TestRequestIsForwardedVerbatim
+2026/11/11 16:47:41 INFO data-plane request trace_id=01a1cb82-11d0-7baa-87a7-cf9111c9ea8c method=POST path=/svc/orders/42 status=200 duration_ms=0 client_id=svc
+--- PASS: TestRequestIsForwardedVerbatim (0.00s)
+=== RUN   TestUpstreamBasePathJoin
+2026/11/11 16:47:41 INFO data-plane request trace_id=01a1cb82-11d2-74d3-bf31-f90cdd402434 method=GET path=/svc/orders status=200 duration_ms=0 client_id=svc
+--- PASS: TestUpstreamBasePathJoin (0.00s)
+=== RUN   TestNoRouteIs404ClientNotFoundAndNeverForwards
+2026/11/11 16:47:41 WARN data-plane: no route for path (路由表缺条目) trace_id=01a1cb82-11d4-70b6-84fc-4ae3ae67b9f6 path=/unknown code=CLIENT_NOT_FOUND
+2026/11/11 16:47:41 INFO data-plane request trace_id=01a1cb82-11d4-70b6-84fc-4ae3ae67b9f6 method=GET path=/unknown status=404 duration_ms=0 client_id=""
+--- PASS: TestNoRouteIs404ClientNotFoundAndNeverForwards (0.00s)
+=== RUN   TestUpstreamDialFailureIs503
+2026/11/11 16:47:41 WARN upstream failed error="dial tcp 127.0.0.1:44909: connect: connection refused" trace_id=01a1cb82-11d4-7a31-92a3-f99812f367d4 path=/svc/orders client_id=svc
+2026/11/11 16:47:41 INFO data-plane request trace_id=01a1cb82-11d4-7a31-92a3-f99812f367d4 method=GET path=/svc/orders status=503 duration_ms=0 client_id=svc
+--- PASS: TestUpstreamDialFailureIs503 (0.00s)
+=== RUN   TestUpstreamTimeoutIs503
+2026/11/11 16:47:41 WARN upstream failed error="net/http: timeout awaiting response headers" trace_id=01a1cb82-11d5-76d0-8c69-f67b5ae22462 path=/svc/slow client_id=svc
+2026/11/11 16:47:41 INFO data-plane request trace_id=01a1cb82-11d5-76d0-8c69-f67b5ae22462 method=GET path=/svc/slow status=503 duration_ms=51 client_id=svc
+--- PASS: TestUpstreamTimeoutIs503 (0.30s)
+=== RUN   TestLogsCarryNoCredentials
+--- PASS: TestLogsCarryNoCredentials (0.00s)
+=== RUN   TestNewRequiresRouter
+--- PASS: TestNewRequiresRouter (0.00s)
+=== RUN   TestCheckSessionAliveMatrix
+=== RUN   TestCheckSessionAliveMatrix/active_且未到任何超时
+=== RUN   TestCheckSessionAliveMatrix/active_但没有有效期（零值）→_不按时间拒（零值表示未提供）
+=== RUN   TestCheckSessionAliveMatrix/revoked
+=== RUN   TestCheckSessionAliveMatrix/expired
+=== RUN   TestCheckSessionAliveMatrix/绝对超时到点（status_还是_active：后台还没扫）
+=== RUN   TestCheckSessionAliveMatrix/空闲超时到点（status_还是_active）
+=== RUN   TestCheckSessionAliveMatrix/未知状态（fail-closed，不当_active）
+=== RUN   TestCheckSessionAliveMatrix/空状态（数据缺陷，同样_fail-closed）
+--- PASS: TestCheckSessionAliveMatrix (0.00s)
+    --- PASS: TestCheckSessionAliveMatrix/active_且未到任何超时 (0.00s)
+    --- PASS: TestCheckSessionAliveMatrix/active_但没有有效期（零值）→_不按时间拒（零值表示未提供） (0.00s)
+    --- PASS: TestCheckSessionAliveMatrix/revoked (0.00s)
+    --- PASS: TestCheckSessionAliveMatrix/expired (0.00s)
+    --- PASS: TestCheckSessionAliveMatrix/绝对超时到点（status_还是_active：后台还没扫） (0.00s)
+    --- PASS: TestCheckSessionAliveMatrix/空闲超时到点（status_还是_active） (0.00s)
+    --- PASS: TestCheckSessionAliveMatrix/未知状态（fail-closed，不当_active） (0.00s)
+    --- PASS: TestCheckSessionAliveMatrix/空状态（数据缺陷，同样_fail-closed） (0.00s)
+=== RUN   TestGatewayDoesNotWriteSessions
+--- PASS: TestGatewayDoesNotWriteSessions (0.00s)
+=== RUN   TestGatewayCoreHasNoRedisClient
+--- PASS: TestGatewayCoreHasNoRedisClient (0.00s)
+=== RUN   TestNewRouterValidation
+=== RUN   TestNewRouterValidation/empty_route
+=== RUN   TestNewRouterValidation/no_client
+=== RUN   TestNewRouterValidation/no_upstream
+=== RUN   TestNewRouterValidation/prefix_without_slash
+=== RUN   TestNewRouterValidation/prefix_with_trailing_slash
+=== RUN   TestNewRouterValidation/bad_scheme
+=== RUN   TestNewRouterValidation/no_host
+=== RUN   TestNewRouterValidation/duplicate_prefix
+--- PASS: TestNewRouterValidation (0.00s)
+    --- PASS: TestNewRouterValidation/empty_route (0.00s)
+    --- PASS: TestNewRouterValidation/no_client (0.00s)
+    --- PASS: TestNewRouterValidation/no_upstream (0.00s)
+    --- PASS: TestNewRouterValidation/prefix_without_slash (0.00s)
+    --- PASS: TestNewRouterValidation/prefix_with_trailing_slash (0.00s)
+    --- PASS: TestNewRouterValidation/bad_scheme (0.00s)
+    --- PASS: TestNewRouterValidation/no_host (0.00s)
+    --- PASS: TestNewRouterValidation/duplicate_prefix (0.00s)
+=== RUN   TestRouterMatchIsSegmentAware
+--- PASS: TestRouterMatchIsSegmentAware (0.00s)
+=== RUN   TestNilRouterMatch
+--- PASS: TestNilRouterMatch (0.00s)
+=== RUN   TestParseRoutes
+--- PASS: TestParseRoutes (0.00s)
+=== RUN   TestSloNotifierUsesCandidateA
+--- PASS: TestSloNotifierUsesCandidateA (0.07s)
+=== RUN   TestSloNotifierRetriesOnce
+--- PASS: TestSloNotifierRetriesOnce (0.04s)
+=== RUN   TestSloNotifierReportsPersistentFailure
+--- PASS: TestSloNotifierReportsPersistentFailure (0.04s)
+=== RUN   TestSloNotifierRequiresUpstream
+--- PASS: TestSloNotifierRequiresUpstream (0.03s)
+=== RUN   TestSloNotifierRequiresSubject
+--- PASS: TestSloNotifierRequiresSubject (0.02s)
+=== RUN   TestNewHTTPNotifierValidation
+--- PASS: TestNewHTTPNotifierValidation (0.02s)
+=== RUN   TestSloNotifierCustomPath
+--- PASS: TestSloNotifierCustomPath (0.03s)
+=== RUN   TestUpstreamsFromRouter
+--- PASS: TestUpstreamsFromRouter (0.00s)
+=== RUN   TestAC_DP_12_NotifyFailureDoesNotBlockRevocation
+=== RUN   TestAC_DP_12_NotifyFailureDoesNotBlockRevocation/notifier_返回错误
+=== RUN   TestAC_DP_12_NotifyFailureDoesNotBlockRevocation/notifier_panic
+=== RUN   TestAC_DP_12_NotifyFailureDoesNotBlockRevocation/notifier_超时
+--- PASS: TestAC_DP_12_NotifyFailureDoesNotBlockRevocation (0.05s)
+    --- PASS: TestAC_DP_12_NotifyFailureDoesNotBlockRevocation/notifier_返回错误 (0.00s)
+    --- PASS: TestAC_DP_12_NotifyFailureDoesNotBlockRevocation/notifier_panic (0.00s)
+    --- PASS: TestAC_DP_12_NotifyFailureDoesNotBlockRevocation/notifier_超时 (0.05s)
+=== RUN   TestNotifyIsolatesPerClient
+--- PASS: TestNotifyIsolatesPerClient (0.00s)
+=== RUN   TestNotifySkipsEmptyClients
+--- PASS: TestNotifySkipsEmptyClients (0.00s)
+=== RUN   TestNoNotifierSendsNothing
+--- PASS: TestNoNotifierSendsNothing (0.00s)
+=== RUN   TestSloWireContractPendingSentinelExists
+--- PASS: TestSloWireContractPendingSentinelExists (0.00s)
+PASS
+ok  	github.com/spencerswagger/guanjin/internal/gateway	5.711s
+=== RUN   TestDBLoadAdmissionPolicyPrefersClientOverride
+--- PASS: TestDBLoadAdmissionPolicyPrefersClientOverride (0.12s)
+=== RUN   TestDBLoadAdmissionPolicyFallsBackToTierDefault
+--- PASS: TestDBLoadAdmissionPolicyFallsBackToTierDefault (0.13s)
+=== RUN   TestDBLoadAdmissionPolicyNotConfigured
+--- PASS: TestDBLoadAdmissionPolicyNotConfigured (0.11s)
+=== RUN   TestDBLoadAdmissionPolicyClientDisabled
+--- PASS: TestDBLoadAdmissionPolicyClientDisabled (0.13s)
+=== RUN   TestDBLoadSessionRoundTripAndNotFound
+--- PASS: TestDBLoadSessionRoundTripAndNotFound (0.15s)
+=== RUN   TestDBRolesForUserClient
+--- PASS: TestDBRolesForUserClient (0.12s)
+=== RUN   TestDBUsernameIsUsernameNotDisplayName
+--- PASS: TestDBUsernameIsUsernameNotDisplayName (0.18s)
+=== RUN   TestDBRecordVisitUpserts
+--- PASS: TestDBRecordVisitUpserts (0.15s)
+=== RUN   TestDBFindActiveFlow
+--- PASS: TestDBFindActiveFlow (0.10s)
+=== RUN   TestDBSessionStatusAdapter
+--- PASS: TestDBSessionStatusAdapter (0.08s)
+=== RUN   TestLoadSessionMapsSnapshotAndSentinels
+--- PASS: TestLoadSessionMapsSnapshotAndSentinels (0.00s)
+=== RUN   TestLoadAdmissionPolicyTranslatesAllSentinels
+=== RUN   TestLoadAdmissionPolicyTranslatesAllSentinels/业务系统不存在
+=== RUN   TestLoadAdmissionPolicyTranslatesAllSentinels/业务系统已停用
+=== RUN   TestLoadAdmissionPolicyTranslatesAllSentinels/两侧策略都没有
+--- PASS: TestLoadAdmissionPolicyTranslatesAllSentinels (0.00s)
+    --- PASS: TestLoadAdmissionPolicyTranslatesAllSentinels/业务系统不存在 (0.00s)
+    --- PASS: TestLoadAdmissionPolicyTranslatesAllSentinels/业务系统已停用 (0.00s)
+    --- PASS: TestLoadAdmissionPolicyTranslatesAllSentinels/两侧策略都没有 (0.00s)
+=== RUN   TestRolesAndUsersAndVisitsAdapters
+--- PASS: TestRolesAndUsersAndVisitsAdapters (0.00s)
+=== RUN   TestFindActiveFlowAndSessionStatus
+--- PASS: TestFindActiveFlowAndSessionStatus (0.00s)
+=== RUN   TestAC_DP_08a_FreshJtiPerRequest
+--- PASS: TestAC_DP_08a_FreshJtiPerRequest (0.30s)
+=== RUN   TestAC_DP_08b_UpstreamReplayRejectionPassesThrough
+--- PASS: TestAC_DP_08b_UpstreamReplayRejectionPassesThrough (0.20s)
+=== RUN   TestAC_DP_08c_ReplayWindowExpiryAllowsReuse
+--- PASS: TestAC_DP_08c_ReplayWindowExpiryAllowsReuse (1.50s)
+=== RUN   TestAC_DP_01_RealDataFeedsAssertion
+--- PASS: TestAC_DP_01_RealDataFeedsAssertion (0.19s)
+=== RUN   TestAC_DP_09_RealPolicyThreshold
+--- PASS: TestAC_DP_09_RealPolicyThreshold (0.15s)
+=== RUN   TestAC_SESS_01_RevocationIsImmediate
+--- PASS: TestAC_SESS_01_RevocationIsImmediate (0.19s)
+=== RUN   TestAC_SESS_04_TwoInstancesSeeRevocationImmediately
+--- PASS: TestAC_SESS_04_TwoInstancesSeeRevocationImmediately (0.27s)
+=== RUN   TestSessionExpiryIsEnforcedAtRequestTime
+--- PASS: TestSessionExpiryIsEnforcedAtRequestTime (0.13s)
+PASS
+ok  	github.com/spencerswagger/guanjin/internal/gateway/adapter	5.257s
+=== RUN   TestHTTPStatusMapping
+--- PASS: TestHTTPStatusMapping (0.00s)
+=== RUN   TestWriteErrorShape
+--- PASS: TestWriteErrorShape (0.00s)
+=== RUN   TestWriteErrorSetsRetryAfterOn503
+--- PASS: TestWriteErrorSetsRetryAfterOn503 (0.00s)
+=== RUN   TestDeprecatedCodesAreNotMapped
+--- PASS: TestDeprecatedCodesAreNotMapped (0.00s)
+=== RUN   TestPasswordAndCredentialCodeStatus
+--- PASS: TestPasswordAndCredentialCodeStatus (0.00s)
+=== RUN   TestIntegrityMismatchSurface
+--- PASS: TestIntegrityMismatchSurface (0.00s)
+=== RUN   TestParsePageDefaults
+--- PASS: TestParsePageDefaults (0.00s)
+=== RUN   TestParsePageLimitAndCursor
+--- PASS: TestParsePageLimitAndCursor (0.00s)
+=== RUN   TestParsePageErrors
+--- PASS: TestParsePageErrors (0.00s)
+=== RUN   TestParsePageIgnoresDeprecatedParams
+--- PASS: TestParsePageIgnoresDeprecatedParams (0.00s)
+=== RUN   TestParsePageNilRequest
+--- PASS: TestParsePageNilRequest (0.00s)
+=== RUN   TestCodeOfPageError
+--- PASS: TestCodeOfPageError (0.00s)
+=== RUN   TestNewTraceIDIsUUIDv7
+--- PASS: TestNewTraceIDIsUUIDv7 (0.00s)
+=== RUN   TestSanitizeTraceID
+--- PASS: TestSanitizeTraceID (0.00s)
+=== RUN   TestTraceIDContextRoundTrip
+--- PASS: TestTraceIDContextRoundTrip (0.00s)
+=== RUN   TestTraceMiddleware
+=== RUN   TestTraceMiddleware/inbound_id_is_reused
+=== RUN   TestTraceMiddleware/invalid_inbound_id_is_replaced
+=== RUN   TestTraceMiddleware/default_header_name
+=== RUN   TestTraceMiddleware/logs_status_code
+--- PASS: TestTraceMiddleware (0.00s)
+    --- PASS: TestTraceMiddleware/inbound_id_is_reused (0.00s)
+    --- PASS: TestTraceMiddleware/invalid_inbound_id_is_replaced (0.00s)
+    --- PASS: TestTraceMiddleware/default_header_name (0.00s)
+    --- PASS: TestTraceMiddleware/logs_status_code (0.00s)
+=== RUN   TestStatusRecorder
+--- PASS: TestStatusRecorder (0.00s)
+PASS
+ok  	github.com/spencerswagger/guanjin/internal/httpx	1.030s
+=== RUN   TestIdentifierTypesMatchFactor
+--- PASS: TestIdentifierTypesMatchFactor (0.00s)
+=== RUN   TestEncodeDeterministicIndexRandomCipher
+--- PASS: TestEncodeDeterministicIndexRandomCipher (0.00s)
+=== RUN   TestEncodeIndexSensitivity
+--- PASS: TestEncodeIndexSensitivity (0.00s)
+=== RUN   TestDecodeRoundTrip
+--- PASS: TestDecodeRoundTrip (0.00s)
+=== RUN   TestEncodeRejectsBadInput
+--- PASS: TestEncodeRejectsBadInput (0.00s)
+=== RUN   TestInvariants
+=== RUN   TestInvariants/I1_最后一个已验证标识符不可解绑
+=== RUN   TestInvariants/I2_优先于_I1（只剩一条且已验证时）
+=== RUN   TestInvariants/I2_最后一个标识符不可解绑
+=== RUN   TestInvariants/I3/I4_最后一个可用认证能力不可移除
+=== RUN   TestInvariants/I6_最后一个主标识符不可降级
+=== RUN   TestInvariants/并集口径
+--- PASS: TestInvariants (0.00s)
+    --- PASS: TestInvariants/I1_最后一个已验证标识符不可解绑 (0.00s)
+    --- PASS: TestInvariants/I2_优先于_I1（只剩一条且已验证时） (0.00s)
+    --- PASS: TestInvariants/I2_最后一个标识符不可解绑 (0.00s)
+    --- PASS: TestInvariants/I3/I4_最后一个可用认证能力不可移除 (0.00s)
+    --- PASS: TestInvariants/I6_最后一个主标识符不可降级 (0.00s)
+    --- PASS: TestInvariants/并集口径 (0.00s)
+=== RUN   TestCheckUsableAsLoginMethod
+--- PASS: TestCheckUsableAsLoginMethod (0.00s)
+=== RUN   TestCodeOf
+--- PASS: TestCodeOf (0.00s)
+=== RUN   TestNormalizeEmail
+--- PASS: TestNormalizeEmail (0.00s)
+=== RUN   TestNormalizePhone
+--- PASS: TestNormalizePhone (0.00s)
+=== RUN   TestNormalizeUsername
+--- PASS: TestNormalizeUsername (0.00s)
+=== RUN   TestMaskNeverLeaksFullValue
+--- PASS: TestMaskNeverLeaksFullValue (0.00s)
+PASS
+ok  	github.com/spencerswagger/guanjin/internal/identifier	1.029s
+=== RUN   TestACFLOW09_01_L3VisitBlocksAAL1WithZeroInsert
+--- PASS: TestACFLOW09_01_L3VisitBlocksAAL1WithZeroInsert (0.16s)
+=== RUN   TestACFLOW09_02_AAL2WritesOneUnverifiedRow_ClaimIgnored
+--- PASS: TestACFLOW09_02_AAL2WritesOneUnverifiedRow_ClaimIgnored (0.19s)
+=== RUN   TestACFLOW09_03_FallbacksAndDBDown503
+--- PASS: TestACFLOW09_03_FallbacksAndDBDown503 (0.16s)
+=== RUN   TestACFLOW09_04_Concurrent403NoInserts
+--- PASS: TestACFLOW09_04_Concurrent403NoInserts (0.21s)
+=== RUN   TestDBCredentialStorePasswordEnvelopes
+--- PASS: TestDBCredentialStorePasswordEnvelopes (5.28s)
+=== RUN   TestDBCredentialStoreTOTPAndConsumeStep
+--- PASS: TestDBCredentialStoreTOTPAndConsumeStep (1.83s)
+=== RUN   TestDBVerifyIdentifier
+--- PASS: TestDBVerifyIdentifier (1.74s)
+=== RUN   TestGenerateCodeDefault
+--- PASS: TestGenerateCodeDefault (0.00s)
+=== RUN   TestAC_FC_06_ChallengeSurvivesRedisOutage
+--- PASS: TestAC_FC_06_ChallengeSurvivesRedisOutage (3.37s)
+=== RUN   TestAC_FLOW_06_ChallengeAuthorityInDBAfterRedisFlushed
+--- PASS: TestAC_FLOW_06_ChallengeAuthorityInDBAfterRedisFlushed (0.08s)
+=== RUN   TestNewCredentialStoreRequiresDB
+--- PASS: TestNewCredentialStoreRequiresDB (0.00s)
+=== RUN   TestRegisterMessageCoversRegisterCodes
+--- PASS: TestRegisterMessageCoversRegisterCodes (0.00s)
+=== RUN   TestDecodeRegisterJSONTooLarge
+--- PASS: TestDecodeRegisterJSONTooLarge (0.01s)
+=== RUN   TestParseRegisterTokenRejectsBadPayloadJSON
+--- PASS: TestParseRegisterTokenRejectsBadPayloadJSON (0.00s)
+=== RUN   TestHTTPRegisterStartOK
+--- PASS: TestHTTPRegisterStartOK (0.00s)
+=== RUN   TestHTTPRegisterStartErrorMapping
+=== RUN   TestHTTPRegisterStartErrorMapping/缺_client_id
+=== RUN   TestHTTPRegisterStartErrorMapping/准入关闭
+=== RUN   TestHTTPRegisterStartErrorMapping/邀请码无效
+=== RUN   TestHTTPRegisterStartErrorMapping/标识符格式
+=== RUN   TestHTTPRegisterStartErrorMapping/已被占用
+--- PASS: TestHTTPRegisterStartErrorMapping (0.01s)
+    --- PASS: TestHTTPRegisterStartErrorMapping/缺_client_id (0.00s)
+    --- PASS: TestHTTPRegisterStartErrorMapping/准入关闭 (0.00s)
+    --- PASS: TestHTTPRegisterStartErrorMapping/邀请码无效 (0.00s)
+    --- PASS: TestHTTPRegisterStartErrorMapping/标识符格式 (0.00s)
+    --- PASS: TestHTTPRegisterStartErrorMapping/已被占用 (0.00s)
+=== RUN   TestHTTPRegisterStartInternalErrorIsOpaque
+--- PASS: TestHTTPRegisterStartInternalErrorIsOpaque (0.00s)
+=== RUN   TestHTTPRegisterStartBadJSON
+--- PASS: TestHTTPRegisterStartBadJSON (0.00s)
+=== RUN   TestHTTPRegisterComplete
+--- PASS: TestHTTPRegisterComplete (0.01s)
+=== RUN   TestNewRegisterHTTPRequiresDeps
+--- PASS: TestNewRegisterHTTPRequiresDeps (0.00s)
+=== RUN   TestHTTPCompleteEmitsViolationsDetails
+--- PASS: TestHTTPCompleteEmitsViolationsDetails (0.00s)
+=== RUN   TestHTTPRegisterIntegrityMismatchIsNonRetryable
+--- PASS: TestHTTPRegisterIntegrityMismatchIsNonRetryable (0.00s)
+=== RUN   TestFlow09L3VisitBlocksAAL1Session
+--- PASS: TestFlow09L3VisitBlocksAAL1Session (0.06s)
+=== RUN   TestFlow09NoVisitsFallsBackToPlatformDefault
+--- PASS: TestFlow09NoVisitsFallsBackToPlatformDefault (0.06s)
+=== RUN   TestACRGateUsesMaxVisitedTier
+--- PASS: TestACRGateUsesMaxVisitedTier (0.00s)
+=== RUN   TestACRGateFallsBackToPlatformDefault
+--- PASS: TestACRGateFallsBackToPlatformDefault (0.00s)
+=== RUN   TestACRGateRejectsNonIssuableMinACR
+--- PASS: TestACRGateRejectsNonIssuableMinACR (0.00s)
+=== RUN   TestMeIdentifiersInsufficient403Shape
+--- PASS: TestMeIdentifiersInsufficient403Shape (0.00s)
+=== RUN   TestMeIdentifiersBindsWhenACRSufficient
+--- PASS: TestMeIdentifiersBindsWhenACRSufficient (0.00s)
+=== RUN   TestMeIdentifiersSessionMissingIs401
+--- PASS: TestMeIdentifiersSessionMissingIs401 (0.00s)
+=== RUN   TestMeIdentifiersValidation
+--- PASS: TestMeIdentifiersValidation (0.00s)
+=== RUN   TestMeIdentifiersRoutesRegistered
+--- PASS: TestMeIdentifiersRoutesRegistered (0.00s)
+=== RUN   TestNewMeIdentifiersHTTPRequiresDependencies
+=== RUN   TestNewMeIdentifiersHTTPRequiresDependencies/no_binder
+=== RUN   TestNewMeIdentifiersHTTPRequiresDependencies/no_sessions
+=== RUN   TestNewMeIdentifiersHTTPRequiresDependencies/no_gate
+=== RUN   TestNewMeIdentifiersHTTPRequiresDependencies/no_resolver
+=== RUN   TestNewMeIdentifiersHTTPRequiresDependencies/no_logger
+--- PASS: TestNewMeIdentifiersHTTPRequiresDependencies (0.00s)
+    --- PASS: TestNewMeIdentifiersHTTPRequiresDependencies/no_binder (0.00s)
+    --- PASS: TestNewMeIdentifiersHTTPRequiresDependencies/no_sessions (0.00s)
+    --- PASS: TestNewMeIdentifiersHTTPRequiresDependencies/no_gate (0.00s)
+    --- PASS: TestNewMeIdentifiersHTTPRequiresDependencies/no_resolver (0.00s)
+    --- PASS: TestNewMeIdentifiersHTTPRequiresDependencies/no_logger (0.00s)
+=== RUN   TestMeIdentifiersBindErrorMapping
+=== RUN   TestMeIdentifiersBindErrorMapping/已绑定
+=== RUN   TestMeIdentifiersBindErrorMapping/未知错误
+--- PASS: TestMeIdentifiersBindErrorMapping (0.00s)
+    --- PASS: TestMeIdentifiersBindErrorMapping/已绑定 (0.00s)
+    --- PASS: TestMeIdentifiersBindErrorMapping/未知错误 (0.00s)
+=== RUN   TestMeIdentifiersGateErrorIs500
+--- PASS: TestMeIdentifiersGateErrorIs500 (0.00s)
+=== RUN   TestACRInsufficientErrorMessage
+--- PASS: TestACRInsufficientErrorMessage (0.00s)
+=== RUN   TestAC_REG_06_RegisterCreatesRows
+--- PASS: TestAC_REG_06_RegisterCreatesRows (2.99s)
+=== RUN   TestAC_REG_07_PasswordRejectedLeavesNoRows
+--- PASS: TestAC_REG_07_PasswordRejectedLeavesNoRows (0.05s)
+=== RUN   TestRegisterRollsBackWhenIdentifierTaken
+--- PASS: TestRegisterRollsBackWhenIdentifierTaken (1.41s)
+=== RUN   TestAC_REG_02_ClientContextRequired
+--- PASS: TestAC_REG_02_ClientContextRequired (0.03s)
+=== RUN   TestAC_REG_09_RegistrationNotAllowed
+--- PASS: TestAC_REG_09_RegistrationNotAllowed (0.05s)
+=== RUN   TestAC_REG_03_PurposeVocabulary
+--- PASS: TestAC_REG_03_PurposeVocabulary (0.07s)
+=== RUN   TestDB_IdentifierInvariants
+=== RUN   TestDB_IdentifierInvariants/I1_最后一个已验证标识符不可解绑
+=== RUN   TestDB_IdentifierInvariants/I1/I2_的边界：两条都验证过则允许解绑其一
+=== RUN   TestDB_IdentifierInvariants/I2_最后一个标识符不可解绑
+=== RUN   TestDB_IdentifierInvariants/I3/I4_最后一个可用认证能力不可移除
+=== RUN   TestDB_IdentifierInvariants/I6_最后一个主标识符不可降级（规则_+_读数）
+--- PASS: TestDB_IdentifierInvariants (10.11s)
+    --- PASS: TestDB_IdentifierInvariants/I1_最后一个已验证标识符不可解绑 (1.53s)
+    --- PASS: TestDB_IdentifierInvariants/I1/I2_的边界：两条都验证过则允许解绑其一 (2.14s)
+    --- PASS: TestDB_IdentifierInvariants/I2_最后一个标识符不可解绑 (1.47s)
+    --- PASS: TestDB_IdentifierInvariants/I3/I4_最后一个可用认证能力不可移除 (3.67s)
+    --- PASS: TestDB_IdentifierInvariants/I6_最后一个主标识符不可降级（规则_+_读数） (1.28s)
+=== RUN   TestRegisterUsernameCollisionMapsToIdentifierBound
+--- PASS: TestRegisterUsernameCollisionMapsToIdentifierBound (1.51s)
+=== RUN   TestRegisterTokenRoundTrip
+--- PASS: TestRegisterTokenRoundTrip (0.00s)
+=== RUN   TestRegisterTokenRejectsTampering
+--- PASS: TestRegisterTokenRejectsTampering (0.00s)
+=== RUN   TestRegisterTokenRequiresFields
+--- PASS: TestRegisterTokenRequiresFields (0.00s)
+=== RUN   TestRegisterClaimsExpired
+--- PASS: TestRegisterClaimsExpired (0.00s)
+=== RUN   TestSignRejectsUnknownVersion
+--- PASS: TestSignRejectsUnknownVersion (0.00s)
+=== RUN   TestAC_REG_01_StartCreatesRegisterChallengeFromConfig
+--- PASS: TestAC_REG_01_StartCreatesRegisterChallengeFromConfig (0.05s)
+=== RUN   TestStartPhoneChallengeUsesSMS
+--- PASS: TestStartPhoneChallengeUsesSMS (0.04s)
+=== RUN   TestAC_REG_05_UsernameSkipsChallenge
+--- PASS: TestAC_REG_05_UsernameSkipsChallenge (1.41s)
+=== RUN   TestAC_REG_02_StartRequiresClient
+--- PASS: TestAC_REG_02_StartRequiresClient (0.02s)
+=== RUN   TestAC_REG_08_InviteCodeInvalidCreatesNothing
+--- PASS: TestAC_REG_08_InviteCodeInvalidCreatesNothing (0.06s)
+=== RUN   TestAC_REG_09_RegistrationNotAllowedBothPaths
+--- PASS: TestAC_REG_09_RegistrationNotAllowedBothPaths (0.06s)
+=== RUN   TestStartRejectsBadAndBoundIdentifiers
+--- PASS: TestStartRejectsBadAndBoundIdentifiers (1.38s)
+=== RUN   TestCompleteRegistrationCreatesAccount
+--- PASS: TestCompleteRegistrationCreatesAccount (1.56s)
+=== RUN   TestCompleteRegistrationWrongCodeCountsAttempts
+--- PASS: TestCompleteRegistrationWrongCodeCountsAttempts (0.08s)
+=== RUN   TestCompleteRegistrationTokenGuards
+--- PASS: TestCompleteRegistrationTokenGuards (0.08s)
+=== RUN   TestNewRejectsMissingRegisterConfig
+--- PASS: TestNewRejectsMissingRegisterConfig (0.03s)
+=== RUN   TestStartNormalizesIdentifierInToken
+--- PASS: TestStartNormalizesIdentifierInToken (0.07s)
+=== RUN   TestCompleteRegistrationChallengeGuards
+--- PASS: TestCompleteRegistrationChallengeGuards (0.08s)
+=== RUN   TestDBBindAndUnbindIdentifier
+--- PASS: TestDBBindAndUnbindIdentifier (1.57s)
+=== RUN   TestAC_REG_StartRespectsDisabledFactors
+--- PASS: TestAC_REG_StartRespectsDisabledFactors (0.06s)
+=== RUN   TestCompleteWritesFailureEventButStartDoesNot
+--- PASS: TestCompleteWritesFailureEventButStartDoesNot (0.05s)
+=== RUN   TestCompletePrecheckRejectsWeakPasswordBeforeConsuming
+--- PASS: TestCompletePrecheckRejectsWeakPasswordBeforeConsuming (1.48s)
+=== RUN   TestCompleteRechecksDisabledFactors
+--- PASS: TestCompleteRechecksDisabledFactors (0.07s)
+=== RUN   TestNewValidatesConfig
+--- PASS: TestNewValidatesConfig (0.00s)
+=== RUN   TestCreateAuthenticatorRejectsChannelKind
+--- PASS: TestCreateAuthenticatorRejectsChannelKind (0.00s)
+=== RUN   TestPasswordRejectedCarriesViolations
+--- PASS: TestPasswordRejectedCarriesViolations (0.00s)
+=== RUN   TestCodeOfMapping
+--- PASS: TestCodeOfMapping (0.00s)
+=== RUN   TestTargetACRForTier
+--- PASS: TestTargetACRForTier (0.00s)
+PASS
+ok  	github.com/spencerswagger/guanjin/internal/identity	38.595s
+=== RUN   TestTokenExchangeIssuesTokensAndSession
+--- PASS: TestTokenExchangeIssuesTokensAndSession (0.05s)
+=== RUN   TestTokenPKCEDualCodes
+--- PASS: TestTokenPKCEDualCodes (0.04s)
+=== RUN   TestRefreshRotationDetectsReuse
+--- PASS: TestRefreshRotationDetectsReuse (0.09s)
+=== RUN   TestUserinfoAndIntrospectAreLocal
+--- PASS: TestUserinfoAndIntrospectAreLocal (0.13s)
+=== RUN   TestDiscoveryAndJWKS
+--- PASS: TestDiscoveryAndJWKS (0.03s)
+=== RUN   TestStoreUnavailableFailsClosed
+--- PASS: TestStoreUnavailableFailsClosed (0.03s)
+=== RUN   TestNewRequiresDeps
+--- PASS: TestNewRequiresDeps (0.00s)
+=== RUN   TestTokenAndStoreErrorBranches
+--- PASS: TestTokenAndStoreErrorBranches (0.07s)
+=== RUN   TestRevokeAndUserinfoBranches
+--- PASS: TestRevokeAndUserinfoBranches (0.04s)
+=== RUN   TestMissingSigningKeyFailsClosed
+--- PASS: TestMissingSigningKeyFailsClosed (0.03s)
+=== RUN   TestAuditSinkOptional
+--- PASS: TestAuditSinkOptional (0.06s)
+=== RUN   TestAuthorizeRedirectsWithContext
+--- PASS: TestAuthorizeRedirectsWithContext (0.03s)
+=== RUN   TestAuthorizeSubmitIssuesCode
+--- PASS: TestAuthorizeSubmitIssuesCode (0.05s)
+=== RUN   TestAuthorizeSubmitGuards
+--- PASS: TestAuthorizeSubmitGuards (0.03s)
+=== RUN   TestAuthorizeErrorBranches
+--- PASS: TestAuthorizeErrorBranches (0.09s)
+=== RUN   TestAuthorizeSubmitVerifyErrorMapped
+--- PASS: TestAuthorizeSubmitVerifyErrorMapped (0.03s)
+=== RUN   TestAuthorizeSubmitRequiresUser
+--- PASS: TestAuthorizeSubmitRequiresUser (0.03s)
+=== RUN   TestCallerResolver
+--- PASS: TestCallerResolver (0.23s)
+=== RUN   TestTokenRejectsRedirectMismatch
+--- PASS: TestTokenRejectsRedirectMismatch (0.03s)
+=== RUN   TestPKCEFailureAuditsFailure
+--- PASS: TestPKCEFailureAuditsFailure (0.03s)
+=== RUN   TestRedirectMismatchBurnsCode
+--- PASS: TestRedirectMismatchBurnsCode (0.02s)
+=== RUN   TestResolveCallerHTTPSemantics
+--- PASS: TestResolveCallerHTTPSemantics (0.11s)
+PASS
+ok  	github.com/spencerswagger/guanjin/internal/protocol	2.319s
+=== RUN   TestRealRedisCountsAndLocks
+--- PASS: TestRealRedisCountsAndLocks (0.00s)
+=== RUN   TestRealDeadRedisFailsClosed
+--- PASS: TestRealDeadRedisFailsClosed (0.30s)
+=== RUN   TestKeyNamesAreFrozen
+--- PASS: TestKeyNamesAreFrozen (0.00s)
+=== RUN   TestRecordFailureLocksAtThreshold
+--- PASS: TestRecordFailureLocksAtThreshold (0.01s)
+=== RUN   TestResetClearsBothKeys
+--- PASS: TestResetClearsBothKeys (0.01s)
+=== RUN   TestTwoReplicasShareCounters
+--- PASS: TestTwoReplicasShareCounters (0.01s)
+=== RUN   TestEmptyUserIsNotCounted
+--- PASS: TestEmptyUserIsNotCounted (0.00s)
+=== RUN   TestRedisUnavailableFailsClosed
+--- PASS: TestRedisUnavailableFailsClosed (0.38s)
+=== RUN   TestWeakPolicyRejected
+--- PASS: TestWeakPolicyRejected (0.00s)
+=== RUN   TestConstructorGuards
+--- PASS: TestConstructorGuards (0.08s)
+PASS
+ok  	github.com/spencerswagger/guanjin/internal/risk	1.833s
+=== RUN   TestCodeOfDBUnavailable
+=== RUN   TestCodeOfDBUnavailable/仓储已判_DB_UNAVAILABLE
+=== RUN   TestCodeOfDBUnavailable/原始连接层错误
+=== RUN   TestCodeOfDBUnavailable/包裹后的连接层错误
+=== RUN   TestCodeOfDBUnavailable/仓储哨兵仍走自己的码
+=== RUN   TestCodeOfDBUnavailable/业务错误不被依赖分支抢走
+=== RUN   TestCodeOfDBUnavailable/未知错误没有码
+--- PASS: TestCodeOfDBUnavailable (0.00s)
+    --- PASS: TestCodeOfDBUnavailable/仓储已判_DB_UNAVAILABLE (0.00s)
+    --- PASS: TestCodeOfDBUnavailable/原始连接层错误 (0.00s)
+    --- PASS: TestCodeOfDBUnavailable/包裹后的连接层错误 (0.00s)
+    --- PASS: TestCodeOfDBUnavailable/仓储哨兵仍走自己的码 (0.00s)
+    --- PASS: TestCodeOfDBUnavailable/业务错误不被依赖分支抢走 (0.00s)
+    --- PASS: TestCodeOfDBUnavailable/未知错误没有码 (0.00s)
+=== RUN   TestListSessionsDBUnavailableIs503
+--- PASS: TestListSessionsDBUnavailableIs503 (0.00s)
+=== RUN   TestRevokeSessionDBUnavailableIs503
+--- PASS: TestRevokeSessionDBUnavailableIs503 (0.00s)
+=== RUN   TestNewHTTPHandlerRequiresDependencies
+=== RUN   TestNewHTTPHandlerRequiresDependencies/no_manager
+=== RUN   TestNewHTTPHandlerRequiresDependencies/no_resolver
+--- PASS: TestNewHTTPHandlerRequiresDependencies (0.00s)
+    --- PASS: TestNewHTTPHandlerRequiresDependencies/no_manager (0.00s)
+    --- PASS: TestNewHTTPHandlerRequiresDependencies/no_resolver (0.00s)
+=== RUN   TestListSessionsRequiresCaller
+--- PASS: TestListSessionsRequiresCaller (0.00s)
+=== RUN   TestListSessionsShapeAndMasking
+--- PASS: TestListSessionsShapeAndMasking (0.00s)
+=== RUN   TestListSessionsPageLimits
+--- PASS: TestListSessionsPageLimits (0.00s)
+=== RUN   TestRevokeOwnSession
+--- PASS: TestRevokeOwnSession (0.00s)
+=== RUN   TestRevokeSessionNotOwned
+--- PASS: TestRevokeSessionNotOwned (0.00s)
+=== RUN   TestRevokeAlreadyRevokedOwnIsIdempotent
+--- PASS: TestRevokeAlreadyRevokedOwnIsIdempotent (0.00s)
+=== RUN   TestRevokeAlreadyRevokedOtherUserIsNotFound
+--- PASS: TestRevokeAlreadyRevokedOtherUserIsNotFound (0.00s)
+=== RUN   TestRevokeUnknownAndMalformedID
+--- PASS: TestRevokeUnknownAndMalformedID (0.00s)
+=== RUN   TestRevokeAllSessions
+--- PASS: TestRevokeAllSessions (0.00s)
+=== RUN   TestRevokeAllRejectsUnknownScope
+--- PASS: TestRevokeAllRejectsUnknownScope (0.00s)
+=== RUN   TestMaskIP
+--- PASS: TestMaskIP (0.00s)
+=== RUN   TestMessageOfCoversDocumentedCodes
+--- PASS: TestMessageOfCoversDocumentedCodes (0.00s)
+=== RUN   TestNewManagerRequiresDependencies
+=== RUN   TestNewManagerRequiresDependencies/no_store
+=== RUN   TestNewManagerRequiresDependencies/no_flows
+=== RUN   TestNewManagerRequiresDependencies/no_events
+--- PASS: TestNewManagerRequiresDependencies (0.00s)
+    --- PASS: TestNewManagerRequiresDependencies/no_store (0.00s)
+    --- PASS: TestNewManagerRequiresDependencies/no_flows (0.00s)
+    --- PASS: TestNewManagerRequiresDependencies/no_events (0.00s)
+=== RUN   TestValidateStates
+=== RUN   TestValidateStates/revoked
+=== RUN   TestValidateStates/status_expired
+=== RUN   TestValidateStates/idle_timeout
+=== RUN   TestValidateStates/absolute_timeout
+=== RUN   TestValidateStates/missing
+=== RUN   TestValidateStates/nil_id
+--- PASS: TestValidateStates (0.01s)
+    --- PASS: TestValidateStates/revoked (0.00s)
+    --- PASS: TestValidateStates/status_expired (0.00s)
+    --- PASS: TestValidateStates/idle_timeout (0.00s)
+    --- PASS: TestValidateStates/absolute_timeout (0.00s)
+    --- PASS: TestValidateStates/missing (0.00s)
+    --- PASS: TestValidateStates/nil_id (0.00s)
+=== RUN   TestRevokeCascadesAndWritesEvent
+--- PASS: TestRevokeCascadesAndWritesEvent (0.00s)
+=== RUN   TestRevokeIsIdempotentWhenNotActive
+--- PASS: TestRevokeIsIdempotentWhenNotActive (0.00s)
+=== RUN   TestRevokeMissingSession
+--- PASS: TestRevokeMissingSession (0.00s)
+=== RUN   TestRevokeInputValidation
+--- PASS: TestRevokeInputValidation (0.00s)
+=== RUN   TestRevokeAllByUserCascadesEverySession
+--- PASS: TestRevokeAllByUserCascadesEverySession (0.00s)
+=== RUN   TestRevokeOthersKeepsCurrent
+--- PASS: TestRevokeOthersKeepsCurrent (0.00s)
+=== RUN   TestLogoutScopeCurrentClient
+--- PASS: TestLogoutScopeCurrentClient (0.00s)
+=== RUN   TestLogoutScopeAllClients
+--- PASS: TestLogoutScopeAllClients (0.00s)
+=== RUN   TestLogoutMissingSession
+--- PASS: TestLogoutMissingSession (0.00s)
+=== RUN   TestTouchClampsIdleToAbsolute
+--- PASS: TestTouchClampsIdleToAbsolute (0.00s)
+=== RUN   TestGetReturnsRevokedSession
+--- PASS: TestGetReturnsRevokedSession (0.00s)
+=== RUN   TestListByUserValidatesUserID
+--- PASS: TestListByUserValidatesUserID (0.00s)
+=== RUN   TestExpireStaleDelegatesWhenSupported
+--- PASS: TestExpireStaleDelegatesWhenSupported (0.00s)
+=== RUN   TestExpireStaleUnsupportedStore
+--- PASS: TestExpireStaleUnsupportedStore (0.00s)
+=== RUN   TestCodeOfMapping
+--- PASS: TestCodeOfMapping (0.00s)
+=== RUN   TestRevokeNoticeNilNotifierIsNoOp
+--- PASS: TestRevokeNoticeNilNotifierIsNoOp (0.00s)
+=== RUN   TestRevokeNoticeCarriesRevocationFacts
+--- PASS: TestRevokeNoticeCarriesRevocationFacts (0.00s)
+=== RUN   TestRevokeNoticeCascadePerSession
+--- PASS: TestRevokeNoticeCascadePerSession (0.00s)
+=== RUN   TestRevokeOthersNoticeExcludesKeptSession
+--- PASS: TestRevokeOthersNoticeExcludesKeptSession (0.08s)
+=== RUN   TestRevokeNoticeSkippedWhenNothingChanged
+--- PASS: TestRevokeNoticeSkippedWhenNothingChanged (0.08s)
+=== RUN   TestRevokeNoticePanicDoesNotAffectRevoke
+--- PASS: TestRevokeNoticePanicDoesNotAffectRevoke (0.00s)
+=== RUN   TestRevokeNoticeContextDetached
+--- PASS: TestRevokeNoticeContextDetached (0.00s)
+=== RUN   TestNoticeRevokedForEvictedSession
+--- PASS: TestNoticeRevokedForEvictedSession (0.00s)
+=== RUN   TestFireRevokeNoticeNilReceiverAndNilContext
+--- PASS: TestFireRevokeNoticeNilReceiverAndNilContext (0.00s)
+=== RUN   TestNoticeRevokedMissingSessionIsQuiet
+--- PASS: TestNoticeRevokedMissingSessionIsQuiet (0.08s)
+=== RUN   TestDBNotifierFiresAfterCommittedRevoke
+--- PASS: TestDBNotifierFiresAfterCommittedRevoke (0.10s)
+=== RUN   TestDBNotifierPanicDoesNotAffectRevoke
+2026/11/11 16:47:45 WARN session: revoke notifier panicked session_id=01a1cb82-1f78-7c5b-87e5-241c0ba20b08 panic="业务系统 500（故意）"
+--- PASS: TestDBNotifierPanicDoesNotAffectRevoke (0.09s)
+=== RUN   TestDBNotifierNotFiredOnIdempotentRevoke
+--- PASS: TestDBNotifierNotFiredOnIdempotentRevoke (0.19s)
+=== RUN   TestDBUnavailableThroughRealRepo
+--- PASS: TestDBUnavailableThroughRealRepo (0.00s)
+=== RUN   TestAC_SESS_03_ReloginGetsNewSessionIDAndOldStaysDead
+--- PASS: TestAC_SESS_03_ReloginGetsNewSessionIDAndOldStaysDead (0.08s)
+PASS
+ok  	github.com/spencerswagger/guanjin/internal/session	1.793s
+=== RUN   TestGenRowLoadAndSign
+--- PASS: TestGenRowLoadAndSign (0.09s)
+=== RUN   TestGenRowProducesDistinctKeys
+--- PASS: TestGenRowProducesDistinctKeys (0.01s)
+=== RUN   TestLoadRejectsUnsealableRows
+--- PASS: TestLoadRejectsUnsealableRows (0.01s)
+=== RUN   TestSetPurposesAndJWKS
+--- PASS: TestSetPurposesAndJWKS (0.03s)
+PASS
+ok  	github.com/spencerswagger/guanjin/internal/signing	1.193s
+=== RUN   TestDBAuditCreatedIDIndexOnParentAndEveryPartition
+--- PASS: TestDBAuditCreatedIDIndexOnParentAndEveryPartition (0.06s)
+=== RUN   TestDBAuditLogsAppendOnlyTriggerExists
+--- PASS: TestDBAuditLogsAppendOnlyTriggerExists (0.03s)
+=== RUN   TestDBAuditLogsRejectsUpdateAndDelete
+--- PASS: TestDBAuditLogsRejectsUpdateAndDelete (0.05s)
+=== RUN   TestOpenRequiresDSN
+--- PASS: TestOpenRequiresDSN (0.00s)
+=== RUN   TestOpenRejectsMalformedDSN
+--- PASS: TestOpenRejectsMalformedDSN (0.00s)
+=== RUN   TestPoolDefaultsAreDocumented
+--- PASS: TestPoolDefaultsAreDocumented (0.00s)
+=== RUN   TestPingFailsOnUnreachableDB
+--- PASS: TestPingFailsOnUnreachableDB (0.00s)
+=== RUN   TestCloseNilIsSafe
+--- PASS: TestCloseNilIsSafe (0.00s)
+=== RUN   TestTxRejectsNilArgs
+--- PASS: TestTxRejectsNilArgs (0.00s)
+=== RUN   TestRuntimeConfigLookupEdges
+--- PASS: TestRuntimeConfigLookupEdges (0.00s)
+=== RUN   TestCountActiveByUserClientSQL
+--- PASS: TestCountActiveByUserClientSQL (0.00s)
+=== RUN   TestGetByIDRejectsNilID
+--- PASS: TestGetByIDRejectsNilID (0.00s)
+=== RUN   TestErrorTypeEdges
+--- PASS: TestErrorTypeEdges (0.00s)
+=== RUN   TestFirstNonEmpty
+--- PASS: TestFirstNonEmpty (0.00s)
+=== RUN   TestFlowPatchSessionBackfill
+--- PASS: TestFlowPatchSessionBackfill (0.00s)
+=== RUN   TestDBNowSQLShape
+--- PASS: TestDBNowSQLShape (0.00s)
+=== RUN   TestLoadLockoutPolicySQLShape
+--- PASS: TestLoadLockoutPolicySQLShape (0.00s)
+=== RUN   TestDBFlowCleanupStage1UsesExpiresIndex
+--- PASS: TestDBFlowCleanupStage1UsesExpiresIndex (0.17s)
+=== RUN   TestDBFlowCleanupStage2UsesExpiredCleanupIdx
+--- PASS: TestDBFlowCleanupStage2UsesExpiredCleanupIdx (0.80s)
+=== RUN   TestDBFlowCleanupStage2KeepsRowsWithinRetention
+--- PASS: TestDBFlowCleanupStage2KeepsRowsWithinRetention (0.07s)
+=== RUN   TestDBFlowsNamedIndexesMatchLedger
+--- PASS: TestDBFlowsNamedIndexesMatchLedger (0.04s)
+=== RUN   TestDBFlowsExpiredCleanupIdxShape
+--- PASS: TestDBFlowsExpiredCleanupIdxShape (0.04s)
+=== RUN   TestDBCH7UniqueRowsMapTo409
+=== RUN   TestDBCH7UniqueRowsMapTo409/CH-7③_role_bindings_uniq_→_BINDING_ALREADY_EXISTS_409
+=== RUN   TestDBCH7UniqueRowsMapTo409/CH-7④_policy_snapshots_uniq_→_POLICY_SNAPSHOT_CONFLICT_409
+--- PASS: TestDBCH7UniqueRowsMapTo409 (0.10s)
+    --- PASS: TestDBCH7UniqueRowsMapTo409/CH-7③_role_bindings_uniq_→_BINDING_ALREADY_EXISTS_409 (0.01s)
+    --- PASS: TestDBCH7UniqueRowsMapTo409/CH-7④_policy_snapshots_uniq_→_POLICY_SNAPSHOT_CONFLICT_409 (0.01s)
+=== RUN   TestDBCH7FlowUniqueIsCooldown
+--- PASS: TestDBCH7FlowUniqueIsCooldown (0.06s)
+=== RUN   TestCH7EightRowMapping
+=== RUN   TestCH7EightRowMapping/CH-7①
+=== RUN   TestCH7EightRowMapping/CH-7②
+=== RUN   TestCH7EightRowMapping/CH-7③
+=== RUN   TestCH7EightRowMapping/CH-7④
+=== RUN   TestCH7EightRowMapping/CH-7⑤
+=== RUN   TestCH7EightRowMapping/CH-7⑥
+=== RUN   TestCH7EightRowMapping/CH-7⑦
+=== RUN   TestCH7EightRowMapping/CH-7⑧a
+=== RUN   TestCH7EightRowMapping/CH-7⑧b
+--- PASS: TestCH7EightRowMapping (0.00s)
+    --- PASS: TestCH7EightRowMapping/CH-7① (0.00s)
+    --- PASS: TestCH7EightRowMapping/CH-7② (0.00s)
+    --- PASS: TestCH7EightRowMapping/CH-7③ (0.00s)
+    --- PASS: TestCH7EightRowMapping/CH-7④ (0.00s)
+    --- PASS: TestCH7EightRowMapping/CH-7⑤ (0.00s)
+    --- PASS: TestCH7EightRowMapping/CH-7⑥ (0.00s)
+    --- PASS: TestCH7EightRowMapping/CH-7⑦ (0.00s)
+    --- PASS: TestCH7EightRowMapping/CH-7⑧a (0.00s)
+    --- PASS: TestCH7EightRowMapping/CH-7⑧b (0.00s)
+=== RUN   TestCH7UnmappedAreStillDefects
+--- PASS: TestCH7UnmappedAreStillDefects (0.00s)
+=== RUN   TestFindActiveByUserClientSQL
+--- PASS: TestFindActiveByUserClientSQL (0.00s)
+=== RUN   TestDBSessionsAcrCheckMapsTo400
+--- PASS: TestDBSessionsAcrCheckMapsTo400 (0.08s)
+=== RUN   TestAC_ENG_04_RealSQLStateMatrix
+=== RUN   TestAC_ENG_04_RealSQLStateMatrix/CH-7①_identifiers_(type,value)_重复插入
+    pgxerr_matrix_db_test.go:357: AC_ENG_04|row=CH-7①|trigger=identifiers (type,value) 重复插入|sqlstate=23505|constraint=identifiers_type_value_uniq|code=IDENTIFIER_ALREADY_BOUND|status=409|mapped=true|retryable=false|failclosed=false
+=== RUN   TestAC_ENG_04_RealSQLStateMatrix/CH-7②_users.username_大小写不同但_lower()_相同
+    pgxerr_matrix_db_test.go:357: AC_ENG_04|row=CH-7②|trigger=users.username 大小写不同但 lower() 相同|sqlstate=23505|constraint=users_username_lower_uidx|code=IDENTIFIER_ALREADY_BOUND|status=409|mapped=true|retryable=false|failclosed=false
+=== RUN   TestAC_ENG_04_RealSQLStateMatrix/CH-7③_role_bindings_(user,client,role)_重复
+    pgxerr_matrix_db_test.go:357: AC_ENG_04|row=CH-7③|trigger=role_bindings (user,client,role) 重复|sqlstate=23505|constraint=role_bindings_uniq|code=BINDING_ALREADY_EXISTS|status=409|mapped=true|retryable=false|failclosed=false
+=== RUN   TestAC_ENG_04_RealSQLStateMatrix/CH-7④_policy_snapshots_(client,version)_重复
+    pgxerr_matrix_db_test.go:357: AC_ENG_04|row=CH-7④|trigger=policy_snapshots (client,version) 重复|sqlstate=23505|constraint=policy_snapshots_uniq|code=POLICY_SNAPSHOT_CONFLICT|status=409|mapped=true|retryable=false|failclosed=false
+=== RUN   TestAC_ENG_04_RealSQLStateMatrix/CH-7⑤_同一_user×client_第二条_active_流
+    pgxerr_matrix_db_test.go:357: AC_ENG_04|row=CH-7⑤|trigger=同一 user×client 第二条 active 流|sqlstate=23505|constraint=flows_one_active_per_user_client_uniq|code=COOLDOWN_ACTIVE|status=409|mapped=true|retryable=false|failclosed=false
+=== RUN   TestAC_ENG_04_RealSQLStateMatrix/CH-7⑥_clients_主键重复
+    pgxerr_matrix_db_test.go:357: AC_ENG_04|row=CH-7⑥|trigger=clients 主键重复|sqlstate=23505|constraint=clients_pkey|code=INVALID_CLIENT|status=400|mapped=true|retryable=false|failclosed=false
+=== RUN   TestAC_ENG_04_RealSQLStateMatrix/CH-7⑦_signing_keys.kid_重复
+    pgxerr_matrix_db_test.go:357: AC_ENG_04|row=CH-7⑦|trigger=signing_keys.kid 重复|sqlstate=23505|constraint=signing_keys_kid_uniq|code=INVALID_PARAMETER|status=400|mapped=true|retryable=false|failclosed=false
+=== RUN   TestAC_ENG_04_RealSQLStateMatrix/CH-7⑧a_login_policies_每档位第二份_tier_default
+    pgxerr_matrix_db_test.go:357: AC_ENG_04|row=CH-7⑧a|trigger=login_policies 每档位第二份 tier_default|sqlstate=23505|constraint=login_policies_tier_default_uidx|code=INVALID_PARAMETER|status=400|mapped=true|retryable=false|failclosed=false
+=== RUN   TestAC_ENG_04_RealSQLStateMatrix/CH-7⑧b_login_policies_每_client_第二份_client_override
+    pgxerr_matrix_db_test.go:357: AC_ENG_04|row=CH-7⑧b|trigger=login_policies 每 client 第二份 client_override|sqlstate=23505|constraint=login_policies_client_override_uidx|code=INVALID_PARAMETER|status=400|mapped=true|retryable=false|failclosed=false
+=== RUN   TestAC_ENG_04_RealSQLStateMatrix/R-23503_flows.user_id_指向不存在的用户
+    pgxerr_matrix_db_test.go:357: AC_ENG_04|row=R-23503|trigger=flows.user_id 指向不存在的用户|sqlstate=23503|constraint=flows_user_id_fkey|code=USER_NOT_FOUND|status=404|mapped=true|retryable=false|failclosed=false
+=== RUN   TestAC_ENG_04_RealSQLStateMatrix/R-23502_role_bindings.role_传_NULL
+    pgxerr_matrix_db_test.go:357: AC_ENG_04|row=R-23502|trigger=role_bindings.role 传 NULL|sqlstate=23502|constraint=-|code=MISSING_PARAMETER|status=400|mapped=true|retryable=false|failclosed=false
+=== RUN   TestAC_ENG_04_RealSQLStateMatrix/R-23514_sessions.acr_超出_D12_取值域
+    pgxerr_matrix_db_test.go:357: AC_ENG_04|row=R-23514|trigger=sessions.acr 超出 D12 取值域|sqlstate=23514|constraint=sessions_acr_check|code=INVALID_PARAMETER|status=400|mapped=true|retryable=false|failclosed=false
+=== RUN   TestAC_ENG_04_RealSQLStateMatrix/R-23514-NOPART_audit_logs_写入没有分区的月份（2099-01）
+    pgxerr_matrix_db_test.go:357: AC_ENG_04|row=R-23514-NOPART|trigger=audit_logs 写入没有分区的月份（2099-01）|sqlstate=23514|constraint=-|code=UNMAPPED|status=0|mapped=false|retryable=false|failclosed=true
+=== RUN   TestAC_ENG_04_RealSQLStateMatrix/R-23001_UPDATE_只增表_auth_events（forbid_mutation_触发器）
+    pgxerr_matrix_db_test.go:357: AC_ENG_04|row=R-23001|trigger=UPDATE 只增表 auth_events（forbid_mutation 触发器）|sqlstate=23001|constraint=forbid_mutation|code=UNMAPPED|status=0|mapped=false|retryable=false|failclosed=true
+=== RUN   TestAC_ENG_04_RealSQLStateMatrix/R-22P02_把_'not-a-uuid'_当_uuid_传参
+    pgxerr_matrix_db_test.go:357: AC_ENG_04|row=R-22P02|trigger=把 'not-a-uuid' 当 uuid 传参|sqlstate=22P02|constraint=-|code=INVALID_PARAMETER|status=400|mapped=true|retryable=false|failclosed=false
+=== RUN   TestAC_ENG_04_RealSQLStateMatrix/R-22003_把_99999999999_当_int4
+    pgxerr_matrix_db_test.go:357: AC_ENG_04|row=R-22003|trigger=把 99999999999 当 int4|sqlstate=22003|constraint=-|code=INVALID_PARAMETER|status=400|mapped=true|retryable=false|failclosed=false
+=== RUN   TestAC_ENG_04_RealSQLStateMatrix/R-42P01_查询不存在的表（迁移没跑）
+    pgxerr_matrix_db_test.go:357: AC_ENG_04|row=R-42P01|trigger=查询不存在的表（迁移没跑）|sqlstate=42P01|constraint=-|code=UNMAPPED|status=0|mapped=false|retryable=false|failclosed=true
+=== RUN   TestAC_ENG_04_RealSQLStateMatrix/R-42703_查询不存在的列（模型与迁移不一致）
+    pgxerr_matrix_db_test.go:357: AC_ENG_04|row=R-42703|trigger=查询不存在的列（模型与迁移不一致）|sqlstate=42703|constraint=-|code=UNMAPPED|status=0|mapped=false|retryable=false|failclosed=true
+=== RUN   TestAC_ENG_04_RealSQLStateMatrix/R-40001_可重复读并发更新_→_40001_可重试
+    pgxerr_matrix_db_test.go:404: AC_ENG_04|row=R-40001|trigger=REPEATABLE READ 并发更新同一行|sqlstate=40001|constraint=-|code=UNMAPPED|status=0|mapped=false|retryable=true|failclosed=false
+=== RUN   TestAC_ENG_04_RealSQLStateMatrix/R-40P01_反向加锁_→_死锁被检出且可重试
+    pgxerr_matrix_db_test.go:470: AC_ENG_04|row=R-40P01|trigger=两条事务反向 FOR UPDATE|sqlstate=40P01|constraint=-|code=UNMAPPED|status=0|mapped=false|retryable=true|failclosed=false
+=== RUN   TestAC_ENG_04_RealSQLStateMatrix/R-57P01_服务端终止连接_→_DB_UNAVAILABLE_503
+    pgxerr_matrix_db_test.go:511: AC_ENG_04|row=R-57P01|trigger=服务端 pg_terminate_backend 踢掉本连接|sqlstate=57P01|constraint=-|code=DB_UNAVAILABLE|status=503|mapped=true|retryable=false|failclosed=false
+--- PASS: TestAC_ENG_04_RealSQLStateMatrix (1.20s)
+    --- PASS: TestAC_ENG_04_RealSQLStateMatrix/CH-7①_identifiers_(type,value)_重复插入 (0.01s)
+    --- PASS: TestAC_ENG_04_RealSQLStateMatrix/CH-7②_users.username_大小写不同但_lower()_相同 (0.01s)
+    --- PASS: TestAC_ENG_04_RealSQLStateMatrix/CH-7③_role_bindings_(user,client,role)_重复 (0.00s)
+    --- PASS: TestAC_ENG_04_RealSQLStateMatrix/CH-7④_policy_snapshots_(client,version)_重复 (0.00s)
+    --- PASS: TestAC_ENG_04_RealSQLStateMatrix/CH-7⑤_同一_user×client_第二条_active_流 (0.00s)
+    --- PASS: TestAC_ENG_04_RealSQLStateMatrix/CH-7⑥_clients_主键重复 (0.00s)
+    --- PASS: TestAC_ENG_04_RealSQLStateMatrix/CH-7⑦_signing_keys.kid_重复 (0.00s)
+    --- PASS: TestAC_ENG_04_RealSQLStateMatrix/CH-7⑧a_login_policies_每档位第二份_tier_default (0.00s)
+    --- PASS: TestAC_ENG_04_RealSQLStateMatrix/CH-7⑧b_login_policies_每_client_第二份_client_override (0.00s)
+    --- PASS: TestAC_ENG_04_RealSQLStateMatrix/R-23503_flows.user_id_指向不存在的用户 (0.00s)
+    --- PASS: TestAC_ENG_04_RealSQLStateMatrix/R-23502_role_bindings.role_传_NULL (0.00s)
+    --- PASS: TestAC_ENG_04_RealSQLStateMatrix/R-23514_sessions.acr_超出_D12_取值域 (0.00s)
+    --- PASS: TestAC_ENG_04_RealSQLStateMatrix/R-23514-NOPART_audit_logs_写入没有分区的月份（2099-01） (0.00s)
+    --- PASS: TestAC_ENG_04_RealSQLStateMatrix/R-23001_UPDATE_只增表_auth_events（forbid_mutation_触发器） (0.00s)
+    --- PASS: TestAC_ENG_04_RealSQLStateMatrix/R-22P02_把_'not-a-uuid'_当_uuid_传参 (0.00s)
+    --- PASS: TestAC_ENG_04_RealSQLStateMatrix/R-22003_把_99999999999_当_int4 (0.00s)
+    --- PASS: TestAC_ENG_04_RealSQLStateMatrix/R-42P01_查询不存在的表（迁移没跑） (0.00s)
+    --- PASS: TestAC_ENG_04_RealSQLStateMatrix/R-42703_查询不存在的列（模型与迁移不一致） (0.00s)
+    --- PASS: TestAC_ENG_04_RealSQLStateMatrix/R-40001_可重复读并发更新_→_40001_可重试 (0.06s)
+    --- PASS: TestAC_ENG_04_RealSQLStateMatrix/R-40P01_反向加锁_→_死锁被检出且可重试 (1.02s)
+    --- PASS: TestAC_ENG_04_RealSQLStateMatrix/R-57P01_服务端终止连接_→_DB_UNAVAILABLE_503 (0.00s)
+=== RUN   TestAC_ENG_04_MatrixCoversEveryUniqueRule
+--- PASS: TestAC_ENG_04_MatrixCoversEveryUniqueRule (0.00s)
+=== RUN   TestEveryUniqueConstraintIsClassified
+--- PASS: TestEveryUniqueConstraintIsClassified (0.04s)
+=== RUN   TestForeignKeyRulesMatchMigrations
+--- PASS: TestForeignKeyRulesMatchMigrations (0.05s)
+=== RUN   TestMapErrorDoubleKey
+=== RUN   TestMapErrorDoubleKey/identifier_unique
+=== RUN   TestMapErrorDoubleKey/username_unique
+=== RUN   TestMapErrorDoubleKey/role_binding_unique
+=== RUN   TestMapErrorDoubleKey/policy_snapshot_unique
+=== RUN   TestMapErrorDoubleKey/flow_active_unique
+=== RUN   TestMapErrorDoubleKey/clients_pkey
+=== RUN   TestMapErrorDoubleKey/kid_unique
+=== RUN   TestMapErrorDoubleKey/direction_invariant
+=== RUN   TestMapErrorDoubleKey/acr_domain
+=== RUN   TestMapErrorDoubleKey/flow_completed_needs_user
+=== RUN   TestMapErrorDoubleKey/unknown_check
+=== RUN   TestMapErrorDoubleKey/flow_user_fk
+=== RUN   TestMapErrorDoubleKey/flow_client_fk
+=== RUN   TestMapErrorDoubleKey/unregistered_fk
+=== RUN   TestMapErrorDoubleKey/not_null
+=== RUN   TestMapErrorDoubleKey/bad_uuid_text
+=== RUN   TestMapErrorDoubleKey/numeric_range
+=== RUN   TestMapErrorDoubleKey/db_gone
+--- PASS: TestMapErrorDoubleKey (0.00s)
+    --- PASS: TestMapErrorDoubleKey/identifier_unique (0.00s)
+    --- PASS: TestMapErrorDoubleKey/username_unique (0.00s)
+    --- PASS: TestMapErrorDoubleKey/role_binding_unique (0.00s)
+    --- PASS: TestMapErrorDoubleKey/policy_snapshot_unique (0.00s)
+    --- PASS: TestMapErrorDoubleKey/flow_active_unique (0.00s)
+    --- PASS: TestMapErrorDoubleKey/clients_pkey (0.00s)
+    --- PASS: TestMapErrorDoubleKey/kid_unique (0.00s)
+    --- PASS: TestMapErrorDoubleKey/direction_invariant (0.00s)
+    --- PASS: TestMapErrorDoubleKey/acr_domain (0.00s)
+    --- PASS: TestMapErrorDoubleKey/flow_completed_needs_user (0.00s)
+    --- PASS: TestMapErrorDoubleKey/unknown_check (0.00s)
+    --- PASS: TestMapErrorDoubleKey/flow_user_fk (0.00s)
+    --- PASS: TestMapErrorDoubleKey/flow_client_fk (0.00s)
+    --- PASS: TestMapErrorDoubleKey/unregistered_fk (0.00s)
+    --- PASS: TestMapErrorDoubleKey/not_null (0.00s)
+    --- PASS: TestMapErrorDoubleKey/bad_uuid_text (0.00s)
+    --- PASS: TestMapErrorDoubleKey/numeric_range (0.00s)
+    --- PASS: TestMapErrorDoubleKey/db_gone (0.00s)
+=== RUN   TestUnmappedErrorsStayDefects
+--- PASS: TestUnmappedErrorsStayDefects (0.00s)
+=== RUN   TestMapErrorPassThroughAndNil
+--- PASS: TestMapErrorPassThroughAndNil (0.00s)
+=== RUN   TestRetryableAndIsNotFound
+--- PASS: TestRetryableAndIsNotFound (0.00s)
+=== RUN   TestErrorTextHasNoSQLOrValues
+--- PASS: TestErrorTextHasNoSQLOrValues (0.00s)
+=== RUN   TestAllStoreCodesAreFrozen
+--- PASS: TestAllStoreCodesAreFrozen (0.00s)
+=== RUN   TestStoreStatusExpectations
+--- PASS: TestStoreStatusExpectations (0.00s)
+=== RUN   TestMappedErrorCarriesReason
+--- PASS: TestMappedErrorCarriesReason (0.00s)
+=== RUN   TestDBTierDefaultSeedEachExactlyOne
+--- PASS: TestDBTierDefaultSeedEachExactlyOne (0.03s)
+=== RUN   TestDBTierDefaultSeedMissingTier
+--- PASS: TestDBTierDefaultSeedMissingTier (0.04s)
+=== RUN   TestDBTierDefaultSeedEmptyTable
+--- PASS: TestDBTierDefaultSeedEmptyTable (0.04s)
+=== RUN   TestValidateTierDefaultCounts
+=== RUN   TestValidateTierDefaultCounts/三档各恰一行_→_通过
+=== RUN   TestValidateTierDefaultCounts/缺_L3_→_失败并点名_L3
+=== RUN   TestValidateTierDefaultCounts/三档全缺（空表）→_失败并点满三档
+=== RUN   TestValidateTierDefaultCounts/nil_map_与空表同义（不许_panic、不许判绿）
+=== RUN   TestValidateTierDefaultCounts/L2_多一行_→_失败并点名_L2（唯一索引本应拦住，出现即_schema_漂移）
+=== RUN   TestValidateTierDefaultCounts/出现第四档_→_失败（D12：V1_没有_AAL3、档位也只有三档）
+--- PASS: TestValidateTierDefaultCounts (0.00s)
+    --- PASS: TestValidateTierDefaultCounts/三档各恰一行_→_通过 (0.00s)
+    --- PASS: TestValidateTierDefaultCounts/缺_L3_→_失败并点名_L3 (0.00s)
+    --- PASS: TestValidateTierDefaultCounts/三档全缺（空表）→_失败并点满三档 (0.00s)
+    --- PASS: TestValidateTierDefaultCounts/nil_map_与空表同义（不许_panic、不许判绿） (0.00s)
+    --- PASS: TestValidateTierDefaultCounts/L2_多一行_→_失败并点名_L2（唯一索引本应拦住，出现即_schema_漂移） (0.00s)
+    --- PASS: TestValidateTierDefaultCounts/出现第四档_→_失败（D12：V1_没有_AAL3、档位也只有三档） (0.00s)
+=== RUN   TestTierDefaultSeedErrorMessage
+--- PASS: TestTierDefaultSeedErrorMessage (0.00s)
+=== RUN   TestVerifyTierDefaultsSQLShape
+--- PASS: TestVerifyTierDefaultsSQLShape (0.00s)
+=== RUN   TestLoadAdmissionPolicyQueriesOnlyNeededColumns
+--- PASS: TestLoadAdmissionPolicyQueriesOnlyNeededColumns (0.00s)
+=== RUN   TestAdmissionRowSelectsMinACRAndDisabledFactors
+--- PASS: TestAdmissionRowSelectsMinACRAndDisabledFactors (0.00s)
+=== RUN   TestLoadAdmissionPolicyRejectsEmptyInput
+--- PASS: TestLoadAdmissionPolicyRejectsEmptyInput (0.00s)
+=== RUN   TestRecordVisitIsSingleUpsert
+--- PASS: TestRecordVisitIsSingleUpsert (0.00s)
+=== RUN   TestRecordVisitRejectsBadInput
+--- PASS: TestRecordVisitRejectsBadInput (0.00s)
+=== RUN   TestResolveAdmissionPolicyOrder
+=== RUN   TestResolveAdmissionPolicyOrder/覆盖行优先
+=== RUN   TestResolveAdmissionPolicyOrder/回落到同档位默认
+=== RUN   TestResolveAdmissionPolicyOrder/两侧都没有_=_配置缺陷
+=== RUN   TestResolveAdmissionPolicyOrder/业务系统不存在
+=== RUN   TestResolveAdmissionPolicyOrder/业务系统已停用
+--- PASS: TestResolveAdmissionPolicyOrder (0.00s)
+    --- PASS: TestResolveAdmissionPolicyOrder/覆盖行优先 (0.00s)
+    --- PASS: TestResolveAdmissionPolicyOrder/回落到同档位默认 (0.00s)
+    --- PASS: TestResolveAdmissionPolicyOrder/两侧都没有_=_配置缺陷 (0.00s)
+    --- PASS: TestResolveAdmissionPolicyOrder/业务系统不存在 (0.00s)
+    --- PASS: TestResolveAdmissionPolicyOrder/业务系统已停用 (0.00s)
+=== RUN   TestListClientIDsShapeAndValidation
+--- PASS: TestListClientIDsShapeAndValidation (0.00s)
+=== RUN   TestChallengeRepoUnit
+--- PASS: TestChallengeRepoUnit (0.00s)
+=== RUN   TestChallengeRecordAttemptSQLGuards
+--- PASS: TestChallengeRecordAttemptSQLGuards (0.00s)
+=== RUN   TestChallengeCreateWritesMaxAttemptsExplicitly
+--- PASS: TestChallengeCreateWritesMaxAttemptsExplicitly (0.00s)
+=== RUN   TestDBMaxVisitedTierPicksHighestActive
+--- PASS: TestDBMaxVisitedTierPicksHighestActive (0.06s)
+=== RUN   TestDBMaxVisitedTierSkipsDisabledClient
+--- PASS: TestDBMaxVisitedTierSkipsDisabledClient (0.06s)
+=== RUN   TestDBMaxVisitedTierNoVisits
+--- PASS: TestDBMaxVisitedTierNoVisits (0.05s)
+=== RUN   TestDBTierDefaultMinACRRejectsUnknownTier
+--- PASS: TestDBTierDefaultMinACRRejectsUnknownTier (0.02s)
+=== RUN   TestDBFlowActiveUniqueMapsTo409
+--- PASS: TestDBFlowActiveUniqueMapsTo409 (0.08s)
+=== RUN   TestDBFlowCompletedRequiresUserMapsTo400
+--- PASS: TestDBFlowCompletedRequiresUserMapsTo400 (0.07s)
+=== RUN   TestDBLockByIDSerializesWriters
+--- PASS: TestDBLockByIDSerializesWriters (0.28s)
+=== RUN   TestDBTwoPhaseCleanup
+--- PASS: TestDBTwoPhaseCleanup (0.07s)
+=== RUN   TestDBAbandonBySession
+--- PASS: TestDBAbandonBySession (0.09s)
+=== RUN   TestDBRuntimeConfigFlowTTL
+--- PASS: TestDBRuntimeConfigFlowTTL (0.04s)
+=== RUN   TestDBModelGeneratesUUIDv7
+--- PASS: TestDBModelGeneratesUUIDv7 (0.06s)
+=== RUN   TestLockByIDEmitsForUpdate
+--- PASS: TestLockByIDEmitsForUpdate (0.00s)
+=== RUN   TestLockByIDRequiresTx
+--- PASS: TestLockByIDRequiresTx (0.00s)
+=== RUN   TestApplyOnlyTouchesWhitelistedColumns
+--- PASS: TestApplyOnlyTouchesWhitelistedColumns (0.00s)
+=== RUN   TestApplyRejectsEmptyPatch
+--- PASS: TestApplyRejectsEmptyPatch (0.00s)
+=== RUN   TestTwoPhaseCleanupSQL
+--- PASS: TestTwoPhaseCleanupSQL (0.00s)
+=== RUN   TestAbandonBySessionSQL
+--- PASS: TestAbandonBySessionSQL (0.00s)
+=== RUN   TestCreateUsesReturning
+--- PASS: TestCreateUsesReturning (0.00s)
+=== RUN   TestWithTxBindsSameHandle
+--- PASS: TestWithTxBindsSameHandle (0.00s)
+=== RUN   TestUserRepoUnit
+--- PASS: TestUserRepoUnit (0.00s)
+=== RUN   TestIdentifierRepoUnit
+--- PASS: TestIdentifierRepoUnit (0.00s)
+=== RUN   TestAuthenticatorRepoUnit
+--- PASS: TestAuthenticatorRepoUnit (0.01s)
+=== RUN   TestAuthEventRepoUnit
+--- PASS: TestAuthEventRepoUnit (0.00s)
+=== RUN   TestClientPolicyRepoUnit
+--- PASS: TestClientPolicyRepoUnit (0.00s)
+=== RUN   TestResolveRegistrationPolicy
+=== RUN   TestResolveRegistrationPolicy/覆盖优先
+=== RUN   TestResolveRegistrationPolicy/无覆盖时回落档位默认
+=== RUN   TestResolveRegistrationPolicy/两者皆无_→_显式报错（不许垫默认值）
+=== RUN   TestResolveRegistrationPolicy/客户端停用
+=== RUN   TestResolveRegistrationPolicy/未知档位
+=== RUN   TestResolveRegistrationPolicy/disabled_factors_透传
+--- PASS: TestResolveRegistrationPolicy (0.00s)
+    --- PASS: TestResolveRegistrationPolicy/覆盖优先 (0.00s)
+    --- PASS: TestResolveRegistrationPolicy/无覆盖时回落档位默认 (0.00s)
+    --- PASS: TestResolveRegistrationPolicy/两者皆无_→_显式报错（不许垫默认值） (0.00s)
+    --- PASS: TestResolveRegistrationPolicy/客户端停用 (0.00s)
+    --- PASS: TestResolveRegistrationPolicy/未知档位 (0.00s)
+    --- PASS: TestResolveRegistrationPolicy/disabled_factors_透传 (0.00s)
+=== RUN   TestIdentityReposAllMethodsSmoke
+--- PASS: TestIdentityReposAllMethodsSmoke (0.00s)
+=== RUN   TestDBPlatformFactorConcurrentSetEnabledIsSerialized
+--- PASS: TestDBPlatformFactorConcurrentSetEnabledIsSerialized (0.39s)
+=== RUN   TestDBPlatformFactorDisableWritesAuditInSameTx
+--- PASS: TestDBPlatformFactorDisableWritesAuditInSameTx (0.09s)
+=== RUN   TestDBPlatformFactorIdempotentNoExtraAudit
+--- PASS: TestDBPlatformFactorIdempotentNoExtraAudit (0.10s)
+=== RUN   TestDBPlatformFactorAuditFailureRollsBackConfig
+--- PASS: TestDBPlatformFactorAuditFailureRollsBackConfig (0.04s)
+=== RUN   TestDBPlatformFactorEnableRemovesFromSet
+--- PASS: TestDBPlatformFactorEnableRemovesFromSet (0.11s)
+=== RUN   TestDBPlatformFactorDisabledSorted
+--- PASS: TestDBPlatformFactorDisabledSorted (0.09s)
+=== RUN   TestDBPlatformFactorMissingOrBadValueIsFailClosed
+--- PASS: TestDBPlatformFactorMissingOrBadValueIsFailClosed (0.04s)
+=== RUN   TestUnknownFactorTypes
+=== RUN   TestUnknownFactorTypes/全部认识
+=== RUN   TestUnknownFactorTypes/未知一个
+=== RUN   TestUnknownFactorTypes/未知去重且排序
+=== RUN   TestUnknownFactorTypes/空集
+--- PASS: TestUnknownFactorTypes (0.00s)
+    --- PASS: TestUnknownFactorTypes/全部认识 (0.00s)
+    --- PASS: TestUnknownFactorTypes/未知一个 (0.00s)
+    --- PASS: TestUnknownFactorTypes/未知去重且排序 (0.00s)
+    --- PASS: TestUnknownFactorTypes/空集 (0.00s)
+=== RUN   TestDecodeDisabledFactorsRejectsSilentEmpty
+--- PASS: TestDecodeDisabledFactorsRejectsSilentEmpty (0.00s)
+=== RUN   TestDBSessionReadBack
+--- PASS: TestDBSessionReadBack (0.09s)
+=== RUN   TestDBRevokeIsConditionalAndConsistent
+--- PASS: TestDBRevokeIsConditionalAndConsistent (0.09s)
+=== RUN   TestDBSessionTimeOrderCheck
+--- PASS: TestDBSessionTimeOrderCheck (0.07s)
+=== RUN   TestDBSessionListCursorPaging
+--- PASS: TestDBSessionListCursorPaging (0.08s)
+=== RUN   TestDBSessionListActiveFilter
+--- PASS: TestDBSessionListActiveFilter (0.08s)
+=== RUN   TestDBEvictOldestActive
+--- PASS: TestDBEvictOldestActive (0.09s)
+=== RUN   TestDBSessionBulkAndLifecycle
+--- PASS: TestDBSessionBulkAndLifecycle (0.11s)
+=== RUN   TestDBLoadSessionPolicy
+--- PASS: TestDBLoadSessionPolicy (0.07s)
+=== RUN   TestDBClientNamesUserExistsRoles
+--- PASS: TestDBClientNamesUserExistsRoles (0.07s)
+=== RUN   TestSessionRepoDryRunPaths
+--- PASS: TestSessionRepoDryRunPaths (0.00s)
+=== RUN   TestSessionRepoEmptyClientNamesDoesNotQuery
+--- PASS: TestSessionRepoEmptyClientNamesDoesNotQuery (0.00s)
+=== RUN   TestSessionListWithoutCursorHasNoKeysetPredicate
+--- PASS: TestSessionListWithoutCursorHasNoKeysetPredicate (0.00s)
+=== RUN   TestSessionListActiveFalseDoesNotFilterStatus
+--- PASS: TestSessionListActiveFalseDoesNotFilterStatus (0.00s)
+=== RUN   TestSessionCursorRoundTrip
+--- PASS: TestSessionCursorRoundTrip (0.00s)
+=== RUN   TestDecodeSessionCursorEmptyIsFirstPage
+--- PASS: TestDecodeSessionCursorEmptyIsFirstPage (0.00s)
+=== RUN   TestDecodeSessionCursorRejectsGarbage
+--- PASS: TestDecodeSessionCursorRejectsGarbage (0.00s)
+=== RUN   TestSessionListLimitBounds
+--- PASS: TestSessionListLimitBounds (0.00s)
+=== RUN   TestRevokeRequiresReason
+--- PASS: TestRevokeRequiresReason (0.00s)
+=== RUN   TestClientNamesEmptyInput
+--- PASS: TestClientNamesEmptyInput (0.00s)
+=== RUN   TestUserExistsNilID
+--- PASS: TestUserExistsNilID (0.00s)
+=== RUN   TestRolesLookupRequiresIDs
+--- PASS: TestRolesLookupRequiresIDs (0.00s)
+=== RUN   TestSessionOpsGuards
+--- PASS: TestSessionOpsGuards (0.00s)
+=== RUN   TestSessionOpsWithTxBindsHandle
+--- PASS: TestSessionOpsWithTxBindsHandle (0.00s)
+=== RUN   TestSessionOpsDryRunFilterBranches
+--- PASS: TestSessionOpsDryRunFilterBranches (0.00s)
+=== RUN   TestSessionCreateValidation
+--- PASS: TestSessionCreateValidation (0.00s)
+=== RUN   TestSessionCreateDryRun
+--- PASS: TestSessionCreateDryRun (0.00s)
+=== RUN   TestSigningKeyRepoGuards
+--- PASS: TestSigningKeyRepoGuards (0.00s)
+=== RUN   TestLoadTokenPolicySQLShape
+--- PASS: TestLoadTokenPolicySQLShape (0.00s)
+=== RUN   TestRedirectURIsGuards
+--- PASS: TestRedirectURIsGuards (0.00s)
+=== RUN   TestParseRedirectList
+--- PASS: TestParseRedirectList (0.00s)
+=== RUN   TestLoadFlowTTLHappyPath
+--- PASS: TestLoadFlowTTLHappyPath (0.00s)
+=== RUN   TestLoadFlowTTLMissingKeyFailsFast
+--- PASS: TestLoadFlowTTLMissingKeyFailsFast (0.00s)
+=== RUN   TestRequiredIntSecondsRejectsBadValues
+=== RUN   TestRequiredIntSecondsRejectsBadValues/wrong_type
+=== RUN   TestRequiredIntSecondsRejectsBadValues/string_value
+=== RUN   TestRequiredIntSecondsRejectsBadValues/zero
+=== RUN   TestRequiredIntSecondsRejectsBadValues/negative
+=== RUN   TestRequiredIntSecondsRejectsBadValues/fraction
+=== RUN   TestRequiredIntSecondsRejectsBadValues/bool
+--- PASS: TestRequiredIntSecondsRejectsBadValues (0.00s)
+    --- PASS: TestRequiredIntSecondsRejectsBadValues/wrong_type (0.00s)
+    --- PASS: TestRequiredIntSecondsRejectsBadValues/string_value (0.00s)
+    --- PASS: TestRequiredIntSecondsRejectsBadValues/zero (0.00s)
+    --- PASS: TestRequiredIntSecondsRejectsBadValues/negative (0.00s)
+    --- PASS: TestRequiredIntSecondsRejectsBadValues/fraction (0.00s)
+    --- PASS: TestRequiredIntSecondsRejectsBadValues/bool (0.00s)
+=== RUN   TestRequiredIntSecondsPropagatesReaderError
+--- PASS: TestRequiredIntSecondsPropagatesReaderError (0.00s)
+=== RUN   TestValidateStartupReportsAllMissingKeys
+--- PASS: TestValidateStartupReportsAllMissingKeys (0.00s)
+=== RUN   TestValidateStartupNamesTheSingleMissingKey
+--- PASS: TestValidateStartupNamesTheSingleMissingKey (0.00s)
+=== RUN   TestValidateStartupRejectsNonIntValueType
+--- PASS: TestValidateStartupRejectsNonIntValueType (0.00s)
+=== RUN   TestStartupKeysContainsFrozenNames
+--- PASS: TestStartupKeysContainsFrozenNames (0.00s)
+=== RUN   TestNoHardcodedFlowTTLDefault
+--- PASS: TestNoHardcodedFlowTTLDefault (0.02s)
+=== RUN   TestNoHardcodedChallengeTTLDefault
+--- PASS: TestNoHardcodedChallengeTTLDefault (0.02s)
+=== RUN   TestLoadChallengeConfigHappyPath
+--- PASS: TestLoadChallengeConfigHappyPath (0.00s)
+=== RUN   TestLoadChallengeConfigMissingKeyFailsFast
+--- PASS: TestLoadChallengeConfigMissingKeyFailsFast (0.00s)
+=== RUN   TestRequiredPositiveInt
+=== RUN   TestRequiredPositiveInt/wrong_type
+=== RUN   TestRequiredPositiveInt/string_value
+=== RUN   TestRequiredPositiveInt/zero
+=== RUN   TestRequiredPositiveInt/negative
+=== RUN   TestRequiredPositiveInt/fraction
+=== RUN   TestRequiredPositiveInt/bool
+--- PASS: TestRequiredPositiveInt (0.00s)
+    --- PASS: TestRequiredPositiveInt/wrong_type (0.00s)
+    --- PASS: TestRequiredPositiveInt/string_value (0.00s)
+    --- PASS: TestRequiredPositiveInt/zero (0.00s)
+    --- PASS: TestRequiredPositiveInt/negative (0.00s)
+    --- PASS: TestRequiredPositiveInt/fraction (0.00s)
+    --- PASS: TestRequiredPositiveInt/bool (0.00s)
+=== RUN   TestValidateStartupRejectsBadFactorsDisabled
+--- PASS: TestValidateStartupRejectsBadFactorsDisabled (0.00s)
+=== RUN   TestDBRealSlowQueryIsNotUnavailable
+=== RUN   TestDBRealSlowQueryIsNotUnavailable/socket_读超时（评审复现路径）
+    unavailable_db_test.go:76: err=*pgconn.errTimeout: timeout: read tcp 127.0.0.1:43058->127.0.0.1:5432: i/o timeout（net.OpError(read)=true, timeout=true）
+=== RUN   TestDBRealSlowQueryIsNotUnavailable/客户端_deadline（errTimeout）
+=== RUN   TestDBRealSlowQueryIsNotUnavailable/服务端_statement_timeout（57014）
+=== RUN   TestDBRealSlowQueryIsNotUnavailable/真停库（死端口）仍归_DB_UNAVAILABLE
+--- PASS: TestDBRealSlowQueryIsNotUnavailable (0.62s)
+    --- PASS: TestDBRealSlowQueryIsNotUnavailable/socket_读超时（评审复现路径） (0.33s)
+    --- PASS: TestDBRealSlowQueryIsNotUnavailable/客户端_deadline（errTimeout） (0.15s)
+    --- PASS: TestDBRealSlowQueryIsNotUnavailable/服务端_statement_timeout（57014） (0.15s)
+    --- PASS: TestDBRealSlowQueryIsNotUnavailable/真停库（死端口）仍归_DB_UNAVAILABLE (0.00s)
+=== RUN   TestDBRealDialTimeoutIsUnavailable
+    unavailable_db_test.go:147: dial 失败：*net.OpError: dial tcp 192.0.2.1:5432: i/o timeout（net.OpError=true, Op="dial", Timeout=true, 耗时=300.554908ms）
+--- PASS: TestDBRealDialTimeoutIsUnavailable (0.30s)
+=== RUN   TestDBOutageThroughKilledProxyIsDBUnavailable
+--- PASS: TestDBOutageThroughKilledProxyIsDBUnavailable (0.03s)
+=== RUN   TestRealConnectFailureIsDBUnavailable
+--- PASS: TestRealConnectFailureIsDBUnavailable (0.00s)
+=== RUN   TestIsUnavailableSQLStates
+=== RUN   TestIsUnavailableSQLStates/08006_connection_failure
+=== RUN   TestIsUnavailableSQLStates/08001_client_unable_to_establish
+=== RUN   TestIsUnavailableSQLStates/08P01_protocol_violation
+=== RUN   TestIsUnavailableSQLStates/53300_too_many_connections
+=== RUN   TestIsUnavailableSQLStates/57P01_admin_shutdown（停库最常走这条）
+=== RUN   TestIsUnavailableSQLStates/57P02_crash_shutdown
+=== RUN   TestIsUnavailableSQLStates/57P03_cannot_connect_now
+=== RUN   TestIsUnavailableSQLStates/23505_unique_violation
+=== RUN   TestIsUnavailableSQLStates/23514_check_violation
+=== RUN   TestIsUnavailableSQLStates/23503_foreign_key_violation
+=== RUN   TestIsUnavailableSQLStates/42P01_undefined_table（schema_漂移_=_缺陷）
+=== RUN   TestIsUnavailableSQLStates/40001_serialization_failure（可重试，但不是不可用）
+=== RUN   TestIsUnavailableSQLStates/57014_query_canceled（statement_timeout）
+--- PASS: TestIsUnavailableSQLStates (0.00s)
+    --- PASS: TestIsUnavailableSQLStates/08006_connection_failure (0.00s)
+    --- PASS: TestIsUnavailableSQLStates/08001_client_unable_to_establish (0.00s)
+    --- PASS: TestIsUnavailableSQLStates/08P01_protocol_violation (0.00s)
+    --- PASS: TestIsUnavailableSQLStates/53300_too_many_connections (0.00s)
+    --- PASS: TestIsUnavailableSQLStates/57P01_admin_shutdown（停库最常走这条） (0.00s)
+    --- PASS: TestIsUnavailableSQLStates/57P02_crash_shutdown (0.00s)
+    --- PASS: TestIsUnavailableSQLStates/57P03_cannot_connect_now (0.00s)
+    --- PASS: TestIsUnavailableSQLStates/23505_unique_violation (0.00s)
+    --- PASS: TestIsUnavailableSQLStates/23514_check_violation (0.00s)
+    --- PASS: TestIsUnavailableSQLStates/23503_foreign_key_violation (0.00s)
+    --- PASS: TestIsUnavailableSQLStates/42P01_undefined_table（schema_漂移_=_缺陷） (0.00s)
+    --- PASS: TestIsUnavailableSQLStates/40001_serialization_failure（可重试，但不是不可用） (0.00s)
+    --- PASS: TestIsUnavailableSQLStates/57014_query_canceled（statement_timeout） (0.00s)
+=== RUN   TestIsUnavailableConnectionLayer
+=== RUN   TestIsUnavailableConnectionLayer/net.OpError(dial_refused)
+=== RUN   TestIsUnavailableConnectionLayer/包裹后的_net.OpError
+=== RUN   TestIsUnavailableConnectionLayer/driver.ErrBadConn
+=== RUN   TestIsUnavailableConnectionLayer/sql.ErrConnDone
+=== RUN   TestIsUnavailableConnectionLayer/io.EOF（进程被_kill_时很常见）
+=== RUN   TestIsUnavailableConnectionLayer/io.ErrUnexpectedEOF
+=== RUN   TestIsUnavailableConnectionLayer/ECONNRESET
+=== RUN   TestIsUnavailableConnectionLayer/EPIPE
+=== RUN   TestIsUnavailableConnectionLayer/ECONNABORTED
+=== RUN   TestIsUnavailableConnectionLayer/net.OpError(dial/ETIMEDOUT)_=_库连不上
+=== RUN   TestIsUnavailableConnectionLayer/裸_syscall.ETIMEDOUT（无_net.OpError_包装）
+=== RUN   TestIsUnavailableConnectionLayer/context.Canceled
+=== RUN   TestIsUnavailableConnectionLayer/context.DeadlineExceeded（取舍见_unavailable.go_文件头）
+=== RUN   TestIsUnavailableConnectionLayer/业务错误
+=== RUN   TestIsUnavailableConnectionLayer/nil
+--- PASS: TestIsUnavailableConnectionLayer (0.00s)
+    --- PASS: TestIsUnavailableConnectionLayer/net.OpError(dial_refused) (0.00s)
+    --- PASS: TestIsUnavailableConnectionLayer/包裹后的_net.OpError (0.00s)
+    --- PASS: TestIsUnavailableConnectionLayer/driver.ErrBadConn (0.00s)
+    --- PASS: TestIsUnavailableConnectionLayer/sql.ErrConnDone (0.00s)
+    --- PASS: TestIsUnavailableConnectionLayer/io.EOF（进程被_kill_时很常见） (0.00s)
+    --- PASS: TestIsUnavailableConnectionLayer/io.ErrUnexpectedEOF (0.00s)
+    --- PASS: TestIsUnavailableConnectionLayer/ECONNRESET (0.00s)
+    --- PASS: TestIsUnavailableConnectionLayer/EPIPE (0.00s)
+    --- PASS: TestIsUnavailableConnectionLayer/ECONNABORTED (0.00s)
+    --- PASS: TestIsUnavailableConnectionLayer/net.OpError(dial/ETIMEDOUT)_=_库连不上 (0.00s)
+    --- PASS: TestIsUnavailableConnectionLayer/裸_syscall.ETIMEDOUT（无_net.OpError_包装） (0.00s)
+    --- PASS: TestIsUnavailableConnectionLayer/context.Canceled (0.00s)
+    --- PASS: TestIsUnavailableConnectionLayer/context.DeadlineExceeded（取舍见_unavailable.go_文件头） (0.00s)
+    --- PASS: TestIsUnavailableConnectionLayer/业务错误 (0.00s)
+    --- PASS: TestIsUnavailableConnectionLayer/nil (0.00s)
+=== RUN   TestIsUnavailablePinsTimeoutSemantics
+--- PASS: TestIsUnavailablePinsTimeoutSemantics (0.00s)
+=== RUN   TestMapErrorPassesThroughNonConnectionErrors
+--- PASS: TestMapErrorPassesThroughNonConnectionErrors (0.00s)
+=== RUN   TestDBEveryUniqueViolationMapsOnce
+=== RUN   TestDBEveryUniqueViolationMapsOnce/CH-7①_identifiers_type_value_uniq_→_IDENTIFIER_ALREADY_BOUND
+=== RUN   TestDBEveryUniqueViolationMapsOnce/CH-7②_users_username_lower_uidx_→_IDENTIFIER_ALREADY_BOUND
+=== RUN   TestDBEveryUniqueViolationMapsOnce/CH-7③_role_bindings_uniq_→_BINDING_ALREADY_EXISTS
+=== RUN   TestDBEveryUniqueViolationMapsOnce/CH-7④_policy_snapshots_uniq_→_POLICY_SNAPSHOT_CONFLICT
+=== RUN   TestDBEveryUniqueViolationMapsOnce/CH-7⑤_flows_one_active_per_user_client_uniq_→_COOLDOWN_ACTIVE
+=== RUN   TestDBEveryUniqueViolationMapsOnce/CH-7⑥_clients_pkey_→_INVALID_CLIENT
+=== RUN   TestDBEveryUniqueViolationMapsOnce/CH-7⑦_signing_keys_kid_uniq_→_INVALID_PARAMETER
+=== RUN   TestDBEveryUniqueViolationMapsOnce/CH-7⑧_login_policies_tier_default_uidx_→_INVALID_PARAMETER
+=== RUN   TestDBEveryUniqueViolationMapsOnce/CH-7⑧_login_policies_client_override_uidx_→_INVALID_PARAMETER
+--- PASS: TestDBEveryUniqueViolationMapsOnce (0.09s)
+    --- PASS: TestDBEveryUniqueViolationMapsOnce/CH-7①_identifiers_type_value_uniq_→_IDENTIFIER_ALREADY_BOUND (0.00s)
+    --- PASS: TestDBEveryUniqueViolationMapsOnce/CH-7②_users_username_lower_uidx_→_IDENTIFIER_ALREADY_BOUND (0.00s)
+    --- PASS: TestDBEveryUniqueViolationMapsOnce/CH-7③_role_bindings_uniq_→_BINDING_ALREADY_EXISTS (0.00s)
+    --- PASS: TestDBEveryUniqueViolationMapsOnce/CH-7④_policy_snapshots_uniq_→_POLICY_SNAPSHOT_CONFLICT (0.00s)
+    --- PASS: TestDBEveryUniqueViolationMapsOnce/CH-7⑤_flows_one_active_per_user_client_uniq_→_COOLDOWN_ACTIVE (0.00s)
+    --- PASS: TestDBEveryUniqueViolationMapsOnce/CH-7⑥_clients_pkey_→_INVALID_CLIENT (0.00s)
+    --- PASS: TestDBEveryUniqueViolationMapsOnce/CH-7⑦_signing_keys_kid_uniq_→_INVALID_PARAMETER (0.00s)
+    --- PASS: TestDBEveryUniqueViolationMapsOnce/CH-7⑧_login_policies_tier_default_uidx_→_INVALID_PARAMETER (0.00s)
+    --- PASS: TestDBEveryUniqueViolationMapsOnce/CH-7⑧_login_policies_client_override_uidx_→_INVALID_PARAMETER (0.00s)
+=== RUN   TestDBUnmappedUniqueViolationsStayUnmapped
+=== RUN   TestDBUnmappedUniqueViolationsStayUnmapped/identifiers_one_primary_per_user（I6：无对外码，D3-B）
+=== RUN   TestDBUnmappedUniqueViolationsStayUnmapped/user_visited_clients_uniq（upsert_前提，撞上即缺陷）
+--- PASS: TestDBUnmappedUniqueViolationsStayUnmapped (0.06s)
+    --- PASS: TestDBUnmappedUniqueViolationsStayUnmapped/identifiers_one_primary_per_user（I6：无对外码，D3-B） (0.00s)
+    --- PASS: TestDBUnmappedUniqueViolationsStayUnmapped/user_visited_clients_uniq（upsert_前提，撞上即缺陷） (0.00s)
+PASS
+ok  	github.com/spencerswagger/guanjin/internal/store	7.677s
+=== RUN   TestFlowModelColumnsMatchMigration
+--- PASS: TestFlowModelColumnsMatchMigration (0.00s)
+=== RUN   TestNoSoftDeleteField
+--- PASS: TestNoSoftDeleteField (0.00s)
+=== RUN   TestChallengeMaxAttemptsHasNoModelDefault
+--- PASS: TestChallengeMaxAttemptsHasNoModelDefault (0.00s)
+=== RUN   TestFlowFieldNullability
+--- PASS: TestFlowFieldNullability (0.00s)
+=== RUN   TestBaseModelGeneratesUUIDv7
+--- PASS: TestBaseModelGeneratesUUIDv7 (0.00s)
+=== RUN   TestBaseModelKeepsExplicitID
+--- PASS: TestBaseModelKeepsExplicitID (0.00s)
+=== RUN   TestAppendOnlyModelGeneratesUUIDv7
+--- PASS: TestAppendOnlyModelGeneratesUUIDv7 (0.00s)
+=== RUN   TestStringArrayRoundTrip
+--- PASS: TestStringArrayRoundTrip (0.00s)
+=== RUN   TestStepListRoundTrip
+--- PASS: TestStepListRoundTrip (0.00s)
+=== RUN   TestJSONValueAsInt
+--- PASS: TestJSONValueAsInt (0.00s)
+=== RUN   TestJSONValueAsStringAndBool
+--- PASS: TestJSONValueAsStringAndBool (0.00s)
+=== RUN   TestJSONValueValuer
+--- PASS: TestJSONValueValuer (0.00s)
+PASS
+ok  	github.com/spencerswagger/guanjin/internal/store/model	1.044s
+?   	github.com/spencerswagger/guanjin/internal/testdb	[no test files]

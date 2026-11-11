@@ -1,0 +1,9 @@
+[audit.TestMain] truncate isolated schema: truncate audit_test.audit_logs: ERROR: schema "audit_test" does not exist (SQLSTATE 3F000)
+[audit.TestMain] skip future-partition cleanup: 未设置 GUANJIN_ALLOW_TEST_CLEANUP=1
+[audit.TestMain] shared max(occurred_at): before="" after=""
+--- FAIL: TestAC_AUD_04_Concurrent100AppendsKeepChainIntact (0.25s)
+    concurrent_serial_db_test.go:54: retries_total=0（重锚重试次数；> 总写入 10% 说明结构性问题仍在）
+    concurrent_serial_db_test.go:85: 并发 100 写后整链必须通过，实际断在 audit: chain is broken: record 01a1cb7d-91f7-7135-a5af-cb50f6aae165 at index 49 (prev_tag_mismatch)
+FAIL
+FAIL	github.com/spencerswagger/guanjin/internal/audit	0.704s
+FAIL

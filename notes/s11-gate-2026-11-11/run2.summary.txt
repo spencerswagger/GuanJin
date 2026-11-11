@@ -1,0 +1,13 @@
+label=run2
+commit=fa5969b1f0d1c67eae9f776760b64216d4518008
+go=go version go1.25.7 linux/amd64
+cgo=1 gomaxprocs= nproc=8
+dsn_db=guanjin_s11_gate_test redis=127.0.0.1:16421
+cmd=go test -tags=integration -race -p 8 -count=1 ./...
+20/u seed_factors_disabled (161.907287ms)
+21/u audit_logs_created_id_idx (171.674784ms)
+21
+redis_pid=778 port=16421
+exit_code=0 elapsed_s=49
+packages_ok=23  packages_no_test_files=2
+caret_FAIL_lines=0  test_func_FAIL=0  test_func_SKIP=0
