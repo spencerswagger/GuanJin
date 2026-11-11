@@ -1,0 +1,16 @@
+=== RUN   TestACFLOW05_04_ConcurrentPatches
+    acflow05_04_concurrency_db_test.go:171: 审计链不自洽：第 2 条 before="true"，但前一条 after="false"（丢写或重复记）
+--- FAIL: TestACFLOW05_04_ConcurrentPatches (0.14s)
+=== RUN   TestACFLOW05_04b_MissingRowIsFailClosed
+--- PASS: TestACFLOW05_04b_MissingRowIsFailClosed (0.03s)
+=== RUN   TestACFLOW05_01_PatchContractAndIdempotency
+--- PASS: TestACFLOW05_01_PatchContractAndIdempotency (0.03s)
+=== RUN   TestACFLOW05_02_UnionWithClientDisabled
+--- PASS: TestACFLOW05_02_UnionWithClientDisabled (0.86s)
+=== RUN   TestACFLOW05_03_AuditExactlyOnceInSameTx
+--- PASS: TestACFLOW05_03_AuditExactlyOnceInSameTx (0.04s)
+=== RUN   TestACFLOW05_02b_PlatformDisableVisibleThroughBehaviour
+--- PASS: TestACFLOW05_02b_PlatformDisableVisibleThroughBehaviour (0.05s)
+FAIL
+FAIL	github.com/spencerswagger/guanjin/cmd/guanjind	1.166s
+FAIL
