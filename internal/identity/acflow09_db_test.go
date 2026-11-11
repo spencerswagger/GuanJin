@@ -70,10 +70,14 @@ func acflow09Binder(t *testing.T, db *gorm.DB) *Service {
 	return svc
 }
 
-// doBind 打一次绑定请求（可选注入 claims/eacr 以模拟"令牌被篡改"）。
-func doBind(t *testing.T, h *MeIdentifiersHTTP, resolver session.TokenResolver, trace, body string) (int, []byte) {
+// bindOnce 打一次绑定请求，**不改 handler 的任何字段**。
+//
+// 之所以从这里分出来：`doBind` 会写 `h.resolver`，而 `h.bind` 在读它（me_http.go:83）。
+// 并发用例里多个 goroutine 共用同一个 handler 调 `doBind` 就是**测试夹具自身的数据竞争**
+// （真实现每个进程只装配一次 resolver，不存在这个写；`-race` 抓的是夹具）。并发用例
+// 一律走 `bindOnce`，resolver 在起 goroutine 之前单线程设定。
+func bindOnce(t *testing.T, h *MeIdentifiersHTTP, trace, body string) (int, []byte) {
 	t.Helper()
-	h.resolver = resolver
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/me/identifiers", strings.NewReader(body))
 	req.Header.Set("Authorization", "Bearer good-token")
 	req.Header.Set("Content-Type", "application/json")
@@ -81,6 +85,14 @@ func doBind(t *testing.T, h *MeIdentifiersHTTP, resolver session.TokenResolver, 
 	rec := httptest.NewRecorder()
 	h.bind(rec, req)
 	return rec.Code, rec.Body.Bytes()
+}
+
+// doBind 打一次绑定请求（可选注入 claims/eacr 以模拟"令牌被篡改"）。
+// **只能单线程调用**；并发用例请用 bindOnce + 预先设定 resolver。
+func doBind(t *testing.T, h *MeIdentifiersHTTP, resolver session.TokenResolver, trace, body string) (int, []byte) {
+	t.Helper()
+	h.resolver = resolver
+	return bindOnce(t, h, trace, body)
 }
 
 // claimsResolver 是"令牌里多带了一份 acr 声明"的解析器：用来证明 handler **不读** claims。
@@ -287,13 +299,16 @@ func TestACFLOW09_04_Concurrent403NoInserts(t *testing.T) {
 	beforeVisits := countVisits(t, db, f.userID)
 
 	const n = 10
+	// resolver 在起 goroutine 之前单线程设定一次：并发期间**只读** handler
+	// （写 `h.resolver` 会与 `h.bind` 的读竞争 —— 那是夹具竞争，-race 会点名）。
+	h.resolver = okResolver{userID: f.userID, sessionID: f.sessionID}
 	var wg sync.WaitGroup
 	codes := make([]int, n)
 	wg.Add(n)
 	for i := 0; i < n; i++ {
 		go func(i int) {
 			defer wg.Done()
-			status, _ := doBind(t, h, okResolver{userID: f.userID, sessionID: f.sessionID},
+			status, _ := bindOnce(t, h,
 				"trace-acflow09-04-"+uuid.NewString()[:8],
 				`{"type":"email","value":"acflow09-04-`+uuid.NewString()[:8]+`@example.com"}`)
 			codes[i] = status
