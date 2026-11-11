@@ -1,0 +1,99 @@
+ok  	github.com/spencerswagger/guanjin/cmd/guanjind	30.238s
+ok  	github.com/spencerswagger/guanjin/cmd/guanjingw	1.032s
+ok  	github.com/spencerswagger/guanjin/internal/admin	1.057s
+ok  	github.com/spencerswagger/guanjin/internal/agent	1.035s
+ok  	github.com/spencerswagger/guanjin/internal/audit	1.739s
+?   	github.com/spencerswagger/guanjin/internal/authz	[no test files]
+ok  	github.com/spencerswagger/guanjin/internal/config	1.024s
+ok  	github.com/spencerswagger/guanjin/internal/credential	24.424s
+ok  	github.com/spencerswagger/guanjin/internal/crypto	24.342s
+ok  	github.com/spencerswagger/guanjin/internal/factor	1.045s
+ok  	github.com/spencerswagger/guanjin/internal/factor/holding	6.426s
+ok  	github.com/spencerswagger/guanjin/internal/flow	2.007s
+ok  	github.com/spencerswagger/guanjin/internal/flowstore	5.964s
+ok  	github.com/spencerswagger/guanjin/internal/gateway	5.353s
+ok  	github.com/spencerswagger/guanjin/internal/gateway/adapter	5.288s
+ok  	github.com/spencerswagger/guanjin/internal/httpx	1.034s
+ok  	github.com/spencerswagger/guanjin/internal/identifier	1.028s
+==================
+WARNING: DATA RACE
+Write at 0x00c0003974e8 by goroutine 59:
+  github.com/spencerswagger/guanjin/internal/identity.doBind()
+      /worktrees/GJ-QA/internal/identity/acflow09_db_test.go:76 +0x8b
+  github.com/spencerswagger/guanjin/internal/identity.TestACFLOW09_04_Concurrent403NoInserts.func1()
+      /worktrees/GJ-QA/internal/identity/acflow09_db_test.go:296 +0x1fd
+  github.com/spencerswagger/guanjin/internal/identity.TestACFLOW09_04_Concurrent403NoInserts.gowrap1()
+      /worktrees/GJ-QA/internal/identity/acflow09_db_test.go:300 +0x41
+
+Previous write at 0x00c0003974e8 by goroutine 66:
+  github.com/spencerswagger/guanjin/internal/identity.doBind()
+      /worktrees/GJ-QA/internal/identity/acflow09_db_test.go:76 +0x8b
+  github.com/spencerswagger/guanjin/internal/identity.TestACFLOW09_04_Concurrent403NoInserts.func1()
+      /worktrees/GJ-QA/internal/identity/acflow09_db_test.go:296 +0x1fd
+  github.com/spencerswagger/guanjin/internal/identity.TestACFLOW09_04_Concurrent403NoInserts.gowrap1()
+      /worktrees/GJ-QA/internal/identity/acflow09_db_test.go:300 +0x41
+
+Goroutine 59 (running) created at:
+  github.com/spencerswagger/guanjin/internal/identity.TestACFLOW09_04_Concurrent403NoInserts()
+      /worktrees/GJ-QA/internal/identity/acflow09_db_test.go:294 +0x1cf
+  testing.tRunner()
+      /.toolchain/go/src/testing/testing.go:1934 +0x21c
+  testing.(*T).Run.gowrap1()
+      /.toolchain/go/src/testing/testing.go:1997 +0x44
+
+Goroutine 66 (running) created at:
+  github.com/spencerswagger/guanjin/internal/identity.TestACFLOW09_04_Concurrent403NoInserts()
+      /worktrees/GJ-QA/internal/identity/acflow09_db_test.go:294 +0x1cf
+  testing.tRunner()
+      /.toolchain/go/src/testing/testing.go:1934 +0x21c
+  testing.(*T).Run.gowrap1()
+      /.toolchain/go/src/testing/testing.go:1997 +0x44
+==================
+==================
+WARNING: DATA RACE
+Write at 0x00c0003974e8 by goroutine 65:
+  github.com/spencerswagger/guanjin/internal/identity.doBind()
+      /worktrees/GJ-QA/internal/identity/acflow09_db_test.go:76 +0x8b
+  github.com/spencerswagger/guanjin/internal/identity.TestACFLOW09_04_Concurrent403NoInserts.func1()
+      /worktrees/GJ-QA/internal/identity/acflow09_db_test.go:296 +0x1fd
+  github.com/spencerswagger/guanjin/internal/identity.TestACFLOW09_04_Concurrent403NoInserts.gowrap1()
+      /worktrees/GJ-QA/internal/identity/acflow09_db_test.go:300 +0x41
+
+Previous read at 0x00c0003974e8 by goroutine 60:
+  github.com/spencerswagger/guanjin/internal/identity.(*MeIdentifiersHTTP).bind()
+      /worktrees/GJ-QA/internal/identity/me_http.go:83 +0x5c
+  github.com/spencerswagger/guanjin/internal/identity.doBind()
+      /worktrees/GJ-QA/internal/identity/acflow09_db_test.go:82 +0x647
+  github.com/spencerswagger/guanjin/internal/identity.TestACFLOW09_04_Concurrent403NoInserts.func1()
+      /worktrees/GJ-QA/internal/identity/acflow09_db_test.go:296 +0x1fd
+  github.com/spencerswagger/guanjin/internal/identity.TestACFLOW09_04_Concurrent403NoInserts.gowrap1()
+      /worktrees/GJ-QA/internal/identity/acflow09_db_test.go:300 +0x41
+
+Goroutine 65 (running) created at:
+  github.com/spencerswagger/guanjin/internal/identity.TestACFLOW09_04_Concurrent403NoInserts()
+      /worktrees/GJ-QA/internal/identity/acflow09_db_test.go:294 +0x1cf
+  testing.tRunner()
+      /.toolchain/go/src/testing/testing.go:1934 +0x21c
+  testing.(*T).Run.gowrap1()
+      /.toolchain/go/src/testing/testing.go:1997 +0x44
+
+Goroutine 60 (running) created at:
+  github.com/spencerswagger/guanjin/internal/identity.TestACFLOW09_04_Concurrent403NoInserts()
+      /worktrees/GJ-QA/internal/identity/acflow09_db_test.go:294 +0x1cf
+  testing.tRunner()
+      /.toolchain/go/src/testing/testing.go:1934 +0x21c
+  testing.(*T).Run.gowrap1()
+      /.toolchain/go/src/testing/testing.go:1997 +0x44
+==================
+--- FAIL: TestACFLOW09_04_Concurrent403NoInserts (0.21s)
+    testing.go:1617: race detected during execution of test
+FAIL
+FAIL	github.com/spencerswagger/guanjin/internal/identity	35.885s
+ok  	github.com/spencerswagger/guanjin/internal/protocol	2.160s
+ok  	github.com/spencerswagger/guanjin/internal/risk	1.821s
+ok  	github.com/spencerswagger/guanjin/internal/session	1.723s
+ok  	github.com/spencerswagger/guanjin/internal/signing	1.155s
+ok  	github.com/spencerswagger/guanjin/internal/store	7.304s
+ok  	github.com/spencerswagger/guanjin/internal/store/model	1.035s
+?   	github.com/spencerswagger/guanjin/internal/testdb	[no test files]
+FAIL

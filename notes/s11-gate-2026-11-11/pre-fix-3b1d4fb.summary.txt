@@ -1,0 +1,17 @@
+label=run1
+commit=3b1d4fb9d1073e5c4d5278771d411b5d0a439ee0
+go=go version go1.25.7 linux/amd64
+cgo=1 gomaxprocs= nproc=8
+dsn_db=guanjin_s11_gate_test redis=127.0.0.1:16410
+cmd=go test -tags=integration -race -p 8 -count=1 ./...
+20/u seed_factors_disabled (140.894813ms)
+21/u audit_logs_created_id_idx (137.314276ms)
+21
+redis_pid=46 port=16410
+exit_code=1 elapsed_s=54
+packages_ok=22  packages_no_test_files=2
+caret_FAIL_lines=3  test_func_FAIL=1  test_func_SKIP=0
+--- FAIL: TestACFLOW09_04_Concurrent403NoInserts (0.21s)
+FAIL
+FAIL	github.com/spencerswagger/guanjin/internal/identity	35.885s
+FAIL
