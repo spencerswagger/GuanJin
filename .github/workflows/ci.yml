@@ -110,9 +110,23 @@ jobs:
         with:
           go-version-file: go.mod
           cache: false
+      - name: 客户端工具解析（零网络：镜像自带 或 docker exec 进 service 容器）
+        # 2026-11-11 实测（run 43050572912）：runner 解析不到 azure.archive.ubuntu.com，
+        # `apt-get install postgresql-client redis-tools` 重试约 4 分钟后
+        # `E: Unable to fetch some archives`（exit 100）→ 本步红 → 后面 migrate/schema/集成用例整片 skipped。
+        # **skipped 不是绿**，所以不再在跑测试的路径上装包：工具要么用镜像自带，
+        # 要么 `docker exec` 进 job service 容器（services 本来就在 runner 的 docker daemon 上）。
+        # 两条都走不通 → 脚本 exit 1（fail-closed），不许静默跳过。
+        run: |
+          set -euo pipefail
+          # 解析逻辑自身先过自测（三条分支：缺工具→shim / 自带→零 shim / 双缺→必红）
+          bash scripts/ci-integration-deps.sh --self-test
+          bash scripts/ci-integration-deps.sh
       - name: 等依赖就绪（PG + Redis；healthcheck 之外再确认一次）
         run: |
-          sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends postgresql-client redis-tools
+          set -euo pipefail
+          # 脚本是子进程，PATH 不回流；shim 目录固定为 $RUNNER_TEMP/ci-deps-bin
+          export PATH="${RUNNER_TEMP}/ci-deps-bin:$PATH"
           for i in $(seq 1 30); do
             if pg_isready -h localhost -p 5432 -U guanjin -d guanjin_test; then echo "[OK] postgres ready"; break; fi
             echo "waiting postgres ($i/30)"; sleep 2
