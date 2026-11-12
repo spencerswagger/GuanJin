@@ -448,6 +448,22 @@
 
 ---
 
+## D18 无 client 上下文时的 `ACR_INSUFFICIENT` 不带 `details.flow` —— **待 spencer 拍板（未生效）**
+
+> **状态：草案，未生效。** 拍板前**不得作为判据依据**，实现侧可先按此备稿但**不得宣布生效**；拍板后本条才转为有效口径（并补一行"已拍板 2026-xx-xx"）。
+
+- **结论**：**无 `client_id` 上下文**的自助操作（如 `POST /api/v1/me/identifiers`）返回 `ACR_INSUFFICIENT`（403）时，**不带 `details.flow`**，最多给**平铺**的 `current_acr` / `target_acr`；**不得**为此造 Descriptor、**不得**给 `terminal_state` 增新值（`not_started` 之类等于改 **D7** 的枚举词表）。
+- **依据（逐条，不是"感觉上更简单"）**：
+  1. **`details` 本就是可选的**：`接口清单:739` 的措辞是「`ACR_INSUFFICIENT` 不直接失败，响应 `details.flow` 给出当前档位与待补步骤」；但同一份文件的 **§5.4**（`接口清单:711`）明写 `details` 为**可选项**（「如 `{"retry_after":…}` / `{"flow":{…}}`（**引导阶梯认证时回带**）」）→ 「三面都回 `details.flow`」不是强制项。
+  2. **Descriptor 的必填字段在无上下文时无来源**：**D7 / CH-2** 冻结的 Descriptor 必填 `flow_id`、`client{...}`、`expires_at`；无 client 上下文时这三项**全无来源**，硬造即是**新增契约面**（F0 禁自造 wire 名/字段）。
+  3. **技术上开不出 flow**：`flows.client_id` 是 **NOT NULL** 且有 `flows_client_not_blank` CHECK（`migrations/000015_create_flows.up.sql:9` / `:28`）→ 无上下文根本落不了一行 flow；此时给出 `flow_id` 会**误导客户端**去调 `/auth/challenge/{factor}`（CH-1 要求 `purpose ∈ {login, step_up}` 必带 `flow_id`），必然失败，属于"看起来给了引导、实际给不出"的假引导。
+- **受影响 / 落地（拍板后）**：**Core**（自助面 `ACR_INSUFFICIENT` 的错误构造：平铺字段、不塞 `details.flow`）；**Gate**（`AC-FLOW-09` 断言只取平铺 `current_acr`/`target_acr`，**不得**断言 `details.flow` 存在）；**Nova / Vue**（客户端在该场景**不得**据此调 `/auth/challenge`，改走"提示去某个业务系统完成阶梯"）。
+- **与既有条目的关系**：`AC-DP-09`（**有** client 上下文的数据面，`acceptance-criteria.md:185`）仍然**带** `details.flow` —— 本条只裁无上下文那一类，两者不冲突；本条不改 D7/CH-2 的 Descriptor 字段，也不改 `AC-DP-09`，与 D16② 不冲突。
+- **验收标准**：①判据面——`AC-FLOW-09`（`acceptance-criteria.md:140`，原文本就不含 `details`）按平铺字段断言即可，`acceptance-criteria.md` **一字不动**、账目数字零变化；本条**不进 CH**（对外契约面：不新增/不改任何 wire 字段，只是"不给"）。②本条自身的 PR 面——纯文档改动：`git diff --name-only origin/main...HEAD` **只有 `docs/decisions.md`**，不动代码 / `migrations/` / `go.mod` / `package.json`（D23② 追认悬而未决），三闸照常全绿。
+- **待裁决依赖**：**无外部依赖**——不依赖 #51 的 alg 二选一、不依赖 R12/R13（R13 裁的是 `steps[i].challenge_id` 的无值形态，键不同、已裁）；**唯一待办 = spencer 对本条的拍板**（见上方状态行）。
+
+---
+
 ## D19 概念名 vs 物理列：`disabled_factors` 的权威落点 = `login_policies`（2026-11-11，实现与判据不变，只登记措辞）
 
 > **触发**：Spec 实读基线时发现**既有文本冲突**——`接口清单:211`（`GET /authorize/flow` 响应要点）写「`disabled_factors` 来自 `clients` 的"禁用因子"」，而数据模型的 DDL 把该列放在 `login_policies`（`数据模型:770`）。**本条只登记权威判定与影响面：不改基线正文、不改代码、不动判据、不动账目。**（编号说明：**D18** 由 draft PR #72「无 client 上下文时 `ACR_INSUFFICIENT` 不带 `details.flow`」占用、待 spencer 拍板，本条顺延为 **D19**，不重排、不占 D18。）
