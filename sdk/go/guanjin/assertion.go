@@ -1,6 +1,7 @@
 package guanjin
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -40,7 +41,8 @@ func NewVerifier(cfg Config, jwks *JwksClient) *Verifier {
 //
 // 只做「签名是否来自平台」：claim 的业务校验在 ValidateClaims 里（分开是为了
 // 让「篡改令牌仍 401」这条反向断言能单独测到——验签必须在剥离之前发生）。
-func (v *Verifier) Verify(raw string) (*Claims, error) {
+func (v *Verifier) Verify(ctx context.Context, raw string) (*Claims, error) {
+	_ = ctx // 预留：超时/取消贯穿验签链路（M2 冻结签名 `Verify(ctx, raw)`；当前实现无外呼）
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return nil, NewTokenInvalid("缺少内部断言", nil)

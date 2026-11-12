@@ -183,3 +183,23 @@ func TestNewFailsWhenRedisConfiguredWithoutClient(t *testing.T) {
 		t.Fatal("replay-store=redis 没有 Redis 客户端时必须启动失败")
 	}
 }
+
+// TestStripHeaderExportedFace 钉住 GJ-CAP-08 的对外面（契约 §2.1 Go 列 `stripHeader(r, name)`）：
+// 大小写不敏感、返回**新** request、原请求也删（防外层日志中间件读到）。
+// 注意它只是 D10 第 ⑤ 步的实现暴露——**不能**替代 Middleware 单独使用（"验签前剥离"会被 AC-SDK-08 判红）。
+func TestStripHeaderExportedFace(t *testing.T) {
+	r := httptest.NewRequest(http.MethodGet, "http://biz.example/orders", nil)
+	r.Header.Set("X-GuanJin-Assertion", "tok")
+	r.Header.Set("x-guanjin-assertion", "tok2") // 非规范大小写的伪造头
+	r.Header.Set("Authorization", "Bearer keep-me")
+	out := StripHeader(r, "X-GuanJin-Assertion")
+	if out == r {
+		t.Fatalf("必须返回新的 *http.Request（替换视图，不是原地改）")
+	}
+	if out.Header.Get("X-GuanJin-Assertion") != "" || r.Header.Get("X-GuanJin-Assertion") != "" {
+		t.Fatalf("新视图与原请求都必须取不到断言头")
+	}
+	if out.Header.Get("Authorization") != "Bearer keep-me" || r.Header.Get("Authorization") != "Bearer keep-me" {
+		t.Fatalf("其它头不得被误删")
+	}
+}

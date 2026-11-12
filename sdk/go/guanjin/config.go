@@ -594,7 +594,48 @@ func (c Config) Validate(env Env) error {
 		return fmt.Errorf("%w: 键 %q 只允许 %q（C-2；旧值 /api/v1/jwks 全库不存在），得到 %q",
 			ErrConfig, KeyGatewayJwksURI, JwksPath, ju.Path)
 	}
+	// 同源校验（`notes/sdk-jwks-uri-同源校验-2026-11-10.md`，与 Java `GuanjinConfigValidator.sameOrigin`
+	// 同一形态）：`scheme + host + port` 三者一致（port 按 scheme 默认值归一），跨域 = 换信任源 =
+	// **启动失败**。基线本已禁止跨域/第三方地址，这里只是把"已禁止"变成可执行（加固，不进 CH）；
+	// **不存在任何开关**（`allow-cross-origin` 之类一律不许出现——那是生产后门）。
+	if !sameOrigin(u, ju) {
+		return fmt.Errorf("%w: 键 %q 必须与 %q 同源（跨域地址 = 换信任源，需 ADR）：%q vs %q",
+			ErrConfig, KeyGatewayJwksURI, KeyPlatformBaseURL, uri, c.Platform.BaseURL)
+	}
 	return nil
+}
+
+// sameOrigin 比较 scheme + host + port（port 按 scheme 的默认值归一：http→80、https→443；
+// host 大小写不敏感）。与 Java `sameOrigin(URI, URI)` 逐条同形（契约 §4.1 三语言同语义）。
+func sameOrigin(a, b *url.URL) bool {
+	return lower(a.Scheme) == lower(b.Scheme) &&
+		lower(hostOf(a)) == lower(hostOf(b)) &&
+		effectivePort(a) == effectivePort(b)
+}
+
+func lower(s string) string { return strings.ToLower(s) }
+
+func hostOf(u *url.URL) string {
+	if u.Hostname() == "" {
+		return ""
+	}
+	return u.Hostname()
+}
+
+func effectivePort(u *url.URL) int {
+	if p := u.Port(); p != "" {
+		n, err := strconv.Atoi(p)
+		if err != nil || n <= 0 {
+			return -1 // 非法端口：调用方已在前面的解析校验里挡掉，这里兜底为"不等"
+		}
+		return n
+	}
+	switch strings.ToLower(u.Scheme) {
+	case "https":
+		return 443
+	default:
+		return 80
+	}
 }
 
 // JwksURI 返回生效的 JWKS 地址：未显式配置时按契约 #12 由 base-url 派生。

@@ -1,6 +1,7 @@
 package guanjin
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -19,7 +20,7 @@ func TestVerifyAndValidateClaimsHappyPath(t *testing.T) {
 	v := NewVerifier(cfg, NewJwksClient(cfg, nil))
 
 	raw := signAssertion(t, priv, "k1", claims(time.Now().Unix()))
-	c, err := v.Verify(raw)
+	c, err := v.Verify(context.Background(), raw)
 	if err != nil {
 		t.Fatalf("验签应通过：%v", err)
 	}
@@ -50,7 +51,7 @@ func TestVerifyRejectsTamperedAndBadAlg(t *testing.T) {
 	} else {
 		b[i+1] = 'A'
 	}
-	_, err := v.Verify(string(b))
+	_, err := v.Verify(context.Background(), string(b))
 	var ge *Error
 	if !errors.As(err, &ge) || ge.Code != CodeTokenInvalid {
 		t.Fatalf("篡改令牌应为 TOKEN_INVALID，实得 %v", err)
@@ -58,12 +59,12 @@ func TestVerifyRejectsTamperedAndBadAlg(t *testing.T) {
 
 	// alg=none → 拒绝（不做算法协商降级）
 	hb, _ := json.Marshal(map[string]any{"alg": "none", "kid": "k1"})
-	if _, err := v.Verify(encodeSeg(hb) + "." + encodeSeg([]byte(`{"sub":"x"}`)) + "."); err == nil {
+	if _, err := v.Verify(context.Background(), encodeSeg(hb)+"."+encodeSeg([]byte(`{"sub":"x"}`))+"."); err == nil {
 		t.Fatal("alg=none 必须拒绝")
 	}
 	// 缺 kid
 	hb2, _ := json.Marshal(map[string]any{"alg": SigningAlg})
-	if _, err := v.Verify(encodeSeg(hb2) + "." + encodeSeg([]byte(`{}`)) + "."); err == nil {
+	if _, err := v.Verify(context.Background(), encodeSeg(hb2)+"."+encodeSeg([]byte(`{}`))+"."); err == nil {
 		t.Fatal("缺 kid 必须拒绝")
 	}
 }
@@ -85,7 +86,7 @@ func TestVerifyWithoutCacheIsKeyUnavailable(t *testing.T) {
 	defer bad.Close()
 	cfg := testConfig(t, bad.URL)
 	v := NewVerifier(cfg, NewJwksClient(cfg, nil))
-	_, err := v.Verify(signAssertion(t, priv, "k1", claims(time.Now().Unix())))
+	_, err := v.Verify(context.Background(), signAssertion(t, priv, "k1", claims(time.Now().Unix())))
 	var ge *Error
 	if !errors.As(err, &ge) || ge.Code != CodeKeyUnavailable {
 		t.Fatalf("应为 KEY_UNAVAILABLE（AC-SDK-05 / AC-FC-04），实得 %v", err)
@@ -110,7 +111,7 @@ func TestVerifyUnknownKidForceRefresh(t *testing.T) {
 	cfg := testConfig(t, srv.URL)
 	v := NewVerifier(cfg, NewJwksClient(cfg, nil))
 
-	if _, err := v.Verify(signAssertion(t, priv2, "k2", claims(time.Now().Unix()))); err != nil {
+	if _, err := v.Verify(context.Background(), signAssertion(t, priv2, "k2", claims(time.Now().Unix()))); err != nil {
 		t.Fatalf("未知 kid 强刷后应验签通过（GJ-CAP-04）：%v", err)
 	}
 	if calls < 2 {
@@ -136,7 +137,7 @@ func TestValidateClaimsRejectsBadClaims(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			m := claims(now)
 			mutate(m)
-			c, err := v.Verify(signAssertion(t, priv, "k1", m))
+			c, err := v.Verify(context.Background(), signAssertion(t, priv, "k1", m))
 			if err != nil {
 				t.Fatalf("签名本身有效，验签应通过：%v", err)
 			}

@@ -2,6 +2,7 @@ package guanjin
 
 import (
 	"errors"
+	"strings"
 	"testing"
 )
 
@@ -186,4 +187,40 @@ func twoDigits(n int) string {
 		return "0" + string(rune('0'+n))
 	}
 	return string(rune('0'+n/10)) + string(rune('0'+n%10))
+}
+
+// TestConfigRejectsCrossOriginJwksURI 落实 `notes/sdk-jwks-uri-同源校验-2026-11-10.md`
+// （挂在 AC-SDK-04 下举证）：`guanjin.gateway.jwks-uri` 与 `guanjin.platform.base-url`
+// **不同源（scheme/host/port 任一不一致）→ 启动失败**；port 按 scheme 默认值归一
+// （http→80、https→443）；路径部分不参与同源判定。与 Java `GuanjinConfigValidator.sameOrigin`
+// 同一形态（契约 §4.1）。变异自证：删掉 Validate 里的 sameOrigin 分支 → 下面三条全变绿。
+func TestConfigRejectsCrossOriginJwksURI(t *testing.T) {
+	mk := func(base, uri string) Config {
+		cfg := DefaultConfig()
+		cfg.Platform.BaseURL = base
+		cfg.Client.ID = "order-service"
+		cfg.Client.HMACSecret = "test-secret"
+		cfg.Gateway.JwksURI = uri
+		return cfg
+	}
+	bad := []struct{ name, base, uri string }{
+		{"跨域主机", "https://iam.example.com", "https://evil.example.com/.well-known/jwks.json"},
+		{"端口不同", "https://iam.example.com", "https://iam.example.com:8443/.well-known/jwks.json"},
+		{"scheme 不同", "https://iam.example.com", "http://iam.example.com/.well-known/jwks.json"},
+		{"base-url 本身非法（无 scheme）", "iam.example.com", "https://iam.example.com/.well-known/jwks.json"},
+	}
+	for _, c := range bad {
+		err := mk(c.base, c.uri).Validate(EnvProd)
+		if err == nil {
+			t.Fatalf("%s：跨域/非法 jwks-uri 必须启动失败（换信任源 = 需 ADR，无开关）", c.name)
+		}
+		if !strings.Contains(err.Error(), "同源") && c.name != "base-url 本身非法（无 scheme）" {
+			t.Fatalf("%s：错误信息必须点名「同源」（可排障），实得 %v", c.name, err)
+		}
+	}
+
+	// 同源正例：不显式配端口（https 默认 443 归一）→ 与 base-url 同源，应通过
+	if err := mk("https://iam.example.com", "https://iam.example.com/.well-known/jwks.json").Validate(EnvProd); err != nil {
+		t.Fatalf("scheme+host+port 一致（默认端口归一后）必须通过：%v", err)
+	}
 }

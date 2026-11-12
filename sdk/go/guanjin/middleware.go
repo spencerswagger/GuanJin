@@ -123,7 +123,7 @@ func (s *SDK) Middleware(next http.Handler) http.Handler {
 		raw := r.Header.Get(s.cfg.Gateway.AssertionHeader)
 
 		// ② 验签
-		claims, err := s.verifier.Verify(raw)
+		claims, err := s.verifier.Verify(r.Context(), raw)
 		if err != nil {
 			s.reject(w, r, err)
 			return
@@ -158,6 +158,15 @@ func (s *SDK) Middleware(next http.Handler) http.Handler {
 		// ⑥ handler
 		next.ServeHTTP(w, clean)
 	})
+}
+
+// StripHeader 是 GJ-CAP-08 的**对外面**（契约 §2.1 Go 列 `stripHeader(r, name)`，大小写按 Go
+// 导出惯例）：返回**新的** `*http.Request`——头表重建、指定头（大小写不敏感）去掉；同时把
+// 原请求上的该头也删掉（防御性：外层日志中间件若在之后读取原 `r`，同样拿不到）。
+// 业务方/网关适配层**不得**拿它替代 Middleware（D10：剥离发生在验签之后，单独调用 =
+// "验签前剥离"，判据 AC-SDK-08 会红）；它只是把 ⑤ 步的实现暴露出来供宿主组合与测试。
+func StripHeader(r *http.Request, header string) *http.Request {
+	return replaceView(r, header)
 }
 
 // replaceView 返回**新的** `*http.Request`：头表重建、断言头（大小写不敏感）去掉。
