@@ -13,7 +13,13 @@ name: ci
 #     并比对 `INFO stats.total_commands_processed` 的增量；任一不满足即判红（真 Redis 未被使用 = 未验证 = 红）。
 #   - migrate CLI 版本**单一来源** = Makefile 的 `MIGRATE_VERSION`（v4.19.1）：job 里跑 `make migrate-tool`
 #     装到 `./bin`，迁移命令走 `make migrate-up`，顺带把「PATH 找不到 migrate → 回退 ./bin/migrate」这条回退路径在 CI 里验到。
-#   - **合并门禁包含 integration**：`go` / `race` / `web` / `integration` / `sdk` 五个 job 全绿才许合入 main。
+#   - **合并门禁包含 integration**：`go` / `race` / `web` / `integration` / `sdk` / `vuln` 六个 job 全绿才许合入 main。
+#   - **vuln 是 AC-ENG-07 的依赖漏洞门禁，零网络**：数据是入库的离线快照 `docs/qa/vuln-advisories.tsv`
+#     （生产者 `scripts/vuln-snapshot-refresh.py`，需要外网、**只在有网环境手动跑**），
+#     判定引擎 `scripts/vuln-gate.py` 是纯 python3 标准库 → 本 job **不装包、不拉库、不访问外网**。
+#     不用 govulncheck/trivy 现跑的原因：它们要 `vuln.go.dev` / `ghcr.io`（本仓 runner 解析不到外网源，
+#     见 integration job 的 apt 事故），跑不起来就跳过 = 把门禁关掉。fail-closed 不看"有没有跑"，
+#     而是看"数据是否新鲜 + 命中是否为空"：快照过期、白名单过期/失效、依赖版本不可解析 → 全判红。
 #   - **sdk 是 Java 8 双门禁**（docs/sdk-contract.md §5.1.1）：JDK 17 走 release=8 + **真实 JDK 8** 各跑一遍；
 #     `jti` 防重放**必须连真 Redis**（不许 mock），有 SKIP 即红。
 
@@ -283,6 +289,36 @@ jobs:
           COVERAGE_TAGS=integration COVERAGE_PROFILE=integration-cover.out \
             COVERAGE_EXTRA_PROFILE=audit-serial-cover.out COVERAGE_MIN=60 \
             ./scripts/coverage-gate.sh | tee integration-coverage.txt
+
+  vuln:
+    # AC-ENG-07：依赖漏洞门禁（**零网络**）。判据原文「govulncheck / trivy 必须真跑，发现 HIGH/CRITICAL 判红」；
+    # 本 job 用「离线快照 + 本地判定」实现同一判据（口径与理由见 ci.yml 顶部与 docs/qa/vuln-scan.md）：
+    #   - 数据：docs/qa/vuln-advisories.tsv（OSV 快照，PR 里可评审；`generated_at` 过期即红）
+    #   - 判定：scripts/vuln-gate.py（纯 python3 标准库；Go 命中即红、npm HIGH/CRITICAL 红）
+    #   - 本 job **不装任何工具、不访问外网**（python3 是 runner 镜像自带）
+    # 刻意**不用** actions/setup-go：本 job 不需要 Go 工具链，也就不需要下载工具链。
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: python3 版本（证据行：引擎只依赖标准库）
+        run: python3 -VV
+      - name: 依赖漏洞门禁（fail-closed；日志即合入证据）
+        # 断言不是"脚本退出 0"就够：必须看到**扫描统计行**（证明真扫了 N 个坐标）
+        # 与 **sdk/java 未覆盖显式标注**（D23③：不许静默跳过）。
+        run: |
+          set -euo pipefail
+          ./scripts/check-vuln.sh | tee vuln-gate.log
+          grep -q '^\[OK\] 依赖漏洞门禁通过：扫描 [0-9][0-9]* 个依赖坐标' vuln-gate.log \
+            || { echo "[FAIL] 缺扫描统计行 → 闸没真跑 = 红"; exit 1; }
+          grep -q '^\[UNCOVERED\] sdk/java' vuln-gate.log \
+            || { echo "[FAIL] 缺 sdk/java 未覆盖的显式标注（D23③）= 红"; exit 1; }
+      - name: 正控/负控（临时夹具注入已知漏洞依赖 → 必须判红并点名 文件:行号）
+        # 脚本存在 ≠ 门禁存在：14 项自检覆盖"判红/点位/版本敏感/白名单三态/快照三态/解析失败"。
+        run: |
+          set -euo pipefail
+          ./scripts/check-vuln.sh --self-test | tee vuln-selftest.log
+          grep -q '^\[OK\] 漏洞门禁自检 14 项全过' vuln-selftest.log \
+            || { echo "[FAIL] 自检项数不对（14 项必须全部真跑过）= 红"; exit 1; }
 
   sdk:
     # Java 8 SDK（sdk/java）：单测 + **真 Redis** 集成用例 + Java 8 机械门禁。
