@@ -308,8 +308,9 @@ jobs:
         run: |
           set -euo pipefail
           ./scripts/check-vuln.sh | tee vuln-gate.log
-          grep -q '^\[OK\] 依赖漏洞门禁通过：扫描 [0-9][0-9]* 个依赖坐标' vuln-gate.log \
-            || { echo "[FAIL] 缺扫描统计行 → 闸没真跑 = 红"; exit 1; }
+          # 分生态非零：只判"扫描 N 个坐标"会被"某生态 0 个坐标"蒙过去（Go 18/npm 0 也算扫描过）。
+          grep -qE '^\[OK\] 依赖漏洞门禁通过：扫描 [0-9]+ 个依赖坐标（Go [1-9][0-9]* / npm [1-9][0-9]*）' vuln-gate.log \
+            || { echo "[FAIL] 两个生态必须都扫到坐标，否则该生态等于没扫 = 红"; cat vuln-gate.log; exit 1; }
           grep -q '^\[UNCOVERED\] sdk/java' vuln-gate.log \
             || { echo "[FAIL] 缺 sdk/java 未覆盖的显式标注（D23③）= 红"; exit 1; }
       - name: 正控/负控（临时夹具注入已知漏洞依赖 → 必须判红并点名 文件:行号）
@@ -317,8 +318,11 @@ jobs:
         run: |
           set -euo pipefail
           ./scripts/check-vuln.sh --self-test | tee vuln-selftest.log
-          grep -q '^\[OK\] 漏洞门禁自检 14 项全过' vuln-selftest.log \
-            || { echo "[FAIL] 自检项数不对（14 项必须全部真跑过）= 红"; exit 1; }
+          # 自洽校验：逐项 OK 行数必须等于汇总行声明的项数，且不得少于 20 项（防"把用例删掉让自己变绿"）。
+          ok_n=$(grep -c '^  \[OK\] self-test/' vuln-selftest.log || true)
+          [ "$ok_n" -ge 20 ] || { echo "[FAIL] 自检只跑了 $ok_n 项（<20）：有人删过用例 = 红"; exit 1; }
+          grep -qE "^\[OK\] 漏洞门禁自检 ${ok_n} 项全过" vuln-selftest.log \
+            || { echo "[FAIL] 汇总行声明的项数（${ok_n} 项的 OK 行）对不上 = 红"; exit 1; }
 
   sdk:
     # Java 8 SDK（sdk/java）：单测 + **真 Redis** 集成用例 + Java 8 机械门禁。
@@ -380,5 +384,7 @@ jobs:
         with:
           node-version: '22'
       - run: npm ci --no-audit --no-fund
-      - name: vue-tsc --noEmit（只读）
-        run: npx vue-tsc --noEmit
+      - name: vue-tsc --noEmit + 真构建（只读判定 + vite build）
+        # `npm run build` = `vue-tsc --noEmit && vite build`：只跑类型检查兜不住 vite/esbuild 的
+        # 构建器升级（D23② 的"npm run build（web 自动兜）"此前没兜——CI 里从没有 vite build）。
+        run: npm run build

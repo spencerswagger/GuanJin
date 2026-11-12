@@ -684,6 +684,28 @@
 
 ---
 
+## D28 `AC-ENG-07` 的实现形态变更：CI **零网络**，改「离线快照 + 本地判定」
+
+> **触发**：#98 的依赖漏洞门禁必须在零网络的 CI 里落地（`#125` 已定 runner 解析不到外网源：`apt-get` 退避 4 分钟后 `exit 100`、后续 13 个 step 全 skipped），而 `#98` 原方案在 CI 里**五处联网**（`go install govulncheck`、`curl` trivy、`vuln.go.dev`、`ghcr.io` 的 trivy-db、`--self-test` 里的 `go mod tidy`）→ 跑不起来，而"跑不起来就跳过"等于关掉门禁。**#98 已关闭，由 #127 取代。**
+>
+> **状态**：判定口径**不变**（判据原文 `acceptance-criteria.md:281` 不动）；变的是**手段**。本条登记手段变更，供 Gate 记账引用。**属实现口径，不入 CH**（不涉对外契约 / 表结构 / 表名 / 端点）。
+
+- **① 手段**：CI 不再现跑 `govulncheck`/`trivy`，改为
+  「**数据离线入库**（`docs/qa/vuln-advisories.tsv`，OSV 快照，PR 里逐行可评审）+ **本地纯标准库 python3 判定**（`scripts/vuln-gate.py`）」；
+  快照由 `scripts/vuln-snapshot-refresh.py` 在**有网环境人工/定期**生产（CI 里不跑），
+  `generated_at` 超过 **90 天**即判红（"库旧等于没扫"没有放松），并带 `coords_sha256` 指纹——
+  **新增/换掉依赖而没重刷快照 → 判红**（否则新坐标从没被查过 = 假绿）。
+- **② `AC-ENG-07` 的 PASS 口径（钉住，Gate 照此记账）**：`go.mod` + `web/package-lock.json` **两个生态**
+  无未白名单的阻断级漏洞，**且** `sdk/java` 的未覆盖被**显式打印**（`[UNCOVERED]`，D23③ 第一段）。
+  账目里**不得**写成"全量覆盖"。
+- **③ D23③ 第二段的手段随之收窄**：原文写的是「`trivy sbom --severity HIGH,CRITICAL --exit-code 1`」，
+  而 trivy 自己要 `ghcr.io` 的库、零网络下同样跑不起来 → 改为「**Nova 产 CycloneDX `bom.json` → 同一判定引擎消费**」。
+  **期限与逾期后果不变**（2026-12-10 前未上线则账目降级为"Java 侧未覆盖"）。
+- **④ 分级口径**（沿用 #98，未降阈值）：Go 侧**命中即红**（官方 OSV 不带 CVSS，离线无符号级可达性 → 坐标级判定是**超集**）；
+  npm 侧照判据原文 **HIGH/CRITICAL** 阻断，`severity` 缺失（`-`，如 `MAL-*` 恶意包）**一律阻断**（缺级别 ≠ 低危）。
+
+---
+
 ## 契约变更清单（对外可见）—— 状态：**CH-1~CH-5 已追认（经 hugo 追认，2026-11-02）；CH-6 为内部口径；CH-7 已裁定；CH-8 待追认（2026-11-04）；CH-9 待追认（2026-11-10）**
 
 > 本表只收**对外可见**的变更（影响业务系统、SDK、前端或对外错误码的）。基线 `/docs/baseline/` 一个字不改，这些变更以本表为准并在**下版契约文档**（OpenAPI + `sdk-contract.md` + 页面规格口径）一次性落盘；落盘时机 = 全部 M1 判据回填后、M1 编码前。**本表状态：CH-1~CH-5 = 已追认（经 hugo 追认，2026-11-02，记录法见 P8）；CH-6 = 内部口径、无需追认；CH-7 = 已裁定；CH-8 = 待追认（2026-11-04）；CH-9 = 待追认（2026-11-10，SLO 通知）。** 后续新增变更一律按 **P8②** 追加行（编号只增不重排）；作废条目改「已撤回」并保留原行。
@@ -787,6 +809,7 @@
 | `D19` | §**D19** | `disabled_factors` 的物理落点 = `login_policies`（client 级 `client_override`、回落 `tier_default`），`clients` 无此列；`接口清单:211`/`页面规格:533` 的"来自 clients"是笔误、只改措辞不进 CH；**有效禁用集 = 平台级 `runtime_config.factors.disabled`（唯一聚合键，jsonb 数组，见 D22）∪ client 级，互不覆盖** |
 | `D27` | §**D27** | 归档删分区**必须先写段锚**（`audit.chain.segment.<YYYYMM>` = 首+尾，载体 = `runtime_config` jsonb `{head,tail}`、**不新表**、不进 `startupSpecs`）且与 `DROP PARTITION` **同一事务**；校验回退 `TailTagBefore` → `segment.tail` → `anchor[M-1]`，都没有 = 不可判（`unverified` 不判过不判 broken）；**M1 不实现、挂 R9** |
 | `D25` | §**D25** | SDK「非配置命名空间」= **保留命名空间 + 逐条封闭枚举（27 名，表见正文）**，**禁前缀/后缀通配**；清单内不报错也不可读（读了即违约）、清单外仍启动失败；新增平台 env 必须同 PR 加一行；发布说明必须写「升级后启动失败：报错含键名 + 该键不属于 SDK 配置命名空间」；**回归 §3.6 原文、不进 CH**；基线正文不动（`DATABASE_URL` vs `DB_DSN` 等差异已登记待 Spec 定） |
+| `D28` | §**D28** | `AC-ENG-07` 的实现形态：CI **零网络** → 改「离线 OSV 快照（90 天过期即红）+ 本地 python3 判定」；**PASS 口径 = `go.mod` + `web/package-lock.json` 两生态 + `sdk/java` 显式 `[UNCOVERED]`，不得写"全量覆盖"**；D23③ 第二段由 `trivy sbom` 改为「Nova 产 CycloneDX → 同一引擎消费」（期限不变）；Go 命中即红、npm HIGH/CRITICAL、缺级别一律阻断 |
 | `D26` | §**D26** | 测试/CI/本地开关整族改名 `GUANJIN_TEST_*` → **`GJTEST_*`**（4 名 + 同族 3 名：`DEV_DSN`/`ALLOW_TEST_CLEANUP`/`AUDIT_NO_ISOLATION`），**一次性硬切、无别名无双读**，同 PR 内改代码→CI→文档；**不阻塞 #51**（推荐先合改名）；不进 CH |
 | `D24` | §**D24** | §5.4 错误分层：**解码层**→`INVALID_REQUEST`、**缺字段层**→`MISSING_PARAMETER`（可空布尔用 `*bool`，禁"零值即未给"）、**值语义层**→`INVALID_PARAMETER`（有专职码用专职码）；顺序固定 **401/403 → 解码 → 缺字段 → 值 → 业务语义**，400 不得先于 401/403，不得为消灭 400 放宽 `DisallowUnknownFields`；不新增码、不进 CH |
 | `D23①②③` | §**D23** | `AC-ENG-07` 三笔账：①**升 Go 1.26**（`go.mod` 是锁定权威、基线版本是建议值）+ **stdlib 一律不得进白名单**（只能升）；②**vue 3.5.42+ 升**（不留豁免，Vue 出回归）；③`sdk/java` **显式打 `[UNCOVERED]`**（立即）+ 一个迭代内改**离线 SBOM**（Nova 产 / Gate 判，2026-12-10 前），逾期则账目降级 |

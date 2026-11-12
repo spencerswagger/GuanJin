@@ -31,6 +31,7 @@ import datetime
 import json
 import os
 import re
+import hashlib
 import shutil
 import sys
 import tempfile
@@ -40,6 +41,7 @@ SNAPSHOT_REL = os.path.join("docs", "qa", "vuln-advisories.tsv")
 ALLOWLIST_REL = os.path.join("docs", "qa", "vuln-allowlist.tsv")
 LOCK_REL = os.path.join("web", "package-lock.json")
 MAX_AGE_DAYS_DEFAULT = 90
+MAX_ALLOW_DAYS = 180          # 白名单到期日上限（再远就是"永久豁免"）
 BLOCK_NPM = {"HIGH", "CRITICAL"}
 
 GO_REQUIRE = re.compile(r"^\s*([\w.\-~/]+)\s+(v[0-9][^\s]*)")
@@ -214,29 +216,53 @@ def read_deps(root):
         # 与 JSON 权威解析交叉核对：文本扫描漏包 = 覆盖不全 = 红
         with open(lock, encoding="utf-8") as fh:
             data = json.load(fh)
+        version = data.get("lockfileVersion")
+        if not isinstance(version, int) or version < 2:
+            # lockfileVersion 1 的条目在 `dependencies` 而不是 `packages`：本闸读不到 → 不能算"扫过了"。
+            errors.append("%s：lockfileVersion=%r < 2，条目不在 `packages` 段 → 读不到坐标（未验证 = 红）。"
+                          "用 npm>=7 重新生成锁文件" % (LOCK_REL, version))
         expect = sum(1 for k in (data.get("packages") or {}) if k.startswith("node_modules/"))
         if found != expect:
             errors.append("%s：文本扫描到 %d 个包，JSON 里有 %d 个 → 解析不完整（未验证 = 红）"
                           % (LOCK_REL, found, expect))
+        if expect == 0:
+            errors.append("%s：`packages` 段里 0 个依赖 → 没有坐标可判（扫描面为空 = 未验证 = 红）"
+                          % LOCK_REL)
+    for eco in ("Go", "npm"):
+        if not [d for d in deps if d[0] == eco]:
+            errors.append("生态 %s 一个依赖坐标都没解析到（文件缺失/为空/结构变了）→ 未验证 = 红" % eco)
     return deps, uncovered, errors
 
 
 # ---------------------------------------------------------------- 数据加载
+def coords_fingerprint(deps):
+    """依赖**包名**集合的指纹（不含版本）。
+
+    为什么不含版本：OSV 是按包名查、区间在本地算，单纯升版本不需要重刷快照；
+    但**新增/换掉一个包名**就必须重刷，否则这个坐标从没被查过（= 假绿）。
+    """
+    names = sorted({"%s:%s" % (eco, name) for eco, name, _v, _rel, _ln in deps})
+    return hashlib.sha256("\n".join(names).encode("utf-8")).hexdigest()
+
+
 def load_snapshot(path):
-    """返回 (rows, generated_at, errors)。"""
+    """返回 (rows, header, errors)；header: {generated_at, coords_sha256, dropped}。"""
     errors, rows = [], []
+    header = {"generated_at": None, "coords_sha256": None, "dropped": None}
     if not os.path.exists(path):
-        return [], None, ["快照不存在：%s（没有数据就没有门禁）" % path]
-    generated = None
+        return [], header, ["快照不存在：%s（没有数据就没有门禁）" % path]
     with open(path, encoding="utf-8") as fh:
         for lineno, raw in enumerate(fh, 1):
             line = raw.rstrip("\n")
             if not line.strip():
                 continue
             if line.lstrip().startswith("#"):
-                m = re.match(r"^#\s*generated_at:\s*(\d{4}-\d{2}-\d{2})\s*$", line)
-                if m:
-                    generated = m.group(1)
+                for key, pat in (("generated_at", r"^#\s*generated_at:\s*(\d{4}-\d{2}-\d{2})\s*$"),
+                                 ("coords_sha256", r"^#\s*coords_sha256:\s*([0-9a-f]{64})\s*$"),
+                                 ("dropped", r"^#\s*dropped:\s*(\d+)\s*$")):
+                    m = re.match(pat, line)
+                    if m:
+                        header[key] = m.group(1)
                 continue
             f = line.split("\t")
             if len(f) < 5:
@@ -253,7 +279,7 @@ def load_snapshot(path):
                 continue
             rows.append({"id": vid, "eco": eco, "module": module, "expr": expr,
                          "conds": conds, "sev": sev, "line": lineno})
-    return rows, generated, errors
+    return rows, header, errors
 
 
 def load_allowlist(path):
@@ -280,16 +306,30 @@ def load_allowlist(path):
             except ValueError:
                 errors.append("白名单第 %d 行到期日不是 YYYY-MM-DD：%r" % (lineno, expires))
                 continue
+            if (exp - datetime.date.today()).days > MAX_ALLOW_DAYS:
+                errors.append("白名单第 %d 行到期日过远（%s，上限 %d 天）：长期豁免等于没有到期（D23① 的 30 天上限精神）"
+                              % (lineno, expires, MAX_ALLOW_DAYS))
+                continue
             entries[(vid, eco, module)] = (reason, exp)
     return entries, errors
 
 
 # ---------------------------------------------------------------- 判定
 def blocking(row):
-    """该命中行是否阻断。Go 一律阻断；npm 只在 HIGH/CRITICAL 阻断。"""
+    """该命中行是否阻断。
+
+    Go：一律阻断（官方 OSV 不带 CVSS，坐标级命中即红）。
+    npm：HIGH/CRITICAL 阻断；MODERATE/LOW 只提示；**缺少级别（`-`）或未知级别一律阻断**
+    （缺级别 ≠ 低危：`MAL-*` 恶意包公告常常没有 severity，放行等于给它开绿灯）。
+    """
     if row["eco"] == "Go":
         return True
-    return row["sev"].upper() in BLOCK_NPM
+    if row["id"].startswith("MAL-"):
+        return True
+    sev = row["sev"].upper()
+    if sev in BLOCK_NPM:
+        return True
+    return sev not in ("MODERATE", "LOW", "MEDIUM")
 
 
 def evaluate(root, snapshot, allowlist, max_age_days, today=None, out=sys.stdout):
@@ -299,7 +339,7 @@ def evaluate(root, snapshot, allowlist, max_age_days, today=None, out=sys.stdout
     fails = []
 
     deps, uncovered, errors = read_deps(root)
-    rows, generated, snap_errors = load_snapshot(snapshot)
+    rows, header, snap_errors = load_snapshot(snapshot)
     entries, allow_errors = load_allowlist(allowlist)
     fails.extend(errors)
     fails.extend(snap_errors)
@@ -308,16 +348,40 @@ def evaluate(root, snapshot, allowlist, max_age_days, today=None, out=sys.stdout
     for u in uncovered:
         emit("[UNCOVERED] " + u)
 
+    # 数据面三条"没数据就算绿"的缝：一次判死（Owl II P0-1/P0-3）
+    if not rows:
+        fails.append("快照 0 行公告：没有数据 ≠ 没有漏洞（请重跑 scripts/vuln-snapshot-refresh.py）")
+    dep_ecos = {d[0] for d in deps}
+    have_ecos = {r["eco"] for r in rows}
+    for eco in sorted(dep_ecos - have_ecos):
+        fails.append("快照里没有任何 %s 侧公告，但依赖里有 %s 坐标 → 该生态等于没扫（未验证 = 红）"
+                     % (eco, eco))
+    if deps and header["coords_sha256"] is None:
+        fails.append("快照缺少 `# coords_sha256:` 头 → 无法判断快照是否覆盖当前依赖坐标（未验证 = 红）")
+    elif deps:
+        want = coords_fingerprint(deps)
+        if want != header["coords_sha256"]:
+            fails.append("快照与当前依赖坐标不一致（快照指纹 %s… ≠ 当前 %s…）：新增/换掉依赖后必须重跑 "
+                         "`python3 scripts/vuln-snapshot-refresh.py` 并提交 diff"
+                         % (header["coords_sha256"][:12], want[:12]))
+    if header["dropped"] not in (None, "0"):
+        fails.append("快照生成时有 %s 条区间因不可比较版本被丢弃（生产端已判红，见 refresh 输出）"
+                     % header["dropped"])
+
     # 快照新鲜度：库旧 = 没扫
     age = None
+    generated = header["generated_at"]
     if generated is None:
         fails.append("快照缺少 `# generated_at: YYYY-MM-DD` 头（无法判断数据新旧 = 未验证 = 红）")
     else:
+        gen_date = None
         try:
             gen_date = datetime.date.fromisoformat(generated)
         except ValueError:
             fails.append("快照 generated_at 不是 YYYY-MM-DD：%r" % generated)
-        else:
+        if gen_date is not None and gen_date > today:
+            fails.append("快照 generated_at（%s）在未来日期 → 手误的年份会让门禁放过好几年" % generated)
+        elif gen_date is not None:
             age = (today - gen_date).days
             if age > max_age_days:
                 fails.append("快照已 %d 天未更新（上限 %d 天）：请在有网环境跑 "
@@ -384,14 +448,23 @@ def evaluate(root, snapshot, allowlist, max_age_days, today=None, out=sys.stdout
 
 # ---------------------------------------------------------------- 自检（正控/负控）
 SNAP_HEADER = """# generated_at: {gen}
-# id\tecosystem\tmodule\taffected\tseverity\taliases\tsummary
+{extra_header}# id\tecosystem\tmodule\taffected\tseverity\taliases\tsummary
 """
 
 
-def _snapshot(dirpath, gen, extra=""):
+def _snapshot(dirpath, gen, extra="", fp="auto", gen_header=True):
+    """造一份快照夹具；默认把 `coords_sha256` 按**夹具当前依赖**算好（与生产者同源）。"""
+    header = ""
+    if gen_header:
+        header += "# generated_at: %s\n" % gen
+    if fp == "auto":
+        deps, _uncovered, _errors = read_deps(dirpath)
+        header += "# coords_sha256: %s\n" % coords_fingerprint(deps)
+    elif fp:
+        header += "# coords_sha256: %s\n" % fp
     path = os.path.join(dirpath, "snap.tsv")
     with open(path, "w", encoding="utf-8") as fh:
-        fh.write(SNAP_HEADER.format(gen=gen) + extra)
+        fh.write(SNAP_HEADER.format(gen=gen, extra_header=header) + extra)
     return path
 
 
@@ -404,18 +477,21 @@ def _allow(dirpath, lines=()):
     return path
 
 
-def _fixture(dirpath, gomod_requires, lock_packages=None):
+def _fixture(dirpath, gomod_requires, lock_packages=None, empty_lock=False, go_only=False):
     with open(os.path.join(dirpath, "go.mod"), "w", encoding="utf-8") as fh:
         fh.write("module probe\n\ngo 1.25.0\n\nrequire (\n")
         for mod, ver in gomod_requires:
             fh.write("\t%s %s // indirect\n" % (mod, ver))
         fh.write(")\n")
     os.makedirs(os.path.join(dirpath, "web"), exist_ok=True)
+    # 默认塞一个不会被任何夹具公告命中的 npm 包：让"npm 生态必须有坐标"这条 fail-closed
+    # 只在**故意**造空夹具时才触发（每个用例只测一件事）。
     pkgs = {}
-    for name, ver in (lock_packages or []):
+    pairs = [("typescript", "5.6.3")] if lock_packages is None else lock_packages
+    for name, ver in pairs:
         pkgs["node_modules/" + name] = {"version": ver}
     with open(os.path.join(dirpath, "web", "package-lock.json"), "w", encoding="utf-8") as fh:
-        json.dump({"name": "probe", "lockfileVersion": 3, "packages": pkgs}, fh, indent=2)
+        json.dump({"name": "probe", "lockfileVersion": 1 if empty_lock else 3, "packages": pkgs}, fh, indent=2)
     return dirpath
 
 
@@ -452,37 +528,41 @@ def self_test(out=sys.stdout):
         buf = stream.getvalue().splitlines()
         return rc, buf
 
+    # 每个夹具的依赖与快照必须**双生态齐全**（否则会被"某生态 0 公告"那条 fail-closed 判红，
+    # 那是另一个用例要测的事）。SNAP_BASE = 一条 Go + 一条 npm 公告，且都不命中默认夹具。
+    SNAP_BASE = GO_HIGH + NPM_HIGH
+
     # ① Go 侧 HIGH 命中 → 红，且点名 文件:行号 + 公告 + 坐标
     def c1(tmp):
         _fixture(tmp, [("golang.org/x/text", "v0.3.6")])
-        return run(tmp, _snapshot(tmp, gen, GO_HIGH), _allow(tmp))
+        return run(tmp, _snapshot(tmp, gen, SNAP_BASE), _allow(tmp))
     check("go/HIGH 命中判红并点名 go.mod:6", 1, c1,
           want_text=["[FAIL] go.mod:6 golang.org/x/text@v0.3.6", "GHSA-ppp9-7jff-5vj2"])
 
     # ② 同模块升到修复版 → 绿（证明是版本敏感，不是永远红）
     def c2(tmp):
         _fixture(tmp, [("golang.org/x/text", "v0.41.0")])
-        return run(tmp, _snapshot(tmp, gen, GO_HIGH), _allow(tmp))
+        return run(tmp, _snapshot(tmp, gen, SNAP_BASE), _allow(tmp))
     check("go/修复版判绿（版本敏感）", 0, c2, want_text=["[OK] 依赖漏洞门禁通过"])
 
     # ③ Go 侧 severity 为 `-`（官方 OSV 不带 CVSS）→ 仍然阻断（fail-closed）
     def c3(tmp):
         _fixture(tmp, [("golang.org/x/text", "v0.38.0")])
-        return run(tmp, _snapshot(tmp, gen, GO_NOSEV), _allow(tmp))
+        return run(tmp, _snapshot(tmp, gen, GO_NOSEV + NPM_HIGH), _allow(tmp))
     check("go/无 CVSS 也阻断（fail-closed）", 1, c3,
           want_text=["[FAIL] go.mod:6 golang.org/x/text@v0.38.0", "GO-2026-5970"])
 
     # ④ npm HIGH 命中 → 红，行号落在 package-lock.json 的 version 行
     def c4(tmp):
         _fixture(tmp, [("golang.org/x/text", "v0.41.0")], [("@vue/server-renderer", "3.5.13")])
-        return run(tmp, _snapshot(tmp, gen, NPM_HIGH), _allow(tmp))
+        return run(tmp, _snapshot(tmp, gen, SNAP_BASE), _allow(tmp))
     check("npm/HIGH 命中判红并点名 package-lock 行号", 1, c4,
           want_text=["[FAIL] web/package-lock.json:", "@vue/server-renderer@3.5.13", "GHSA-g2v6-rqmx-r4w6"])
 
     # ⑤ npm MODERATE → 只提示不阻断（判据原文阈值）
     def c5(tmp):
         _fixture(tmp, [("golang.org/x/text", "v0.41.0")], [("minimatch", "9.0.9")])
-        return run(tmp, _snapshot(tmp, gen, NPM_MOD), _allow(tmp))
+        return run(tmp, _snapshot(tmp, gen, GO_HIGH + NPM_MOD), _allow(tmp))
     check("npm/MODERATE 只打 INFO 不阻断", 0, c5,
           want_text=["[INFO] web/package-lock.json:", "仅提示 1"], forbid_text=["[FAIL]"])
 
@@ -491,14 +571,14 @@ def self_test(out=sys.stdout):
         _fixture(tmp, [("golang.org/x/text", "v0.3.6")])
         allow = _allow(tmp, ["GHSA-ppp9-7jff-5vj2\tGo\tgolang.org/x/text\t等 go1.26\t%s"
                              % (today + datetime.timedelta(days=30)).isoformat()])
-        return run(tmp, _snapshot(tmp, gen, GO_HIGH), allow)
+        return run(tmp, _snapshot(tmp, gen, SNAP_BASE), allow)
     check("白名单未过期 → 绿", 0, c6, want_text=["白名单内", "[OK]"])
 
     def c7(tmp):
         _fixture(tmp, [("golang.org/x/text", "v0.3.6")])
         allow = _allow(tmp, ["GHSA-ppp9-7jff-5vj2\tGo\tgolang.org/x/text\t过期了\t%s"
                              % (today - datetime.timedelta(days=1)).isoformat()])
-        return run(tmp, _snapshot(tmp, gen, GO_HIGH), allow)
+        return run(tmp, _snapshot(tmp, gen, SNAP_BASE), allow)
     check("白名单已过期 → 红", 1, c7, want_text=["白名单已过期"])
 
     # ⑦ 白名单条目不再命中 → 红（不许只增不减）
@@ -506,20 +586,20 @@ def self_test(out=sys.stdout):
         _fixture(tmp, [("golang.org/x/text", "v0.41.0")])
         allow = _allow(tmp, ["GHSA-ppp9-7jff-5vj2\tGo\tgolang.org/x/text\t早已修复\t%s"
                              % (today + datetime.timedelta(days=30)).isoformat()])
-        return run(tmp, _snapshot(tmp, gen, GO_HIGH), allow)
+        return run(tmp, _snapshot(tmp, gen, SNAP_BASE), allow)
     check("白名单条目不再命中 → 红", 1, c8, want_text=["白名单条目本次不再命中"])
 
     # ⑧ 快照过期 → 红
     def c9(tmp):
         _fixture(tmp, [("golang.org/x/text", "v0.41.0")])
-        return run(tmp, _snapshot(tmp, old, GO_HIGH), _allow(tmp))
+        return run(tmp, _snapshot(tmp, old, SNAP_BASE), _allow(tmp))
     check("快照过期 → 红", 1, c9, want_text=["天未更新"])
 
     # ⑨ 快照坏行 / 区间不可解析 → 红（数据坏了等于没扫）
     def c10(tmp):
         _fixture(tmp, [("golang.org/x/text", "v0.41.0")])
         bad = "GHSA-x\tGo\tgolang.org/x/text\t<nonsense\tHIGH\t-\tbad\n"
-        return run(tmp, _snapshot(tmp, gen, GO_HIGH + bad), _allow(tmp))
+        return run(tmp, _snapshot(tmp, gen, SNAP_BASE + bad), _allow(tmp))
     check("快照区间不可解析 → 红", 1, c10, want_text=["区间不可解析"])
 
     # ⑩ 缺快照 → 红（不是"没数据就算绿"）
@@ -531,22 +611,80 @@ def self_test(out=sys.stdout):
     # ⑪ go.mod 版本不可解析 → 红（未验证 = 红）
     def c12(tmp):
         _fixture(tmp, [("golang.org/x/text", "v9.7.0.1")])
-        return run(tmp, _snapshot(tmp, gen, GO_HIGH), _allow(tmp))
+        return run(tmp, _snapshot(tmp, gen, SNAP_BASE), _allow(tmp))
     check("依赖版本不可解析 → 红", 1, c12, want_text=["版本号不可解析"])
 
     # ⑫ 白名单格式坏行 → 红
     def c13(tmp):
         _fixture(tmp, [("golang.org/x/text", "v0.41.0")])
-        return run(tmp, _snapshot(tmp, gen, GO_HIGH), _allow(tmp, ["GHSA-x\tGo\tonly-three"]))
+        return run(tmp, _snapshot(tmp, gen, SNAP_BASE), _allow(tmp, ["GHSA-x\tGo\tonly-three"]))
     check("白名单格式坏行 → 红", 1, c13, want_text=["白名单第 2 行不是 5 列"])
 
     # ⑬ 本地路径 replace → 打 [UNCOVERED]（不静默放过）
     def c14(tmp):
-        _fixture(tmp, [("golang.org/x/text", "v0.41.0")])
+        _fixture(tmp, [("golang.org/x/text", "v0.41.0"), ("golang.org/x/sync", "v0.22.0")])
         with open(os.path.join(tmp, "go.mod"), "a", encoding="utf-8") as fh:
             fh.write("\nreplace golang.org/x/text => ../local-x-text\n")
-        return run(tmp, _snapshot(tmp, gen, GO_HIGH), _allow(tmp))
+        return run(tmp, _snapshot(tmp, gen, SNAP_BASE), _allow(tmp))
     check("本地路径 replace → 打 [UNCOVERED]", 0, c14, want_text=["[UNCOVERED] go.mod:"])
+
+    # ⑭ 快照 0 行公告 → 红（"没数据 ≠ 没有漏洞"）
+    def c15(tmp):
+        _fixture(tmp, [("golang.org/x/text", "v0.41.0")])
+        return run(tmp, _snapshot(tmp, gen, ""), _allow(tmp))
+    check("快照 0 行公告 → 红", 1, c15, want_text=["快照 0 行公告"])
+
+    # ⑮ 快照缺某个生态 → 红（该生态等于没扫）
+    def c16(tmp):
+        _fixture(tmp, [("golang.org/x/text", "v0.41.0")], [("@vue/server-renderer", "3.5.45")])
+        return run(tmp, _snapshot(tmp, gen, GO_HIGH), _allow(tmp))
+    check("快照缺 npm 生态 → 红", 1, c16, want_text=["没有任何 npm 侧公告"])
+
+    # ⑯ npm 坐标 0（lockfileVersion 1 / packages 段为空）→ 红
+    def c17(tmp):
+        _fixture(tmp, [("golang.org/x/text", "v0.41.0")], [], empty_lock=True)
+        return run(tmp, _snapshot(tmp, gen, SNAP_BASE), _allow(tmp))
+    check("npm 坐标 0（老锁文件）→ 红", 1, c17,
+          want_text=["lockfileVersion=1 < 2", "生态 npm 一个依赖坐标都没解析到"])
+
+    # ⑰ Go 坐标 0（go.mod 无 require）→ 红
+    def c18(tmp):
+        _fixture(tmp, [], [("@vue/server-renderer", "3.5.45")])
+        return run(tmp, _snapshot(tmp, gen, NPM_HIGH), _allow(tmp))
+    check("Go 坐标 0 → 红", 1, c18, want_text=["生态 Go 一个依赖坐标都没解析到"])
+
+    # ⑱ 坐标指纹不符 → 红（新增依赖却没重刷快照 = 假绿）
+    def c19(tmp):
+        _fixture(tmp, [("golang.org/x/text", "v0.41.0")], [("tinyglobby", "0.2.15")])
+        return run(tmp, _snapshot(tmp, gen, SNAP_BASE, fp="0" * 64), _allow(tmp))
+    check("坐标指纹不符 → 红", 1, c19, want_text=["快照与当前依赖坐标不一致"])
+
+    # ⑲ 坐标指纹缺失 → 红
+    def c20(tmp):
+        _fixture(tmp, [("golang.org/x/text", "v0.41.0")])
+        return run(tmp, _snapshot(tmp, gen, SNAP_BASE, fp=""), _allow(tmp))
+    check("坐标指纹缺失 → 红", 1, c20, want_text=["缺少 `# coords_sha256:` 头"])
+
+    # ⑳ npm 缺级别（severity=`-`，如 MAL-* 恶意包）→ 阻断（缺级别 ≠ 低危）
+    def c21(tmp):
+        _fixture(tmp, [("golang.org/x/text", "v0.41.0")], [("@vue/server-renderer", "3.5.13")])
+        mal = "MAL-2023-462\tnpm\t@vue/server-renderer\t<9.9.9\t-\t-\tmalicious\n"
+        return run(tmp, _snapshot(tmp, gen, GO_HIGH + mal), _allow(tmp))
+    check("npm 缺级别（MAL-*）→ 阻断", 1, c21, want_text=["MAL-2023-462"])
+
+    # ㉑ 白名单到期日过远（>180 天）→ 红（长期豁免等于没到期）
+    def c22(tmp):
+        _fixture(tmp, [("golang.org/x/text", "v0.3.6")])
+        allow = _allow(tmp, ["GHSA-ppp9-7jff-5vj2\tGo\tgolang.org/x/text\t想永久豁免\t9999-12-31"])
+        return run(tmp, _snapshot(tmp, gen, SNAP_BASE), allow)
+    check("白名单到期日过远 → 红", 1, c22, want_text=["到期日过远"])
+
+    # ㉒ generated_at 在未来 → 红（手误年份不许放过好几年）
+    def c23(tmp):
+        _fixture(tmp, [("golang.org/x/text", "v0.41.0")])
+        future = (today + datetime.timedelta(days=400)).isoformat()
+        return run(tmp, _snapshot(tmp, future, SNAP_BASE), _allow(tmp))
+    check("generated_at 在未来 → 红", 1, c23, want_text=["在未来日期"])
 
     bad = [r for r in results if not r[0]]
     for ok, name, rc, want, buf, want_text, forbid in results:

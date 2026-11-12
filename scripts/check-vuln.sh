@@ -19,9 +19,9 @@
 #
 # 用法：
 #   ./scripts/check-vuln.sh              # 判本仓（CI / make gates 用法）
-#   ./scripts/check-vuln.sh --self-test  # 正控/负控 13 项（离线，临时目录注入，不动工作树）
+#   ./scripts/check-vuln.sh --self-test  # 正控/负控 23 项（离线，临时目录注入，不动工作树）
 #   ./scripts/check-vuln.sh --help       # 其余参数（--root / --snapshot / --max-age-days）透传给引擎
-set -uo pipefail
+set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 GATE="$ROOT/scripts/vuln-gate.py"

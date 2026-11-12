@@ -154,7 +154,7 @@ def range_to_expr(events):
             intro = _norm(ev["introduced"])
             if intro is None:
                 return [], ["introduced=%s" % ev["introduced"]]
-            cur = [] if intro == "0.0.0" else [">=" + intro]
+            cur = [">=" + intro]
         elif "fixed" in ev:
             fixed = _norm(ev["fixed"])
             if fixed is None:
@@ -169,6 +169,10 @@ def range_to_expr(events):
             cur.append("<=" + last)
             exprs.append(",".join(cur))
             cur = []
+    # 只有 introduced、没有 fixed/last_affected = **厂商还没发补丁**（最高危形态）：
+    # 落成开区间 `>=X`，绝不允许"整条公告消失"。
+    if cur:
+        exprs.append(",".join(cur))
     return exprs, []
 
 
@@ -189,28 +193,31 @@ def build_rows(base, coords):
             rec = details[vid]
             if (eco, name) not in by_coord[vid]:
                 continue
-            for aff in rec.get("affected", []):
-                pkg = aff.get("package") or {}
-                if pkg.get("ecosystem") != eco or pkg.get("name") != name:
+            matches = [aff for aff in rec.get("affected", [])
+                       if (aff.get("package") or {}).get("ecosystem") == eco
+                       and (aff.get("package") or {}).get("name") == name]
+            ranges = [r for aff in matches for r in aff.get("ranges", [])
+                      if r.get("type") in ("SEMVER", "ECOSYSTEM")]
+            # SEMVER 优先（**按 (公告, 模块) 整体判**）：同一条公告常同时给 SEMVER 与 npm 风格
+            # ECOSYSTEM 区间，后者会出现 `9.6.0b1` 这种不可比较版本（会被丢弃）；前者才是权威区间。
+            if any(r.get("type") == "SEMVER" for r in ranges):
+                ranges = [r for r in ranges if r.get("type") == "SEMVER"]
+            for rng in ranges:
+                exprs, why = range_to_expr(rng.get("events", []))
+                if why:
+                    dropped.append("%s / %s：区间含不可比较版本 %s（已丢弃，需人工复核）"
+                                   % (vid, name, ";".join(why)))
                     continue
-                for rng in aff.get("ranges", []):
-                    if rng.get("type") not in ("SEMVER", "ECOSYSTEM"):
-                        continue
-                    exprs, why = range_to_expr(rng.get("events", []))
-                    if why:
-                        dropped.append("%s / %s：区间含不可比较版本 %s（已丢弃，需人工复核）"
-                                       % (vid, name, ";".join(why)))
-                        continue
-                    for expr in exprs:
-                        rows.append({
-                            "id": vid,
-                            "ecosystem": eco,
-                            "module": name,
-                            "affected": expr,
-                            "severity": (rec.get("database_specific") or {}).get("severity") or "-",
-                            "aliases": ",".join(rec.get("aliases") or []) or "-",
-                            "summary": (rec.get("summary") or "").replace("\t", " ").replace("\n", " ")[:160],
-                        })
+                for expr in exprs:
+                    rows.append({
+                        "id": vid,
+                        "ecosystem": eco,
+                        "module": name,
+                        "affected": expr,
+                        "severity": (rec.get("database_specific") or {}).get("severity") or "-",
+                        "aliases": ",".join(rec.get("aliases") or []) or "-",
+                        "summary": (rec.get("summary") or "").replace("\t", " ").replace("\n", " ")[:160],
+                    })
     # 同 id+module+区间 只留一行（多个 aliases 记录会重复命中同一区间）
     seen, uniq = set(), []
     for r in sorted(rows, key=lambda r: (r["ecosystem"], r["module"], r["affected"], r["id"])):
@@ -222,7 +229,15 @@ def build_rows(base, coords):
     return uniq, dropped
 
 
-def render(rows, coords, base):
+def coords_fingerprint(coords):
+    """依赖**包名**集合的指纹（与 scripts/vuln-gate.py 的算法必须逐字节一致）。"""
+    import hashlib
+    names = sorted({"%s:%s" % (eco, name) for eco, name in coords})
+    return hashlib.sha256("\n".join(names).encode("utf-8")).hexdigest()
+
+
+def render(rows, coords, base, dropped=0):
+    import hashlib  # noqa: F401  （保持与 gate 同源的指纹实现）
     today = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
     lines = [
         "# 离线漏洞快照（AC-ENG-07 门禁的**唯一数据源**，由 scripts/vuln-snapshot-refresh.py 生成，勿手改）",
@@ -240,8 +255,10 @@ def render(rows, coords, base):
         "# 快照过期（generated_at 超过 MAX_AGE_DAYS）→ 门禁判红：库旧等于没扫。",
         "#",
         "# generated_at: " + today,
+        "# coords_sha256: " + coords_fingerprint(coords),
+        "# dropped: %d" % dropped,
         "# source: %s/v1/query（Go + npm 两条生态，坐标取自 go.mod / web/package-lock.json）" % base,
-        "# coordinates: Go %d 个模块 + npm %d 个包 = %d 个坐标"
+        "# coordinates: Go %d 个模块 + npm %d 个包 = %d 个坐标（**坐标指纹以 coords_sha256 为准**）"
         % (len([c for c in coords if c[0] == "Go"]), len([c for c in coords if c[0] == "npm"]), len(coords)),
         "# entries: %d 行（%d 个公告）" % (len(rows), len({(r["id"], r["module"]) for r in rows})),
         "#",
@@ -270,8 +287,8 @@ def main(argv):
     print("[INFO] 坐标：Go %d + npm %d = %d" % (len(go_coords), len(npm_coords), len(coords)), file=sys.stderr)
     rows, dropped = build_rows(args.osv, coords)
     for d in sorted(set(dropped)):
-        print("[WARN] " + d, file=sys.stderr)
-    text = render(rows, coords, args.osv)
+        print("[FAIL] " + d, file=sys.stderr)
+    text = render(rows, coords, args.osv, dropped=len(set(dropped)))
     if args.stdout:
         sys.stdout.write(text)
         return 0
@@ -280,6 +297,11 @@ def main(argv):
         fh.write(text)
     print("[OK] 写入 %s（%d 行 / %d 个公告）" % (os.path.relpath(out, args.root), len(rows),
                                                 len({(r["id"], r["module"]) for r in rows})), file=sys.stderr)
+    if dropped:
+        # 丢弃 = 该区间没进快照 = 那段时间的依赖没被判过。宁可让刷新失败让人复核，也不静默发布半份数据。
+        print("[FAIL] 有 %d 条区间被丢弃（见上），快照已写出但**不可用于门禁**：请人工复核后再提交"
+              % len(set(dropped)), file=sys.stderr)
+        return 1
     return 0
 
 
