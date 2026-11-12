@@ -1,0 +1,367 @@
+//go:build integration
+
+package main
+
+// 夜班任务 A（2026-11-11）的**测量夹具**：不属于任何一版 PR，只在本地取数用，不提交。
+//
+// 目的：同一台机、同一参数、同一并发模型下量 #120 / #115 两版，给「并发下是否真出冲突 /
+// 吞吐 / 内存」三个可复算的数字，作为取一版的依据。
+//
+// 与两版的关系：只调用两版共有的生产装配（`newFactorsAdminWiring` / `testConfig` /
+// `openTestDB` / `fixedResolver`），**不引用任何一版的测试助手**，所以同一份文件可以在
+// 两版树上原样编译运行 —— 变量只有「被测量的树」。
+//
+// 参数（环境变量，默认值 = 判据 4 的 20 并发）：
+//
+//	ZZAF05_CONC=20     并发 goroutine 数
+//	ZZAF05_ROUNDS=50   每个 goroutine 的请求数（总请求 = CONC*ROUNDS）
+//	ZZAF05_LABEL=...   结果行里的标签（如 120-healthy），只影响输出
+//
+// 输出：一行 `ZZAF05_JSON {...}`（机器可读）+ 若干 `ZZAF05_*` 明细行。
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"io"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"sort"
+	"strconv"
+	"sync"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"github.com/google/uuid"
+	"gorm.io/gorm"
+
+	"github.com/spencerswagger/guanjin/internal/admin"
+	"github.com/spencerswagger/guanjin/internal/crypto"
+	"github.com/spencerswagger/guanjin/internal/factor"
+	"github.com/spencerswagger/guanjin/internal/factor/holding"
+	"github.com/spencerswagger/guanjin/internal/httpx"
+	"github.com/spencerswagger/guanjin/internal/identity"
+	"github.com/spencerswagger/guanjin/internal/store"
+)
+
+type zzAF05Env struct {
+	db      *gorm.DB
+	srv     *httptest.Server
+	actorID uuid.UUID
+}
+
+func zzAF05Int(name string, def int) int {
+	if v := os.Getenv(name); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			return n
+		}
+	}
+	return def
+}
+
+func newZZAF05Env(t *testing.T) *zzAF05Env {
+	t.Helper()
+	db := openTestDB(t)
+	cfg := testConfig(t)
+
+	credStore, err := identity.NewCredentialStore(db)
+	if err != nil {
+		t.Fatalf("NewCredentialStore: %v", err)
+	}
+	pw, err := holding.NewPasswordVerifier(credStore)
+	if err != nil {
+		t.Fatalf("NewPasswordVerifier: %v", err)
+	}
+	totpKey, err := cfg.MasterKey.DeriveSM4(crypto.PurposeSM4Field)
+	if err != nil {
+		t.Fatalf("DeriveSM4: %v", err)
+	}
+	totp, err := holding.NewTOTP(credStore, totpKey, time.Now)
+	if err != nil {
+		t.Fatalf("NewTOTP: %v", err)
+	}
+	reg := factor.NewRegistry()
+	if _, err := holding.Register(reg, pw, totp); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	actorID, err := uuid.NewV7()
+	if err != nil {
+		t.Fatalf("uuid v7: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO users (id, username) VALUES (?, ?)`,
+		actorID, "zzaf05-"+uuid.NewString()[:10]).Error; err != nil {
+		t.Fatalf("insert actor: %v", err)
+	}
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelError + 1}))
+	resolver := fixedResolver{caller: httpx.Caller{
+		Sub:   actorID.String(),
+		Roles: []string{string(admin.RoleSystemAdmin)},
+	}}
+	handler, err := newFactorsAdminWiring(db, cfg, reg, resolver, logger)
+	if err != nil {
+		t.Fatalf("newFactorsAdminWiring: %v", err)
+	}
+	mux := http.NewServeMux()
+	handler.Routes(mux)
+
+	// 起点固定：平台禁用集清空（空集 = 全部可用），并且对本次测量是**唯一写入者**。
+	if err := db.Exec(`INSERT INTO runtime_config ("key", value, value_type, description)
+		VALUES (?, '[]'::jsonb, 'json', 'zzaf05 measure')
+		ON CONFLICT ("key") DO UPDATE SET value = '[]'::jsonb`, store.KeyFactorsDisabled).Error; err != nil {
+		t.Fatalf("reset factors.disabled: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = db.Exec(`INSERT INTO runtime_config ("key", value, value_type, description)
+			VALUES (?, '[]'::jsonb, 'json', 'zzaf05 measure')
+			ON CONFLICT ("key") DO UPDATE SET value = '[]'::jsonb`, store.KeyFactorsDisabled).Error
+	})
+
+	e := &zzAF05Env{db: db, actorID: actorID}
+	e.srv = httptest.NewServer(httpx.TraceMiddleware(mux, "X-Trace-Id", logger))
+	t.Cleanup(e.srv.Close)
+	return e
+}
+
+type zzAF05Result struct {
+	Label    string         `json:"label"`
+	Conc     int            `json:"conc"`
+	Rounds   int            `json:"rounds"`
+	Requests int            `json:"requests"`
+	Failures int            `json:"failures"`
+	Statuses map[string]int `json:"statuses"`
+	Codes    map[string]int `json:"codes"`
+	Elapsed  float64        `json:"elapsed_s"`
+	RPS      float64        `json:"rps"`
+	P50MS    float64        `json:"p50_ms"`
+	P95MS    float64        `json:"p95_ms"`
+	MaxMS    float64        `json:"max_ms"`
+	RSSPeakK int64          `json:"rss_peak_kb"`
+
+	AuditRows    int  `json:"audit_rows"`
+	ChainBreaks  int  `json:"chain_breaks"`
+	DupWrites    int  `json:"dup_writes"`
+	StructBroken bool `json:"chain_structural_broken"`
+	FinalDBOff   bool `json:"final_db_disabled"`
+	FinalChainOf bool `json:"final_chain_disabled"`
+	FinalMatch   bool `json:"final_match"`
+}
+
+func zzRSSPeakKB() int64 {
+	b, err := os.ReadFile("/proc/self/status")
+	if err != nil {
+		return -1
+	}
+	for _, line := range bytes.Split(b, []byte("\n")) {
+		if bytes.HasPrefix(line, []byte("VmHWM:")) {
+			f := bytes.Fields(line)
+			if len(f) >= 2 {
+				n, _ := strconv.ParseInt(string(f[1]), 10, 64)
+				return n
+			}
+		}
+	}
+	return -1
+}
+
+// TestZZAF05Measure 是压测主体：并发交替 PATCH 同一 type，量吞吐/内存/失败，并在结束后按
+// `prev_tag` 链折审计（唯一与插入顺序严格一致的判据）。
+func TestZZAF05Measure(t *testing.T) {
+	conc := zzAF05Int("ZZAF05_CONC", 20)
+	rounds := zzAF05Int("ZZAF05_ROUNDS", 50)
+	label := os.Getenv("ZZAF05_LABEL")
+	if label == "" {
+		label = "unlabeled"
+	}
+	e := newZZAF05Env(t)
+
+	client := &http.Client{Timeout: 30 * time.Second, Transport: &http.Transport{
+		MaxIdleConns:        conc * 2,
+		MaxIdleConnsPerHost: conc * 2,
+	}}
+	url := e.srv.URL + "/api/v1/factors/password"
+
+	var seq int64
+	var failures int64
+	var mu sync.Mutex
+	lat := make([]time.Duration, 0, conc*rounds)
+	statuses := map[string]int{}
+	codes := map[string]int{}
+
+	var wg sync.WaitGroup
+	start := time.Now()
+	for g := 0; g < conc; g++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for r := 0; r < rounds; r++ {
+				// 全局交替：一半 enable 一半 disable，且顺序与并发无关。
+				k := atomic.AddInt64(&seq, 1)
+				enabled := k%2 == 1
+				body := fmt.Sprintf(`{"enabled":%v,"reason":"zzaf05 并发压测"}`, enabled)
+
+				req, err := http.NewRequest(http.MethodPatch, url, bytes.NewBufferString(body))
+				if err != nil {
+					atomic.AddInt64(&failures, 1)
+					return
+				}
+				req.Header.Set("Content-Type", "application/json")
+				req.Header.Set("Authorization", "Bearer measure")
+				t0 := time.Now()
+				resp, err := client.Do(req)
+				d := time.Since(t0)
+				if err != nil {
+					atomic.AddInt64(&failures, 1)
+					mu.Lock()
+					lat = append(lat, d)
+					mu.Unlock()
+					continue
+				}
+				raw, _ := io.ReadAll(resp.Body)
+				_ = resp.Body.Close()
+				var env struct {
+					Code string `json:"code"`
+				}
+				_ = json.Unmarshal(raw, &env)
+				mu.Lock()
+				lat = append(lat, d)
+				statuses[strconv.Itoa(resp.StatusCode)]++
+				if env.Code != "" {
+					codes[env.Code]++
+				} else {
+					codes["(none)"]++
+				}
+				mu.Unlock()
+				if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+					atomic.AddInt64(&failures, 1)
+				}
+			}
+		}()
+	}
+	wg.Wait()
+	elapsed := time.Since(start)
+
+	sort.Slice(lat, func(i, j int) bool { return lat[i] < lat[j] })
+	pct := func(p float64) float64 {
+		if len(lat) == 0 {
+			return 0
+		}
+		idx := int(float64(len(lat)-1) * p)
+		return float64(lat[idx].Microseconds()) / 1000.0
+	}
+
+	rows, breaks, dups, broken, chainTailAfter := zzAF05FoldChain(t, e)
+	var finalVal string
+	if err := e.db.Raw(`SELECT value::text FROM runtime_config WHERE "key" = ?`,
+		store.KeyFactorsDisabled).Row().Scan(&finalVal); err != nil {
+		t.Fatalf("读终值：%v", err)
+	}
+	finalDBDisabled := finalVal != "[]"
+
+	// 链尾 after 必须与库里终值一致（丢写/多写的最终判据）。
+	chainTailDisabled := chainTailAfter == "false"
+
+	res := zzAF05Result{
+		Label: label, Conc: conc, Rounds: rounds,
+		Requests: conc * rounds, Failures: int(atomic.LoadInt64(&failures)),
+		Statuses: statuses, Codes: codes,
+		Elapsed: elapsed.Seconds(),
+		RPS:     float64(conc*rounds) / elapsed.Seconds(),
+		P50MS:   pct(0.50), P95MS: pct(0.95), MaxMS: pct(1.0),
+		RSSPeakK: zzRSSPeakKB(),
+
+		AuditRows: rows, ChainBreaks: breaks, DupWrites: dups, StructBroken: broken,
+		FinalDBOff: finalDBDisabled, FinalChainOf: chainTailDisabled,
+		FinalMatch: finalDBDisabled == chainTailDisabled,
+	}
+	out, _ := json.Marshal(res)
+	t.Logf("ZZAF05_JSON %s", out)
+
+	// 明细行（便于人读）。
+	t.Logf("ZZAF05_DETAIL label=%s conc=%d rounds=%d requests=%d failures=%d statuses=%v codes=%v elapsed=%.3fs rps=%.1f p50=%.2fms p95=%.2fms max=%.2fms rss_peak_kb=%d",
+		label, conc, rounds, res.Requests, res.Failures, statuses, codes,
+		res.Elapsed, res.RPS, res.P50MS, res.P95MS, res.MaxMS, res.RSSPeakK)
+	t.Logf("ZZAF05_CHAIN label=%s audit_rows=%d chain_breaks=%d dup_writes=%d structural_broken=%v final_db_disabled=%v final_chain_disabled=%v final_match=%v",
+		label, rows, breaks, dups, broken, finalDBDisabled, chainTailDisabled, res.FinalMatch)
+
+	if os.Getenv("ZZAF05_STRICT") == "1" {
+		if res.Failures != 0 {
+			t.Fatalf("有失败请求：%d（statuses=%v codes=%v）", res.Failures, statuses, codes)
+		}
+		if breaks != 0 || dups != 0 || broken || !res.FinalMatch {
+			t.Fatalf("审计链不自洽：breaks=%d dup=%d broken=%v final_match=%v", breaks, dups, broken, res.FinalMatch)
+		}
+	}
+}
+
+// zzAF05FoldChain 读本 actor 对 password 的全部审计行，按 `prev_tag` 链折成插入顺序，
+// 返回 (条数, 断点数, 重复写数, 结构是否破坏)。
+func zzAF05FoldChain(t *testing.T, e *zzAF05Env) (rows, breaks, dups int, broken bool, finalAfter string) {
+	t.Helper()
+	type node struct{ prev, tag, before, after string }
+	q, qerr := e.db.Raw(`SELECT prev_tag, integrity_tag, before->>'enabled', after->>'enabled'
+		FROM audit_logs
+		WHERE actor_user_id = ? AND target_type = 'factor' AND target_id = 'password'`,
+		e.actorID).Rows()
+	if qerr != nil {
+		t.Fatalf("读审计行：%v", qerr)
+	}
+	defer func() { _ = q.Close() }()
+
+	byTag := map[string]node{}
+	child := map[string]string{} // prev_tag -> tag
+	head := ""
+	for q.Next() {
+		var prev, tag []byte
+		var before, after string
+		if err := q.Scan(&prev, &tag, &before, &after); err != nil {
+			t.Fatalf("scan 审计行：%v", err)
+		}
+		n := node{prev: string(prev), tag: string(tag), before: before, after: after}
+		byTag[n.tag] = n
+		if prev != nil {
+			if _, dup := child[n.prev]; dup {
+				broken = true // 一个前驱被两条记录指向 = 分叉
+			}
+			child[n.prev] = n.tag
+		}
+	}
+	if err := q.Err(); err != nil {
+		t.Fatalf("审计行 rows：%v", err)
+	}
+	rows = len(byTag)
+	if rows == 0 {
+		return 0, 0, 0, false, ""
+	}
+	for tag := range byTag {
+		if _, hasParent := byTag[byTag[tag].prev]; !hasParent {
+			if head != "" {
+				broken = true // 多个头 = 不止一条链
+			}
+			head = tag
+		}
+	}
+	if head == "" {
+		return rows, 0, 0, true, "" // 成环，无头
+	}
+	prevAfter := ""
+	first := true
+	for cur := head; cur != ""; cur = child[cur] {
+		n := byTag[cur]
+		if !first {
+			if n.before != prevAfter {
+				breaks++
+			}
+		}
+		if n.after == n.before {
+			dups++
+		}
+		prevAfter = n.after
+		first = false
+	}
+	return rows, breaks, dups, broken, prevAfter
+}

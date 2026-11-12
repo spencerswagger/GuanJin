@@ -1,0 +1,10 @@
+=== RUN   TestACFLOW05_01_PatchContractAndIdempotency
+--- PASS: TestACFLOW05_01_PatchContractAndIdempotency (0.05s)
+=== RUN   TestACFLOW05_02_UnionWithClientDisabled
+--- PASS: TestACFLOW05_02_UnionWithClientDisabled (1.09s)
+=== RUN   TestACFLOW05_03_AuditExactlyOnceInSameTx
+--- PASS: TestACFLOW05_03_AuditExactlyOnceInSameTx (0.06s)
+=== RUN   TestACFLOW05_02b_PlatformDisableVisibleThroughBehaviour
+--- PASS: TestACFLOW05_02b_PlatformDisableVisibleThroughBehaviour (0.14s)
+PASS
+ok  	github.com/spencerswagger/guanjin/cmd/guanjind	1.352s

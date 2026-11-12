@@ -1,0 +1,24 @@
+diff --git a/internal/audit/repo.go b/internal/audit/repo.go
+index bd1648b..0a35788 100644
+--- a/internal/audit/repo.go
++++ b/internal/audit/repo.go
+@@ -58,7 +58,8 @@ func (c *Chain) Append(ctx context.Context, db *gorm.DB, rec Record) ([]byte, er
+ 	var tag []byte
+ 	err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+ 		// ① 串行化链尾（事务级 advisory lock）。`disableChainLock` 仅测试反证用。
+-		if !c.disableChainLock {
++		// [NEGATIVE-CHECK 2026-11-11] 故意不取 advisory 链锁（只在本临时分支）。
++		if false && !c.disableChainLock {
+ 			if err := tx.Exec(`SELECT pg_advisory_xact_lock(?)`, chainLockKey).Error; err != nil {
+ 				return fmt.Errorf("audit: take chain lock: %w", err)
+ 			}
+@@ -84,7 +85,8 @@ func (c *Chain) Append(ctx context.Context, db *gorm.DB, rec Record) ([]byte, er
+ 		// `EnsurePartitions` 的 "advisory → ACCESS EXCLUSIVE" 形成交叉死锁。
+ 		tailSQL := `SELECT integrity_tag, occurred_at, created_at FROM audit_logs
+ 			ORDER BY created_at DESC, id DESC LIMIT 1`
+-		if !c.disableRowLock {
++		// [NEGATIVE-CHECK 2026-11-11] 故意不取链尾行锁（只在本临时分支）。
++		if false && !c.disableRowLock {
+ 			tailSQL += ` FOR UPDATE` // 第二道防线（Gate 反证时由测试摘除）
+ 		}
+ 		res := tx.Raw(tailSQL).Scan(&tail)

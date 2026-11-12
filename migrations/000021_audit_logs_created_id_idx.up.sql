@@ -19,4 +19,18 @@
 -- 编号说明：D20 正文最初写 `000019`，后按「取 `ls migrations/` 最大号 + 1」**修订为 `000021`**
 -- （`000019` = D21 阈值 seed、`000020` = D22 平台级禁用集 seed 已先落地）。预写死编号会撞号。
 
+-- ⚠️ **绝对不要给这条 `CREATE INDEX` 加 `ONLY`**（Gate 实测 2026-11-11，144 万行 / 13 分区）：
+--    `CREATE INDEX … ON ONLY audit_logs …` 只在**父表**建索引，**老分区没有、新分区也不继承**；
+--    迁移照样报 success（golang-migrate 只看 SQL 是否报错），但计划仍旧是 Seq Scan + Sort
+--    —— 也就是说"索引加了但完全没生效"，只会在压测/线上慢查询时才发现。
+--
+--    怎么分辨"我写没写 ONLY"与"目录里显示 ON ONLY"：
+--      · `pg_indexes.indexdef` 对**分区表的父索引**天然显示为 `ON ONLY public.audit_logs`
+--        （父索引本身只是个模板条目），**这不是写了 ONLY**；
+--      · 真正的判据是**子索引**：`SELECT count(*) FROM pg_inherits WHERE inhparent='audit_logs_created_id_idx'::regclass`
+--        必须等于当前分区数（每个分区一份子索引），且新分区也要自动带上。
+--      可执行断言：`internal/store/audit_created_id_idx_db_test.go` 的
+--      `TestDBAuditCreatedIDIndexOnParentAndEveryPartition`（父索引 relkind='I'、每个现有分区都挂子索引、
+--      `EnsurePartitions` 建的"两年后"新分区自动继承、形状无 DESC/无 partial/非唯一）。
+
 CREATE INDEX audit_logs_created_id_idx ON audit_logs (created_at, id);

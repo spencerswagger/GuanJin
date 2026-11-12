@@ -1,0 +1,7 @@
+=== RUN   TestZZAF05Measure
+    zz_acflow05_measure_db_test.go:282: ZZAF05_JSON {"label":"inject-c20","conc":20,"rounds":50,"requests":1000,"failures":0,"statuses":{"200":1000},"codes":{"(none)":1000},"elapsed_s":1.8118824839999998,"rps":551.9121735711863,"p50_ms":17.795,"p95_ms":121.461,"max_ms":272.841,"rss_peak_kb":30092,"audit_rows":673,"chain_breaks":312,"dup_writes":0,"chain_structural_broken":false,"final_db_disabled":true,"final_chain_disabled":true,"final_match":true}
+    zz_acflow05_measure_db_test.go:285: ZZAF05_DETAIL label=inject-c20 conc=20 rounds=50 requests=1000 failures=0 statuses=map[200:1000] codes=map[(none):1000] elapsed=1.812s rps=551.9 p50=17.80ms p95=121.46ms max=272.84ms rss_peak_kb=30092
+    zz_acflow05_measure_db_test.go:288: ZZAF05_CHAIN label=inject-c20 audit_rows=673 chain_breaks=312 dup_writes=0 structural_broken=false final_db_disabled=true final_chain_disabled=true final_match=true
+--- PASS: TestZZAF05Measure (1.85s)
+PASS
+ok  	github.com/spencerswagger/guanjin/cmd/guanjind	1.862s

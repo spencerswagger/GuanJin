@@ -1,0 +1,14 @@
+=== RUN   TestACFLOW05_04_ConcurrentPatches
+--- PASS: TestACFLOW05_04_ConcurrentPatches (0.43s)
+=== RUN   TestACFLOW05_04b_MissingRowIsFailClosed
+--- PASS: TestACFLOW05_04b_MissingRowIsFailClosed (0.10s)
+=== RUN   TestACFLOW05_01_PatchContractAndIdempotency
+--- PASS: TestACFLOW05_01_PatchContractAndIdempotency (0.17s)
+=== RUN   TestACFLOW05_02_UnionWithClientDisabled
+--- PASS: TestACFLOW05_02_UnionWithClientDisabled (1.02s)
+=== RUN   TestACFLOW05_03_AuditExactlyOnceInSameTx
+--- PASS: TestACFLOW05_03_AuditExactlyOnceInSameTx (0.04s)
+=== RUN   TestACFLOW05_02b_PlatformDisableVisibleThroughBehaviour
+--- PASS: TestACFLOW05_02b_PlatformDisableVisibleThroughBehaviour (0.06s)
+PASS
+ok  	github.com/spencerswagger/guanjin/cmd/guanjind	1.833s
