@@ -282,8 +282,9 @@ def load_snapshot(path):
     return rows, header, errors
 
 
-def load_allowlist(path):
+def load_allowlist(path, today=None):
     """返回 (entries, errors)；entries: {(id, eco, module): (reason, expires_date)}。"""
+    today = today or datetime.date.today()
     entries, errors = {}, []
     if not os.path.exists(path):
         return entries, errors
@@ -306,7 +307,7 @@ def load_allowlist(path):
             except ValueError:
                 errors.append("白名单第 %d 行到期日不是 YYYY-MM-DD：%r" % (lineno, expires))
                 continue
-            if (exp - datetime.date.today()).days > MAX_ALLOW_DAYS:
+            if (exp - today).days > MAX_ALLOW_DAYS:
                 errors.append("白名单第 %d 行到期日过远（%s，上限 %d 天）：长期豁免等于没有到期（D23① 的 30 天上限精神）"
                               % (lineno, expires, MAX_ALLOW_DAYS))
                 continue
@@ -340,7 +341,7 @@ def evaluate(root, snapshot, allowlist, max_age_days, today=None, out=sys.stdout
 
     deps, uncovered, errors = read_deps(root)
     rows, header, snap_errors = load_snapshot(snapshot)
-    entries, allow_errors = load_allowlist(allowlist)
+    entries, allow_errors = load_allowlist(allowlist, today=today)
     fails.extend(errors)
     fails.extend(snap_errors)
     fails.extend(allow_errors)
@@ -361,10 +362,12 @@ def evaluate(root, snapshot, allowlist, max_age_days, today=None, out=sys.stdout
     elif deps:
         want = coords_fingerprint(deps)
         if want != header["coords_sha256"]:
-            fails.append("快照与当前依赖坐标不一致（快照指纹 %s… ≠ 当前 %s…）：新增/换掉依赖后必须重跑 "
-                         "`python3 scripts/vuln-snapshot-refresh.py` 并提交 diff"
+            fails.append("快照与当前依赖坐标不一致（快照指纹 %s… ≠ 当前 %s…）：**新增 / 删掉 / 换掉**依赖后"
+                         "都必须重跑 `python3 scripts/vuln-snapshot-refresh.py` 并提交 diff"
                          % (header["coords_sha256"][:12], want[:12]))
-    if header["dropped"] not in (None, "0"):
+    if header["dropped"] is None:
+        fails.append("快照缺少 `# dropped:` 头 → 无法判断生成时有没有丢区间（未验证 = 红）")
+    elif header["dropped"] != "0":
         fails.append("快照生成时有 %s 条区间因不可比较版本被丢弃（生产端已判红，见 refresh 输出）"
                      % header["dropped"])
 
@@ -452,7 +455,7 @@ SNAP_HEADER = """# generated_at: {gen}
 """
 
 
-def _snapshot(dirpath, gen, extra="", fp="auto", gen_header=True):
+def _snapshot(dirpath, gen, extra="", fp="auto", gen_header=True, dropped="0"):
     """造一份快照夹具；默认把 `coords_sha256` 按**夹具当前依赖**算好（与生产者同源）。"""
     header = ""
     if gen_header:
@@ -462,6 +465,8 @@ def _snapshot(dirpath, gen, extra="", fp="auto", gen_header=True):
         header += "# coords_sha256: %s\n" % coords_fingerprint(deps)
     elif fp:
         header += "# coords_sha256: %s\n" % fp
+    if dropped is not None:
+        header += "# dropped: %s\n" % dropped
     path = os.path.join(dirpath, "snap.tsv")
     with open(path, "w", encoding="utf-8") as fh:
         fh.write(SNAP_HEADER.format(gen=gen, extra_header=header) + extra)
@@ -678,6 +683,12 @@ def self_test(out=sys.stdout):
         allow = _allow(tmp, ["GHSA-ppp9-7jff-5vj2\tGo\tgolang.org/x/text\t想永久豁免\t9999-12-31"])
         return run(tmp, _snapshot(tmp, gen, SNAP_BASE), allow)
     check("白名单到期日过远 → 红", 1, c22, want_text=["到期日过远"])
+
+    # ㉓ 缺 `# dropped:` 头 → 红（与 coords_sha256 对称，不许"不写就不判"）
+    def c23b(tmp):
+        _fixture(tmp, [("golang.org/x/text", "v0.41.0")])
+        return run(tmp, _snapshot(tmp, gen, SNAP_BASE, dropped=None), _allow(tmp))
+    check("缺 dropped 头 → 红", 1, c23b, want_text=["缺少 `# dropped:` 头"])
 
     # ㉒ generated_at 在未来 → 红（手误年份不许放过好几年）
     def c23(tmp):

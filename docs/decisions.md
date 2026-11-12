@@ -590,7 +590,7 @@
 
 - **结论**：**不接受"整目录静默跳过"**（`--skip-dirs sdk` 现在连一行提示都不打，等于"默默放过"，与 SKIP=未验证=红 同一类问题）。**分两段**：
   - **第一段（立即可做，不需追认）**：`scripts/check-vuln.sh` 必须在输出里**显式打一行** `[UNCOVERED] sdk/java：pom 解析需外网（实测 429），本闸不覆盖——见 decisions.md D23③`，并把这行计入 job 日志（**不是注释、不是 echo 到 /dev/null**）；`docs/qa/vuln-scan.md` 同步写清 **`AC-ENG-07` 的 PASS 口径 = `go.mod` + `web/package-lock.json` 两个生态 + `sdk/java` 未覆盖（显式标注）**，账目里不得写成"全量覆盖"。
-  - **第二段（一个迭代内，2026-12-10 前）**：改**离线 SBOM**，链路是「**Nova 产 → Gate 判**」：`sdk` job 里用 `cyclonedx-maven-plugin`（`mvn -o` 或复用当次已热的 `~/.m2`）生成 `bom.json` 并作为 **artifact 上传**；`vuln` job 下载 artifact 后 `trivy sbom --severity HIGH,CRITICAL --exit-code 1`。**保鲜** = SBOM **每次构建重生成**（与依赖同源，不用人维护），`vuln` job **只消费当次 artifact、不解析 pom、不打外网** → 天然免疫 429。**判红** = ①有未白名单的 HIGH/CRITICAL；②**artifact 缺失或早于本次 commit**（= 未验证 = 红）；③白名单条目过期/不再命中（沿用现有规则）。
+  - **第二段（一个迭代内，2026-12-10 前）**：改**离线 SBOM**（**手段已被 D28③ 修订**：`trivy sbom` 需 `ghcr.io` 的库，零网络下跑不起来 → 改为「Nova 产 CycloneDX `bom.json` → 同一判定引擎消费」；**期限与逾期降级不变**），链路是「**Nova 产 → Gate 判**」：`sdk` job 里用 `cyclonedx-maven-plugin`（`mvn -o` 或复用当次已热的 `~/.m2`）生成 `bom.json` 并作为 **artifact 上传**；`vuln` job 下载 artifact 后 `trivy sbom --severity HIGH,CRITICAL --exit-code 1`。**保鲜** = SBOM **每次构建重生成**（与依赖同源，不用人维护），`vuln` job **只消费当次 artifact、不解析 pom、不打外网** → 天然免疫 429。**判红** = ①有未白名单的 HIGH/CRITICAL；②**artifact 缺失或早于本次 commit**（= 未验证 = 红）；③白名单条目过期/不再命中（沿用现有规则）。
   - **逾期后果（写死，防拖）**：2026-12-10 未上线 SBOM，则 `AC-ENG-07` 的账目**必须降级为"Java 侧未覆盖"并如实写**，不能继续记完整 PASS。
 - **属基线变更吗**：**不算**（CI 门禁实现范围，不涉对外契约/表结构/表名/端点）→ 不进 CH；但 **`AC-ENG-07` 的 PASS 口径** 由本条钉住，Gate 记账照此。
 

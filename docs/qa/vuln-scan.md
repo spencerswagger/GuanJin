@@ -115,12 +115,17 @@ python3 scripts/vuln-snapshot-refresh.py --osv http://<内网镜像>   # 内网�
 
 ```bash
 ./scripts/check-vuln.sh              # 判本仓（与 CI 同一条命令；零网络）
-./scripts/check-vuln.sh --self-test  # 正控/负控 23 项（临时夹具注入，不动工作树、不联网）
+./scripts/check-vuln.sh --self-test  # 正控/负控 24 项（临时夹具注入，不动工作树、不联网）
 make gates                           # 上面这条已并入工程红线门禁
 ```
 
-自检 23 项覆盖：Go HIGH 判红并点位、修复版判绿（版本敏感）、Go 无 CVSS 也阻断、npm HIGH 判红并点位、
+自检 24 项覆盖：Go HIGH 判红并点位、修复版判绿（版本敏感）、Go 无 CVSS 也阻断、npm HIGH 判红并点位、
 npm MODERATE 只提示、npm 缺级别（`MAL-*`）阻断、白名单"未过期绿 / 过期红 / 不再命中红 / 到期日过远红 / 格式坏行红"、
 快照"0 行红 / 缺生态红 / 过期红 / 未来日期红 / 坏行红 / 缺失红"、坐标指纹"不符红 / 缺失红"、
 依赖坐标 0（Go / npm）红、依赖版本不可解析红、本地路径 replace 打 `[UNCOVERED]`。
-CI 侧还断言"逐项 OK 行数 == 汇总行声明的项数 且 ≥ 20"（删用例让自己变绿会被抓）。
+自检还覆盖「缺 `# dropped:` 头 → 红」（与 `coords_sha256` 对称）。
+CI 侧断言"逐项 `[OK]` 行数 **恰为 24**"（删用例让自己变绿会被抓；加用例要同步改这个数字）。
+
+**快照防篡改的边界（写清，别误会）**：引擎只判**结构性缺失**（0 行 / 缺生态 / 指纹不符 / 缺头部字段）。
+"快照里被删掉一行公告"引擎看不出来——**内容的增减只由 PR diff 保证**（这也是把数据入库、让评审能逐行看的原因）。
+想查"某条公告还在不在"，看 `git log -p docs/qa/vuln-advisories.tsv`，不要指望门禁。

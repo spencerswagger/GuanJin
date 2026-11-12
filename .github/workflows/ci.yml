@@ -318,9 +318,10 @@ jobs:
         run: |
           set -euo pipefail
           ./scripts/check-vuln.sh --self-test | tee vuln-selftest.log
-          # 自洽校验：逐项 OK 行数必须等于汇总行声明的项数，且不得少于 20 项（防"把用例删掉让自己变绿"）。
+          # 自洽校验：逐项 OK 行数必须等于汇总行声明的项数，且**恰为 24 项**（防"把用例删掉让自己变绿"；
+          # 上限取下界：加用例要同步改这个数字，比"能静默删掉三项"划算）。
           ok_n=$(grep -c '^  \[OK\] self-test/' vuln-selftest.log || true)
-          [ "$ok_n" -ge 20 ] || { echo "[FAIL] 自检只跑了 $ok_n 项（<20）：有人删过用例 = 红"; exit 1; }
+          [ "$ok_n" -eq 24 ] || { echo "[FAIL] 自检跑了 $ok_n 项，应为 24 项：用例被删或加用例没同步改了红线 = 红"; exit 1; }
           grep -qE "^\[OK\] 漏洞门禁自检 ${ok_n} 项全过" vuln-selftest.log \
             || { echo "[FAIL] 汇总行声明的项数（${ok_n} 项的 OK 行）对不上 = 红"; exit 1; }
 
