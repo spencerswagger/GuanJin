@@ -84,6 +84,13 @@ func (j *JwksClient) PublicKey(kid string) (*sm2.PublicKey, error) {
 	return nil, NewTokenInvalid(fmt.Sprintf("未找到可用验签公钥 kid=%q", kid), nil)
 }
 
+// KeyCount 返回当前缓存里的公钥数量（启动自检用来判断"JWKS 里一个能用的键都没有"）。
+func (j *JwksClient) KeyCount() int {
+	j.mu.RLock()
+	defer j.mu.RUnlock()
+	return len(j.keys)
+}
+
 func (j *JwksClient) lookup(kid string) (*sm2.PublicKey, bool) {
 	j.mu.RLock()
 	defer j.mu.RUnlock()

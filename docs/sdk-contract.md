@@ -323,7 +323,7 @@
 
 **口径（四）非配置命名空间（例外，逐条封闭枚举，禁止通配）**：`GUANJIN_` 前缀同时被宿主/平台自用变量占用——它们是平台的**启动配置**（基线《技术栈与工程约定》§7.2 冻结）、平台的**实现自用参数**、以及**构建/测试夹具**。这些变量 SDK **不读、不校验、不参与默认值**，因此不进入白名单判定；**以本附录清单为准，逐条枚举，不做前缀/后缀式例外**（开放式例外会与「29 项冻结 + 未知键必须失败」正面冲突）。清单外任何 `GUANJIN_*` 映射不到 29 项 → **照样启动失败并报键名**。**例外不得当配置通道用**：清单内变量不能被 SDK 读成配置项，新增 SDK 配置只能走 ADR 改 29 项。
 
-**附录：非配置命名空间封闭清单（35 条，逐条；改这里必须同步三语言实现与 golden 用例）**
+**附录：非配置命名空间封闭清单（37 条，逐条；改这里必须同步三语言实现与 golden 用例）**
 
 | # | 变量 | 组 | 归属/用途 |
 |---|---|---|---|
@@ -354,14 +354,19 @@
 | 25 | `GUANJIN_TRACE_HEADER` | B | trace 头名（`internal/config`） |
 | 26 | `GUANJIN_GATEWAY_ROUTES` | B | 数据面路由表（`cmd/guanjingw`、`cmd/guanjind/slo_wiring.go`） |
 | 27 | `GUANJIN_SLO_NOTIFY_PATH` | B | SLO 通知落点（`internal/gateway/slo_http.go`） |
-| 28 | `GUANJIN_DEV_DSN` | C | 本地开发库（`Makefile`、`internal/store`/`internal/flowstore` 测试） |
-| 29 | `GUANJIN_STAGING_DSN` | C | 预发库（`Makefile` 提示与 DB/DEV DSN 一并导出） |
-| 30 | `GUANJIN_TEST_DSN` | C* | CI/测试夹具：测试库（`.github/workflows/ci.yml`、`internal/*`） |
-| 31 | `GUANJIN_TEST_REDIS_ADDR` | C* | CI/测试夹具：测试 Redis |
-| 32 | `GUANJIN_TEST_REDIS_PASSWORD` | C* | CI/测试夹具：测试 Redis 口令 |
-| 33 | `GUANJIN_TEST_DURATION` | C* | 测试夹具：时长参数（`cmd/guanjingw/main_test.go`） |
-| 34 | `GUANJIN_ALLOW_TEST_CLEANUP` | C* | 测试护栏：允许清理共享库（`internal/testdb`） |
-| 35 | `GUANJIN_AUDIT_NO_ISOLATION` | C* | 测试护栏：审计隔离旁路（`internal/audit`） |
+| 28 | `GUANJIN_GW_CLOCK_SKEW` | B | 数据面时钟容忍偏移**现名**（PR #121 改名；`cmd/guanjingw`）。旧名见 29 |
+| 29 | `GUANJIN_GATEWAY_CLOCK_SKEW` | B | 同上**旧名**（PR #121 之前的名字；滚动升级期旧配置可能仍在环境里，故一并保留） |
+| 30 | `GUANJIN_DEV_DSN` | C | 本地开发库（`Makefile`、`internal/store`/`internal/flowstore` 测试） |
+| 31 | `GUANJIN_STAGING_DSN` | C | 预发库（`Makefile` 提示与 DB/DEV DSN 一并导出） |
+| 32 | `GUANJIN_TEST_DSN` | C* | CI/测试夹具：测试库（`.github/workflows/ci.yml`、`internal/*`） |
+| 33 | `GUANJIN_TEST_REDIS_ADDR` | C* | CI/测试夹具：测试 Redis |
+| 34 | `GUANJIN_TEST_REDIS_PASSWORD` | C* | CI/测试夹具：测试 Redis 口令 |
+| 35 | `GUANJIN_TEST_DURATION` | C* | 测试夹具：时长参数（`cmd/guanjingw/main_test.go`） |
+| 36 | `GUANJIN_ALLOW_TEST_CLEANUP` | C* | 测试护栏：允许清理共享库（`internal/testdb`） |
+| 37 | `GUANJIN_AUDIT_NO_ISOLATION` | C* | 测试护栏：审计隔离旁路（`internal/audit`） |
+
+> **分组口径**：A 21 条（基线 §7.2 冻结）+ B 8 条（平台实现自用，含时钟偏移的现名/旧名）+ C 8 条（构建·测试夹具）= **37 条**。
+> 与 `decisions.md` **D25**（平台侧 27 名：A 的 15 条 §7.2 + B 的 12 条代码在读）的关系：D25 是**平台侧口径**、本附录是**SDK 侧完整清单**，两者是包含关系（本表 ⊇ D25），差异两处已登记——①D25 记的 `GUANJIN_GATEWAY_CLOCK_SKEW` 已被 PR #121 改名，本表两条都收；②`GUANJIN_MASTER_KEY_FILE`（§7.2/§7.3 部署示例）D25 未列，本表收（按"基线冻结即登记"）。
 
 > `C*` = **过渡条目**：测试夹具正在改名 `GJTEST_*`（单独 PR，与 SDK 修复解耦）。改名落地后这 6 条从清单删除——`GJTEST_*` 不带 `GUANJIN_` 前缀，SDK 本来就看不见。
 
@@ -782,5 +787,4 @@ M1 的 S9 **只交付 Java 8 两份产物**；Node / Go 随 M2+ 落地。但**�
 
 ---
 
-**校对快照（v8，供 Spec 抽查）**：`sdk-contract.md` / 行数 **786** 行（`wc -l`） / md5 **`8c8e6c09337a604246fab46aa7b49830`**（md5 覆盖范围 = **本节 4 行以外、即第 1..782 行**，避免自引用；行数含本节）。上一快照 = v8 732 行 / md5 `94fc0375`（**main 实测值**；本节原先写的 `c220f6a6` 是失真值——§3.2 三行「执行形态」追加后未重算，本次一并修正）。本轮：**按 PR #1 Owl 评审一次性修完 2 个 P2 + 4 个 P3**——E26 `checkLabel(objLevel)` 全文统一（原三处仍写 `level`）；E27 命名原则重写为**两层命名 + §1.5 的 R-1..R-5 封闭形态规则 + 三处冲突的差异类别与理由 + CI 反射比对**（选「改 N3 措辞、不改表」）；E28 配置 #26 的 Node/Go 字段名改为机械可推导（并补 Go 缩写白名单）；E29 新增 **§2.1.2**（`withClearance` 唯一写法、裸 `clearance()` 与 `dataLabel()` 一并作废、密级 1/2/3 词表、公开不占级、禁词正则与扫描范围）；E30 补 `TOKEN_INVALID` vs `TOKEN_EXPIRED` 界分表；E31 确认 Ark 已在他分支放开 `.gitignore` 的 `docs/`（`origin/main` 尚未生效，我不重复改）。**能力仍 22 条、配置仍 29 项，键名/编号/默认值/必填性/判据一处未改；基线未动、无源码。** 追加 **E34**：按 Gate 把关（PR #1 READY 附 1 处 P3）把 §5.1.1 的 **C-2** 「上表 10 条」改为「上表 **14 条**（原 10 条 + 第 11–14 条同批扫描）」，连带把 **C-1** 的「第 1–10 条」改为「第 1–14 条」，与表体、E8/E19 的「14 条」全部对齐——**只改文字，黑名单条目一条未增删**。追加 **E35/E36**（S9，#51 假红；E36 为按 Spec 裁决修订）：§3.6 重写为「①29 项唯一白名单 ②来源二映射一 ③未知键启动失败且报键名 ④**非配置命名空间=逐条封闭枚举、禁止通配**」四条口径，并给出**附录 35 条**清单（A 基线 §7.2 冻结 21 条 / B 平台实现自用 6 条 / C 构建·测试夹具 8 条，其中 6 条标 `C*` 为随 `GJTEST_*` 改名删除的过渡条目）；E36 明确废除上一稿的 `GUANJIN_TEST_` **前缀通配**（开放式例外与「29 项冻结 / 未知键必须失败」冲突），并关掉 Go 侧 `HasSuffix("_DSN")` 这个**隐性放行**（`GUANJIN_X_DSN` 这类拼错键改后必须失败）；补「发布说明」一行（错误信息含「该键不属于 SDK 配置命名空间」）。**29 项键名/编号/默认值/必填性/判据一处未改，基线未动。**
-
+**校对快照（v8，供 Spec 抽查）**：`sdk-contract.md` / 行数 **790** 行（`wc -l`）/ md5 **`1ae574b8d633c59efbf0a0f45f0770ef`**（md5 覆盖范围 = **第 1..787 行**，即到末尾 `---` 之前的内容为止，不含分隔线与本节自身，避免自引用）。上一快照 = 786 行 / md5 `8c8e6c09…`（S9 首版）。**E37（本 PR 追加）**：附录 35 → **37 条**——补 `GUANJIN_GW_CLOCK_SKEW`（数据面时钟偏移**现名**，PR #121 改名）与 `GUANJIN_GATEWAY_CLOCK_SKEW`（**旧名**，滚动升级期旧配置可能仍在进程环境里，漏掉即 SDK 启动失败）；并按 `decisions.md` **D25** 交代两者关系（D25 = 平台侧 27 名、本附录 = SDK 侧完整 37 条，本表 ⊇ D25，差异两处已就地登记）。**29 项键名/编号/默认值/必填性、22 条能力、判据一处未改；基线正文未动。**

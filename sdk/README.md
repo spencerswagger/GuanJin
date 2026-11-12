@@ -79,6 +79,7 @@ if !ok { /* 该路由未受保护（公开路径）——不是"已登录但没�
 |---|---|---|
 | 缺头 / 验签失败 / `exp`·`iat` 越界 / `iss`·`aud` 不符 / `jti` 重放 | 拒绝，不注入身份 | `401 TOKEN_INVALID` |
 | JWKS 拉取失败**有缓存** | 沿用缓存继续真实验签 | 正常（非降级） |
+| **构造期（启动自检 `GJ-CAP-22`）JWKS 不可达 / 404 / 500** | **启动失败**：`guanjin.New` 返回 error（码 `KEY_UNAVAILABLE`，`details` 带病因） | — |
 | JWKS 拉取失败**无缓存** | 拒绝 | `503 KEY_UNAVAILABLE` |
 | `jti` 存储不可用 | 拒绝 | `503 REDIS_UNAVAILABLE` |
 
@@ -91,10 +92,26 @@ if !ok { /* 该路由未受保护（公开路径）——不是"已登录但没�
 只需在 `sdk/go` 下加 `go.mod` 并把包路径换成 `…/guanjin/sdk/go/guanjin`，**代码与 API 名不变**。
 > 本包**不 import `internal/*`**：SDK 不得依赖平台内部实现（契约 §5.3.2 的越界防护）。
 
+## 跑一下（可运行示范）
+
+```bash
+go run ./sdk/go/example
+```
+
+它起一个**平台桩**（只提供 `GET /.well-known/jwks.json`）、签三种断言打进来，打印
+`状态码 / 错误码 / handler 侧看到的东西` 四行。预期：合法断言 `200` 且 handler 侧断言头为**空**、
+篡改/过期/缺头三行 `401 TOKEN_INVALID`（业务 handler 根本没被执行）。
+`testdata` 之外零依赖：示范只 import 公开 API + 第三方国密库。
+
 ## 测试与覆盖率
 
 ```bash
-go test ./sdk/... -count=1 -cover    # 单测全部用 mock（httptest + 内存 jti），不依赖 S8 网关
+go test ./sdk/... -count=1 -cover    # 单测全部用 mock（httptest + 内存 jti），不依赖网关实体
 ```
 
-端到端（真实 `guanjingw` 转发 + 断言头）等 **S8** 落地后另补一条，不在本切片范围内。
+两条**架构守线**（变异可自证）：
+- `TestSdkDoesNotImportPlatformInternals`：生产代码 import 了 `internal/*` 即红（SDK 是交付物，业务方本仓之外编不过）；
+- `TestSdkHasNoGoModOfItsOwn`：钉住当前模块形态（契约 §5.3.2 案 B；改案 A 必须显式改断言与 CI）。
+
+端到端（真实 `guanjingw` 转发 + 断言头）不在本切片：S8 的数据面 e2e 已覆盖「网关签发 → 上游收到 0 个断言头」，
+SDK↔真网关的联调另开一条（需要同机起 `guanjind` + `guanjingw`）。

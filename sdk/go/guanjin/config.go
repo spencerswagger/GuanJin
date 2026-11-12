@@ -231,7 +231,7 @@ func EnvFromEnv() Env {
 // 的 `GUANJIN_TEST_DSN` / `GUANJIN_TEST_REDIS_ADDR`）。不排除它们，SDK 在平台/测试进程里被加载
 // 时会把宿主变量当未知配置键 → 启动失败（PR #51 integration job 的红即此）。
 //
-// 清单与 docs/sdk-contract.md §3.6 附录逐条对应，**两侧必须同改**；新增/删除都会让
+// 清单与 docs/sdk-contract.md §3.6 附录（37 条）逐条对应，**两侧必须同改**；新增/删除都会让
 // TestReservedEnvNamespaceIsClosed（golden 列表）失败，防止清单悄悄长成"通配"。
 // C 组后 6 条是**过渡条目**：测试夹具改名 GJTEST_* 后（单独 PR）即从本表删除。
 var reservedEnv = map[string]struct{}{
@@ -257,13 +257,19 @@ var reservedEnv = map[string]struct{}{
 	"GUANJIN_GATEWAY_DIAL_TIMEOUT":     {},
 	"GUANJIN_METRICS_ADDR":             {},
 	"GUANJIN_OTEL_ENDPOINT":            {},
-	// B. 平台实现自用（internal/config、cmd/guanjind、cmd/guanjingw、internal/gateway）—— 6 条
+	// B. 平台实现自用（internal/config、cmd/guanjind、cmd/guanjingw、internal/gateway）—— 8 条
 	"GUANJIN_DB_DSN":          {},
 	"GUANJIN_REDIS_ADDR":      {},
 	"GUANJIN_REDIS_PASSWORD":  {},
 	"GUANJIN_TRACE_HEADER":    {},
 	"GUANJIN_GATEWAY_ROUTES":  {},
 	"GUANJIN_SLO_NOTIFY_PATH": {},
+	// `GUANJIN_GW_CLOCK_SKEW` = 数据面时钟容忍偏移的**现名**（PR #121 改的名，原名
+	// `GUANJIN_GATEWAY_CLOCK_SKEW`；改名理由：旧名正是 SDK 契约键 `guanjin.gateway.clock-skew`
+	// 的机械映射名，同名两个所有者）。旧名一并保留：滚动升级期旧配置项还在进程环境里，
+	// 漏掉它等于让 SDK 在升级窗口启动失败。
+	"GUANJIN_GW_CLOCK_SKEW":      {},
+	"GUANJIN_GATEWAY_CLOCK_SKEW": {},
 	// C. 构建/本地/CI 夹具（Makefile、.github/workflows/ci.yml、测试护栏）—— 8 条，后 6 条为过渡条目
 	"GUANJIN_DEV_DSN":             {},
 	"GUANJIN_STAGING_DSN":         {},

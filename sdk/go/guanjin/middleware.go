@@ -60,6 +60,22 @@ func New(cfg Config, opts ...Option) (*SDK, error) {
 	s.jwks = NewJwksClient(cfg, o.httpc)
 	s.verifier = NewVerifier(cfg, s.jwks)
 	s.matcher = NewPathMatcher(cfg)
+	// 启动自检（GJ-CAP-22 / 契约 §5.1 构造步）：**校验必填项 → 拉 JWKS → 打印放行清单**。
+	// JWKS 拉不到（404/500/超时）即**启动失败**（AC-SDK-03：404 也是失败，不是"先跑起来再说"）——
+	// 与 Java `GuanjinStartupChecker.check()` 的 `jwks.refresh()` 同口径。
+	// 注意：这里失败是"启动失败"；平台在**运行期**才不可达时仍走请求路径的 503 `KEY_UNAVAILABLE`
+	// （AC-FC-04 / AC-SDK-05），两者不互相替代。
+	if err := s.jwks.Refresh(); err != nil {
+		// 统一成 KEY_UNAVAILABLE（与运行期同码、503），`details` 里带病因（连接被拒 / 404 / 500），
+		// 供 AC-FC-04 的「把『密钥不可用』与『平台不可达』区分开」断言。
+		return nil, NewKeyUnavailable("启动自检：拉取 JWKS 失败", err)
+	}
+	// 与 Java `GuanjinStartupChecker.check()` 同口径：拉到了但**没有网关用途的 SM2 公钥**只告警
+	// （部署能起，但任何断言都会 401）——这里不升级为失败，否则与 Java 语义分叉（契约 §4.1 M2/M6）。
+	if n := s.jwks.KeyCount(); n == 0 {
+		s.logf("[guanjin] 警告：JWKS 里没有任何 SM2 公钥（kid 集合为空）——部署能起，但所有断言都会 401；"+
+			"检查平台 signing_keys 的 purpose=gateway（%s）", cfg.JwksURI())
+	}
 	if o.replay != nil {
 		s.replay = o.replay
 	} else {
