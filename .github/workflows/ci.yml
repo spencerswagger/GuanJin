@@ -314,7 +314,7 @@ jobs:
           grep -q '^\[UNCOVERED\] sdk/java' vuln-gate.log \
             || { echo "[FAIL] 缺 sdk/java 未覆盖的显式标注（D23③）= 红"; exit 1; }
       - name: 正控/负控（临时夹具注入已知漏洞依赖 → 必须判红并点名 文件:行号）
-        # 脚本存在 ≠ 门禁存在：14 项自检覆盖"判红/点位/版本敏感/白名单三态/快照三态/解析失败"。
+        # 脚本存在 ≠ 门禁存在：24 项自检覆盖"判红/点位/版本敏感/白名单五态/快照七态/坐标漂移/解析失败"。
         run: |
           set -euo pipefail
           ./scripts/check-vuln.sh --self-test | tee vuln-selftest.log

@@ -590,7 +590,8 @@
 
 - **结论**：**不接受"整目录静默跳过"**（`--skip-dirs sdk` 现在连一行提示都不打，等于"默默放过"，与 SKIP=未验证=红 同一类问题）。**分两段**：
   - **第一段（立即可做，不需追认）**：`scripts/check-vuln.sh` 必须在输出里**显式打一行** `[UNCOVERED] sdk/java：pom 解析需外网（实测 429），本闸不覆盖——见 decisions.md D23③`，并把这行计入 job 日志（**不是注释、不是 echo 到 /dev/null**）；`docs/qa/vuln-scan.md` 同步写清 **`AC-ENG-07` 的 PASS 口径 = `go.mod` + `web/package-lock.json` 两个生态 + `sdk/java` 未覆盖（显式标注）**，账目里不得写成"全量覆盖"。
-  - **第二段（一个迭代内，2026-12-10 前）**：改**离线 SBOM**（**手段已被 D28③ 修订**：`trivy sbom` 需 `ghcr.io` 的库，零网络下跑不起来 → 改为「Nova 产 CycloneDX `bom.json` → 同一判定引擎消费」；**期限与逾期降级不变**），链路是「**Nova 产 → Gate 判**」：`sdk` job 里用 `cyclonedx-maven-plugin`（`mvn -o` 或复用当次已热的 `~/.m2`）生成 `bom.json` 并作为 **artifact 上传**；`vuln` job 下载 artifact 后 `trivy sbom --severity HIGH,CRITICAL --exit-code 1`。**保鲜** = SBOM **每次构建重生成**（与依赖同源，不用人维护），`vuln` job **只消费当次 artifact、不解析 pom、不打外网** → 天然免疫 429。**判红** = ①有未白名单的 HIGH/CRITICAL；②**artifact 缺失或早于本次 commit**（= 未验证 = 红）；③白名单条目过期/不再命中（沿用现有规则）。
+  - **第二段（一个迭代内，2026-12-10 前）**：改**离线 SBOM**（**手段已被 D28③ 修订**：`trivy sbom` 需 `ghcr.io` 的库，零网络下跑不起来 → 改为「Nova 产 CycloneDX `bom.json` → 同一判定引擎消费」；**期限与逾期降级不变**），链路是「**Nova 产 → Gate 判**」：`sdk` job 里用 `cyclonedx-maven-plugin`（`mvn -o` 或复用当次已热的 `~/.m2`）生成 `bom.json` 并作为 **artifact 上传**；`vuln` job 下载 artifact 后由**同一判定引擎**消费（`vuln-gate.py` 读 CycloneDX `bom.json` 按坐标逐条判；
+  **不再用 `trivy sbom`**，理由见 D28③——trivy 要 `ghcr.io` 的库）。**保鲜** = SBOM **每次构建重生成**（与依赖同源，不用人维护），`vuln` job **只消费当次 artifact、不解析 pom、不打外网** → 天然免疫 429。**判红** = ①有未白名单的 HIGH/CRITICAL；②**artifact 缺失或早于本次 commit**（= 未验证 = 红）；③白名单条目过期/不再命中（沿用现有规则）。
   - **逾期后果（写死，防拖）**：2026-12-10 未上线 SBOM，则 `AC-ENG-07` 的账目**必须降级为"Java 侧未覆盖"并如实写**，不能继续记完整 PASS。
 - **属基线变更吗**：**不算**（CI 门禁实现范围，不涉对外契约/表结构/表名/端点）→ 不进 CH；但 **`AC-ENG-07` 的 PASS 口径** 由本条钉住，Gate 记账照此。
 
@@ -688,7 +689,9 @@
 
 > **触发**：#98 的依赖漏洞门禁必须在零网络的 CI 里落地（`#125` 已定 runner 解析不到外网源：`apt-get` 退避 4 分钟后 `exit 100`、后续 13 个 step 全 skipped），而 `#98` 原方案在 CI 里**五处联网**（`go install govulncheck`、`curl` trivy、`vuln.go.dev`、`ghcr.io` 的 trivy-db、`--self-test` 里的 `go mod tidy`）→ 跑不起来，而"跑不起来就跳过"等于关掉门禁。**#98 已关闭，由 #127 取代。**
 >
-> **状态**：判定口径**不变**（判据原文 `acceptance-criteria.md:281` 不动）；变的是**手段**。本条登记手段变更，供 Gate 记账引用。**属实现口径，不入 CH**（不涉对外契约 / 表结构 / 表名 / 端点）。
+> **状态**：判定**语义**不变（无未白名单的 HIGH/CRITICAL）；变的是**手段**——`acceptance-criteria.md:281`
+> 点名的 `govulncheck` / `trivy` **不再执行**（零网络下跑不起来），故本条登记**手段替代**，Gate 记账引用本条。
+> **判据文字要不要改成工具无关表述属判据变更，须 spencer 拍；本条不擅改**（该文件一字未动）。**属实现口径，不入 CH**（不涉对外契约 / 表结构 / 表名 / 端点）。
 
 - **① 手段**：CI 不再现跑 `govulncheck`/`trivy`，改为
   「**数据离线入库**（`docs/qa/vuln-advisories.tsv`，OSV 快照，PR 里逐行可评审）+ **本地纯标准库 python3 判定**（`scripts/vuln-gate.py`）」；
@@ -703,6 +706,14 @@
   **期限与逾期后果不变**（2026-12-10 前未上线则账目降级为"Java 侧未覆盖"）。
 - **④ 分级口径**（沿用 #98，未降阈值）：Go 侧**命中即红**（官方 OSV 不带 CVSS，离线无符号级可达性 → 坐标级判定是**超集**）；
   npm 侧照判据原文 **HIGH/CRITICAL** 阻断，`severity` 缺失（`-`，如 `MAL-*` 恶意包）**一律阻断**（缺级别 ≠ 低危）。
+- **⑤ 覆盖边界（Gate 记账必须照抄，不得省）**：本闸 Go 侧**只覆盖 `go.mod` 的第三方模块坐标（18 个）**；
+  **Go 标准库不在扫描面**——快照只收 `go.mod` 的坐标、引擎不读 `go` 指令
+  （`grep -c stdlib docs/qa/vuln-advisories.tsv` = **0**）。因此 D23① 记的 **10 条 stdlib 公告（修复只在 go1.26.x）
+  在本闸不产生任何输出**，"阻断 0"**≠**"Go 面全绿"。收口二选一：①spencer 追认 D23① 后升 Go 1.26（问题消失）；
+  ②快照加 `ecosystem=Go / module=stdlib` 行、引擎按 `go` 指令的**工具链版本**判（与 ③ 的 SBOM **同一期限 2026-12-10**，
+  逾期按同一条降级记账）。在此之前，stdlib 面的账仍由 D23① 的白名单承担，**不得**因本闸"阻断 0"而删那 10 行。
+- **⑥ 快照维护责任人**：**Gate**（唯一入口）。无依赖变更时 **30–60 天**刷一次，硬红线 **90 天**（过期即红）；
+  依赖**坐标集合**变了（新增 / 删掉 / 换掉）必须**同 PR 重刷**（`coords_sha256` 机器强制，不靠人记得）。
 
 ---
 

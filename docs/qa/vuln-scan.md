@@ -95,8 +95,9 @@ python3 scripts/vuln-snapshot-refresh.py --osv http://<内网镜像>   # 内网�
 | `web/package-lock.json` | **覆盖**（107 个包，逐包 `文件:行号`） |
 | `go.mod` 里的**本地路径** `replace` | **不覆盖**，每次运行显式打 `[UNCOVERED] go.mod:<行号> …` |
 | `sdk/java` | **不覆盖**，每次运行显式打 `[UNCOVERED] sdk/java：pom 解析需外网（实测 429），本闸不覆盖——见 decisions.md D23③` |
+| **Go 标准库** | **不覆盖**（快照只收 `go.mod` 的第三方坐标、引擎不读 `go` 指令；`grep -c stdlib docs/qa/vuln-advisories.tsv` = 0）→ D23① 的 10 条 stdlib 公告（修复只在 go1.26.x）在本闸**不产生输出**，**"阻断 0" ≠ "Go 面全绿"**；收口见 `decisions.md` **D28⑤**（升 Go 1.26 或快照加 `stdlib` 行，同一期限 2026-12-10） |
 
-**`AC-ENG-07` 的 PASS 口径（`decisions.md` D28② 钉住）** = `go.mod` + `web/package-lock.json` 两个生态的依赖坐标
+**`AC-ENG-07` 的 PASS 口径（`decisions.md` D28② 钉住；记账必须同时照抄 D28⑤ 的覆盖边界）** = `go.mod` + `web/package-lock.json` 两个生态的依赖坐标
 无未白名单的阻断级漏洞 **且** `sdk/java` 未覆盖被显式标注。账目里**不得**写成"全量覆盖"；
 2026-12-10 前未上线离线 SBOM（Nova 产 CycloneDX → 同一判定引擎消费，D28③）则降级为"Java 侧未覆盖"。
 
