@@ -62,3 +62,17 @@ A 路径（盲索引查不到就 409）不写表，所以不被拖（这正是 A
 - `CM-13`/`CM-15`/`CM-16` 的 `current` 是**现状钉桩**，不是判定标准。Nova 按补口①③ 改完 → 消费者立刻红，
   提示改表（`CM-13` 要求升级进 `cases` 按 `expect_after_fix` 断言）。**别用 skip/pending 掩盖**。
 - `scope_cases` / `integrity_cases` 仍是 UNIMPLEMENTED，不得记 PASS。
+
+## 五、契约 v16 收尾（2026-11-13 晚，G21⑤→⑥ + G22 对账）
+
+- **`CM-13` 转正**（Nova #163 `6d9f087` 放开 `clock-skew=0s` 之后）：`pending_cases` 桶整个**删除**，
+  `CM-13` 进 `cases` 正向（`expect.gateway.clock-skew = 0`，生成期硬校验：期望若是 0 以外的值、或等于默认
+  `60000` → `go run ./scripts/vecgen` 直接 panic，防止把"回落默认"记成契约期望）。
+  两侧消费者改为断言 **`pending_cases` 必须为空**（还留着 = 有该转正的向量被拖着），并单点钉
+  「`CM-13` 期望 = 0 且 ≠ 60000」+ Java 真跑 `fromMap` 后 `clockSkew.toMillis() == 0`、`validate` 不报错。
+- **A/B**：塞一条假 `pending_cases`（`CM-99`）→ Go 与 Java **同时红**并点名 `CM-99`；删掉后双绿。
+- **G22 对账**（`AC-REG-04` 测量口径）：`docs/qa/gate-criteria.md` §7 新增 `AC-REG-04` 行，与账目 §15-G22 逐条一致
+  （15 次/路径、丢前 3 预热、12 样本中位数、连续 3 轮均超阈才红、阈值只读 `runtime_config`、四条不许动）；
+  用例注释同样按 G22 写，并删掉会误导人的死常量 `maxPasses = 6`（实际 3 轮封顶，行为零变化）。
+- **复跑**：Go `internal/agent` + `sdk/go/guanjin` 全绿（vet/gofmt 干净）；Java `guanjin-core` **89 tests / 0 fail**
+  （`SpecVectorsConformanceTest` 7 个）。

@@ -186,16 +186,6 @@ func genConfig() {
 			"current": map[string]string{"go": "reject@load", "java": "reject@load"}},
 	}
 
-	// 契约已定、实现未跟上（**正向期望**的欠账）。消费者同样按 `current` 钉死现状：落地后本表立刻红，
-	// 提示把该条**升级成正例**（进 `cases`，按 `expect_after_fix` 断言），而不是继续挂在 pending 里。
-	pendingCases := []any{
-		map[string]any{"vector_id": "CM-13", "case": "duration_accept_zero_clock_skew", "key": gj.KeyGatewayClockSkew, "value": "0s",
-			"contract":         "补口①：`0s` 过正则、按零值如实生效；`gateway.clock-skew = 0s` **合法**（= 零容忍），且 ≠ 默认 60000",
-			"expect_after_fix": "accept，内部值 0（毫秒）",
-			"owner":            "Nova：Go `Config.Validate` 与 Java 校验器目前都把 0 判成『必须为正』，需按补口①放开零值（只 clock-skew；replay-window 仍由安全约束拦，见 CM-14）",
-			"current":          map[string]string{"go": "reject@validate", "java": "reject@load"}},
-	}
-
 	base := "http://127.0.0.1:18080"
 	cases := []cse{
 		run("CM-01", "defaults", nil, "空输入 = 29 项默认值（必填项为空串时由 Validate 拦，不在本表判）"),
@@ -258,6 +248,30 @@ func genConfig() {
 			gj.KeyPlatformBaseURL:   base,
 			gj.KeyAgentPullInterval: "\t45s\r\n",
 		}, "补口③（Gate 补强）：trim 后 45s ≠ 默认 30s → 值 = 45000ms。一侧若『没真解析、直接回落默认』，本条必红；CM-17 单独排不掉这种回落"),
+
+		// 契约 v16 §8.8 E42：`0s` 合法（零容忍），且**不得回落默认 60000**。
+		// 2026-11-13 原挂在 `pending_cases`（两侧都按"必须为正"拒），Nova 放开零值（#163）后转正（G21⑤→⑥）。
+		run("CM-13", "duration_accept_zero_clock_skew", map[string]string{
+			gj.KeyPlatformBaseURL:  base,
+			gj.KeyClientID:         "orders",
+			gj.KeyGatewayClockSkew: "0s",
+		}, "契约 v16 §8.8 E42 / §3.2.1 补口①：`0s` 合法 = 零容忍，内部值 **0 ms**，**≠ 默认 60000**（回落默认即红）。对照 `CM-14`：`replay-window=0s` 是**安全约束**失败，不是解析失败"),
+	}
+
+	// CM-13（`clock-skew=0s`）的期望必须真是 0，**不得**等于默认 60000 —— 否则生成器会把
+	// "回落默认值"这个缺陷当成契约期望记进向量（同 #17 的教训：期望按契约、实现漂移要炸）。
+	for i := range cases {
+		if cases[i].VectorID != "CM-13" {
+			continue
+		}
+		got, ok := cases[i].Expect[gj.KeyGatewayClockSkew].(int64)
+		if !ok {
+			panic(fmt.Sprintf("CM-13: %s 的期望类型不是 int64（%T）", gj.KeyGatewayClockSkew, cases[i].Expect[gj.KeyGatewayClockSkew]))
+		}
+		if got != 0 {
+			panic(fmt.Sprintf("CM-13: 输入 \"0s\"，期望值是 %d ms；契约 v16 §8.8 E42 要求 0（≠ 默认 %d）→ 实现回落默认了",
+				got, gj.DefaultClockSkew.Milliseconds()))
+		}
 	}
 
 	// 向量期望一律按**契约**。历史上 #17（Go 曾给 "model.conf"）靠 known_divergences 钉死；
@@ -289,8 +303,7 @@ func genConfig() {
 				"owner":             "Nova 实施（Java + Go 同一正则）；Gate 出负例向量",
 			},
 		},
-		"reject_cases":  rejectCases,
-		"pending_cases": pendingCases,
+		"reject_cases": rejectCases,
 		"removed_keys": map[string]any{
 			"note": "契约 §3.3 REMOVED：出现即启动失败（AC-SDK-01）。Go/Java 判错文案不同，两个实现都必须抛错",
 			"keys": gj.RemovedKeys,

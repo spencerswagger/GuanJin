@@ -174,6 +174,37 @@ class GuanjinDurationStrictTest {
         assertTrue(!GuanjinConfigValidator.isDurationKey("guanjin.client.id"), "非 duration 键不得误判");
     }
 
+    /**
+     * 契约 v16 §8.8 E42：`clock-skew=0s` 合法（零容忍），且**显式 0 与缺省必须可区分**——
+     * 缺省走默认 60s，显式 `0s` 就是 0（零容忍），不得回落。
+     */
+    @Test
+    void AC_SDK_11_clockSkewZeroIsDistinctFromAbsent() {
+        Map<String, String> explicitZero = baseConfig();
+        explicitZero.put("guanjin.gateway.clock-skew", "0s");
+        GuanjinConfig zero = GuanjinConfigLoader.fromMap(explicitZero);
+        assertEquals(Duration.ZERO, zero.getGateway().getClockSkew(),
+                "显式 0s 必须如实生效为 0，不得回落到默认 60s");
+        // 空 profile 集合 = 生产口径（判严）；0s 必须能过
+        GuanjinConfigValidator.validate(zero, GuanjinEnvironment.of(java.util.Collections.<String>emptyList()));
+
+        Map<String, String> absent = baseConfig();
+        GuanjinConfig dflt = GuanjinConfigLoader.fromMap(absent);
+        assertEquals(Duration.ofSeconds(60), dflt.getGateway().getClockSkew(),
+                "缺省必须走默认 60s（与显式 0 区分）");
+    }
+
+    private static Map<String, String> baseConfig() {
+        Map<String, String> in = new LinkedHashMap<String, String>();
+        in.put("guanjin.platform.base-url", "https://gj.example.com");
+        in.put("guanjin.client.id", "orders");
+        in.put("guanjin.client.hmac-secret", "s3cr3t-test-only-0123456789abcdef");
+        in.put("guanjin.gateway.jwks-uri", "https://gj.example.com/.well-known/jwks.json");
+        in.put("guanjin.authz.replay-store", "redis");
+        in.put("guanjin.gateway.replay-window", "60s");
+        return in;
+    }
+
     private static String k() {
         return "guanjin.platform.connect-timeout";
     }

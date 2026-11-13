@@ -184,12 +184,22 @@ class GuanjinConfigValidatorTest {
         // 不影响"能启动"
     }
 
+    /**
+     * 契约 v16 §8.8 E42：`clock-skew = 0s` **合法**（= 零容忍），"必须为正"是实现自造的下界 ——
+     * 基线 :104 只写「时钟偏移容忍」，没有正值要求；0 只会更严（fail-closed），不产生安全洞。
+     */
     @Test
-    void clockSkewMustBePositive() {
+    void clockSkewZeroIsLegalZeroTolerance() {
         GuanjinConfig cfg = TestConfigs.minimal();
         cfg.getGateway().setClockSkew(Duration.ZERO);
+        List<String> warnings = GuanjinConfigValidator.validate(cfg, TestConfigs.prod());
+        assertTrue(warnings.isEmpty(), "0s 不得告警也不得失败：" + warnings);
+
+        // 负值仍拒（编程式赋值可绕过解析；负偏斜会放宽 exp 判定 = 安全洞）
+        GuanjinConfig negative = TestConfigs.minimal();
+        negative.getGateway().setClockSkew(Duration.ofSeconds(-1));
         assertEquals(GuanjinConfigKeys.GATEWAY_CLOCK_SKEW,
                 assertThrows(GuanjinConfigException.class,
-                        () -> GuanjinConfigValidator.validate(cfg, TestConfigs.prod())).getKey());
+                        () -> GuanjinConfigValidator.validate(negative, TestConfigs.prod())).getKey());
     }
 }
