@@ -68,9 +68,10 @@ KEYWORDS = ('后置', 'DEFERRED', 'BLOCKED', 'NOT-IMPLEMENTED', 'PENDING', 'PASS
 for cid, status in rows:
     col = cls(status)
     b[col].append(cid)
-    hits = sorted({k for k in KEYWORDS if k in status})
-    if len(hits) > 1:
-        print(f'# WARN 多关键词 {cid}：{hits} → 取更保守的「{col}」栏（判据原文没写这条优先级，属归类裁量，需 Spec 认可）')
+    hit_classes = sorted({cls(k) for k in KEYWORDS if k in status})
+    # 只在**跨栏**时告警：`后置` 与 `DEFERRED` 是同一栏的两种写法，不该刷 WARN（会淹没真告警）
+    if len(hit_classes) > 1:
+        print(f'# WARN 跨栏多关键词 {cid}：{hit_classes} → 取更保守的「{col}」栏（判据原文没写这条优先级，属归类裁量，需 Spec 认可）')
 print('\t'.join(cols))
 print('\t'.join(str(len(v)) for v in b.values()))
 for k, v in b.items():
