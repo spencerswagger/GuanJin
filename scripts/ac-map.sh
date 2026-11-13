@@ -11,8 +11,16 @@
 #        后置（DEFERRED） > BLOCKED > NOT-IMPLEMENTED > PENDING > PASS-able > N/A
 #      （台账里 N/A 写作 `NOT-APPLICABLE`，两种写法都归 N/A 栏）；
 #   3. `AC-AUD-10` 必须落在「后置」栏（判据原文硬要求）；
-#   4. **双向对账**：行数 = §2 声明总数、各栏计数 = §2 声明值；声明行解析不到即红（不静默跳过）；
-#      出现无法归类的状态也即红。
+#   4. **双向对账**：行数 = §2 声明总数、各栏计数 = §2 声明值；**必需栏缺任一即红**
+#      （`TOTAL + PASS-able + PENDING + BLOCKED + N/A + NOT-IMPLEMENTED + 后置`，`FAIL` 可选 —— §2 不记运行态），
+#      同一栏出现两行声明也即红；出现无法归类的状态同样即红。
+#
+# **本表是「判据台账归栏」，不是运行态**：`PASS-able` = 台账里的状态；脚本**不读测试结果**，故 `FAIL` 恒 0。
+# 某条判据的测试是否真绿，看它自己的证据列 + `docs/qa/gate-criteria.md` + 四道门禁 —— 别把本表读成"84 条已通过"。
+#
+# **未查项（如实登记，别当已覆盖）**：判据原文另要求「`BLOCKED` 行必须带 R 编号、`PENDING` 行必须带 CH 编号、
+# 「后置」栏状态值写全名「后置（DEFERRED）：本期不做判定」」。本脚本**只归类不校验编号**；
+# 当前 `BLOCKED`/`PENDING` 两栏计数均为 0，故未实现 —— 这两栏一旦非 0，必须先把编号校验补上再放行。
 #
 # 用法：./scripts/ac-map.sh [--doc <path>] [--out <file>] [--self-test]
 set -uo pipefail
@@ -56,8 +64,13 @@ def cls(status):
 
 cols = ('PASS-able', 'FAIL', 'NOT-IMPLEMENTED', 'PENDING', 'BLOCKED', '后置', 'N/A', 'UNCLASSIFIED')
 b = collections.OrderedDict((k, []) for k in cols)
+KEYWORDS = ('后置', 'DEFERRED', 'BLOCKED', 'NOT-IMPLEMENTED', 'PENDING', 'PASS', 'NOT-APPLICABLE', 'N/A')
 for cid, status in rows:
-    b[cls(status)].append(cid)
+    col = cls(status)
+    b[col].append(cid)
+    hits = sorted({k for k in KEYWORDS if k in status})
+    if len(hits) > 1:
+        print(f'# WARN 多关键词 {cid}：{hits} → 取更保守的「{col}」栏（判据原文没写这条优先级，属归类裁量，需 Spec 认可）')
 print('\t'.join(cols))
 print('\t'.join(str(len(v)) for v in b.values()))
 for k, v in b.items():
@@ -83,7 +96,16 @@ for line in open(sys.argv[1], encoding='utf-8', errors='replace'):
         label, n = m.group(1), int(m.group(2))
         for key, col in want:
             if label.startswith(key):
+                if col in found:
+                    print(f'DUP\t{col}')  # 同一栏两行声明 = 台账写法出问题 → 红
                 found.setdefault(col, n)
+        continue
+    # 「后置」那行在台账里写成 `| **「后置（DEFERRED）：本期不做判定」** | **1** |`（加粗 + 书名号）
+    m = re.match(r'^\|\s*\*\*「(.+?)」\*\*\s*\|\s*\*\*(\d+)\*\*\s*\|', s)
+    if m and m.group(1).startswith('后置'):
+        if '后置' in found:
+            print('DUP\t后置')
+        found.setdefault('后置', int(m.group(2)))
     m = re.match(r'^\|\s*\*\*合计\*\*\s*\|\s*\*\*(\d+)\*\*', s)
     if m:
         found['TOTAL'] = int(m.group(1))
@@ -134,6 +156,21 @@ if [ "$self_test" -eq 1 ]; then
     *"PASS-able=2"*"N/A=1"*"TOTAL=3"*) echo "[OK] 自检④：声明值解析（含合计）"; ok=$((ok+1)) ;;
     *) echo "[FAIL] 自检④ d=$d"; bad=$((bad+1)) ;;
   esac
+  # ⑤ 必需栏缺失必须红（Owl P1：删掉 §2 的「合计」行曾让对账静默降级）
+  grep -v '^| \*\*合计\*\*' "$doc" > "$t/no-total.md"
+  if "$0" --doc "$t/no-total.md" >/dev/null 2>&1; then
+    echo "[FAIL] 自检⑤：删掉「合计」声明行后仍然 exit 0（对账被静默降级）"; bad=$((bad+1))
+  else
+    echo "[OK] 自检⑤：缺「合计」声明即红"; ok=$((ok+1))
+  fi
+  # ⑥ 同一栏两行声明必须红（不许静默取第一行）
+  cp "$doc" "$t/dup.md"
+  printf '| `PASS-able` | **84** | 重复声明 |\n' >> "$t/dup.md"
+  if "$0" --doc "$t/dup.md" >/dev/null 2>&1; then
+    echo "[FAIL] 自检⑥：重复声明仍 exit 0"; bad=$((bad+1))
+  else
+    echo "[OK] 自检⑥：重复声明即红"; ok=$((ok+1))
+  fi
   echo "[OK] 自检 $ok 项通过（$bad 失败）"
   [ "$bad" -eq 0 ] || exit 1
   exit 0
@@ -156,7 +193,20 @@ fi
 printf '%s\n' "$out_text" | grep -q 'AC-SDK-11' || { echo "[FAIL] AC-SDK-11 不在映射表里（v19 新增判据未进表）" >&2; exit 1; }
 
 decl=$(declared "$doc")
+if printf '%s\n' "$decl" | grep -q '^DUP'; then
+  echo "[FAIL] §2 同一栏出现两行声明（台账写法有歧义，不许静默取第一行）：$(printf '%s' "$decl" | tr '\n' ' ')" >&2
+  exit 1
+fi
 [ -n "$decl" ] || { echo "[FAIL] §2 的账目声明行解析不到 → 无法对账（不许静默跳过）" >&2; exit 1; }
+# 必需栏：缺任一即红（防"删掉合计行 / 改写标签"把对账无声废掉）
+missing=""
+for need in TOTAL PASS-able PENDING BLOCKED N/A NOT-IMPLEMENTED 后置; do
+  printf '%s\n' "$decl" | grep -qx "$need=[0-9]*" || missing="$missing $need"
+done
+if [ -n "$missing" ]; then
+  echo "[FAIL] §2 缺少必需的声明栏：$missing（对账不能只在"恰好都写了"时生效）" >&2
+  exit 1
+fi
 fail=0
 while IFS='=' read -r k v; do
   [ -n "$k" ] || continue
