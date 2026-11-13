@@ -81,7 +81,7 @@ python3 scripts/vuln-snapshot-refresh.py --osv http://<内网镜像>   # 内网�
 **当前 33 条，全部是 Maven（`sdk/java`）**，到期日统一 **2026-12-13**（登记日 2026-11-13，30 天）：
 `sdk/java` 首次经 CycloneDX BOM 入闸（#136，squash 合入 `2df9879`，D23③②）一次性暴露的**阻断级真实命中**
 （同一日志另有 **34 条低于阻断阈值**、只打 INFO 的命中：**LOW 7 / MODERATE 27**，不进本文件）——**不是**放宽阈值或整类豁免换来的绿；
-CRITICAL **5** / HIGH **28**。分族与责任人见 §5 末（**A 12 / B 11 / C 10**，2026-11-13 修正，旧账 24/9 作废）。
+CRITICAL **5** / HIGH **28**。分族与责任人见 §5 末：**逐公告** A 12 / B 11 / C 10（本文件与白名单的机械可复算口径），与 Nova 实施口径的**逐批次** A 批 24 / B 批 9 是**同一笔账**（换算 `24 = 12 + 11 + 1`、`9 = 10 − 1`，差额恰为 `snakeyaml 1.30 → 2.0`）——对账依据见 `docs/acceptance-criteria.md` **§12.1**。**两种单位不得混用，引用时必须写清是哪一种。**
 到期由 `scripts/vuln-gate.py` **自动重新判红**，逾期未升级则 `AC-ENG-07` 降级。
 
 > **汇总行怎么读**：`[OK] … 白名单 N` 里的 **N = 本次被放行的命中条数（`len(allowed)`）**，不是"文件里有几行"。
@@ -141,10 +141,14 @@ spring-webmvc GHSA-pc63-qcmh-9cmg；netty-handler GHSA-c4c3-7fpv-j4q5）。这�
 | **B** 同 major 内需升 minor | **11** | 目标同 major、跨 minor（jackson 2.13.5→**2.15.0/2.18.8/2.18.11**、bcprov 1.78.1→**1.80.2/1.85**、commons-io 2.11.0→**2.14.0**、snakeyaml 1.30→**1.31**） | **Nova**：升 minor + 回归（Jackson 跨 5 个 minor，需跑 SDK 全测） |
 | **C** 同 major 内无干净版本（须跨 major） | **10** | 该模块在现 major 内**没有任何已发布版本**能清掉本公告全部区间 → 目标落在更高 major（spring-web/webmvc/spring-expression/spring-core→**6.x**、spring-security-crypto→**6.3.8**、snakeyaml→**2.0**、spring-boot 2.7.18→**3.0.0**） | **Nova+Spec**：需 Boot 3 / 契约同步，排期并评估 SDK 兼容 |
 
-> **旧账 24/9 作废（记错，纠正）**：那版按"fix 上界与组件同 major"粗判，**没核该版本是否真的发布过**。
-> 典型反例：`spring-security-crypto` 5.7 线要求 5.7.16，而 5.7 线止于 **5.7.14**、5.8 线止于 **5.8.16**（<5.8.18），
-> 真正干净的只有 **6.3.8** → 属 C 族，不是"小跳"。每条的具体目标版本已写进白名单 `reason` 列，`grep '→'` 可看。
-> 到期即重判红；升级落地后"不再命中必须删行"的收紧规则不变。
+> **两种计数单位（同一笔账，别当两套数字）**：上表是**逐公告**（A 12 / B 11 / C 10 = 33），
+> Nova 的 `sdk/java/SBOM-REMEDIATION-PLAN.md` 用的是**逐批次**（A 批 24 / B 批 9 = 33，已 `mvn verify -Pintegration` 试跑）。
+> 换算式：`24 = 12 + 11 + 1`（+1 = `snakeyaml 1.30 → 2.0`，本表归 C、Nova 归"可一批"——公告跨 major 但目标版本 Java 8 兼容、
+> 与 Boot 2.7.18 实测可解析）、`9 = 10 − 1`（C 10 减掉这条 snakeyaml）。**对账依据 = `docs/acceptance-criteria.md` §12.1**；
+> **两种单位不得混用，引用时必须写清是哪一种。**
+> 分族必须**核该目标版本真的发布过**、不能只看"fix 上界与组件同 major"：典型反例 `spring-security-crypto` 5.7 线要求 5.7.16，
+> 而 5.7 线止于 **5.7.14**、5.8 线止于 **5.8.16**（<5.8.18），真正干净的只有 **6.3.8** → 属 C 族，不是"小跳"。
+> 每条的具体目标版本已写进白名单 `reason` 列，`grep '→'` 可看。到期即重判红；升级落地后"不再命中必须删行"的收紧规则不变。
 
 ## 6. 与「国密/算法扫描门禁」的边界（不重叠）
 
