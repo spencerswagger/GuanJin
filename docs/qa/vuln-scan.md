@@ -81,7 +81,7 @@ python3 scripts/vuln-snapshot-refresh.py --osv http://<内网镜像>   # 内网�
 **当前 33 条，全部是 Maven（`sdk/java`）**，到期日统一 **2026-12-13**（登记日 2026-11-13，30 天）：
 `sdk/java` 首次经 CycloneDX BOM 入闸（#136，squash 合入 `2df9879`，D23③②）一次性暴露的**阻断级真实命中**
 （同一日志另有 **34 条低于阻断阈值**、只打 INFO 的命中：**LOW 7 / MODERATE 27**，不进本文件）——**不是**放宽阈值或整类豁免换来的绿；
-CRITICAL **5** / HIGH **28**。分族与责任人见 §5 末（**A 12 / B 11 / C 10**，2026-11-13 修正，旧账 24/9 作废）。
+CRITICAL **5** / HIGH **28**。分族与责任人见 §5 末（**逐公告 A 12 / B 11 / C 10**；与 Nova 的**逐批次 A 批 24 / B 批 9** 已对账：`24 = 12+11+1`、`9 = 10−1`，差额 = `snakeyaml 1.30→2.0`——**两种单位不得混用**，并列口径见 `docs/acceptance-criteria.md` §12.1）。
 到期由 `scripts/vuln-gate.py` **自动重新判红**，逾期未升级则 `AC-ENG-07` 降级。
 
 > **汇总行怎么读**：`[OK] … 白名单 N` 里的 **N = 本次被放行的命中条数（`len(allowed)`）**，不是"文件里有几行"。
@@ -135,14 +135,21 @@ spring-webmvc GHSA-pc63-qcmh-9cmg；netty-handler GHSA-c4c3-7fpv-j4q5）。这�
 到 Maven Central `maven-metadata.xml` 找「**已发布**且**不在任一区间**」的**最小**版本作目标，
 用本仓 `vuln-gate.py` 的 `vparse/vcmp/vmatch` 判（口径与引擎一致），再与现装版本的 major/minor 比：
 
-| 族 | 条数 | 判据 | 谁修 |
+| 族 | 条数 | 判据 | 谁修（逐公告 → 逐批次） |
 |---|---:|---|---|
-| **A** 同 minor 线补丁已发布 | **12** | 目标与现装同 `major.minor`（如 spring-web 5.3.31→**5.3.34**、logback 1.2.12→**1.2.13**、netty 4.1.101.Final→**4.1.137.Final**、spring-security-core 5.7.11→**5.7.12**） | **Nova**：一行 `<properties>` 版本覆盖 + 回归 |
-| **B** 同 major 内需升 minor | **11** | 目标同 major、跨 minor（jackson 2.13.5→**2.15.0/2.18.8/2.18.11**、bcprov 1.78.1→**1.80.2/1.85**、commons-io 2.11.0→**2.14.0**、snakeyaml 1.30→**1.31**） | **Nova**：升 minor + 回归（Jackson 跨 5 个 minor，需跑 SDK 全测） |
-| **C** 同 major 内无干净版本（须跨 major） | **10** | 该模块在现 major 内**没有任何已发布版本**能清掉本公告全部区间 → 目标落在更高 major（spring-web/webmvc/spring-expression/spring-core→**6.x**、spring-security-crypto→**6.3.8**、snakeyaml→**2.0**、spring-boot 2.7.18→**3.0.0**） | **Nova+Spec**：需 Boot 3 / 契约同步，排期并评估 SDK 兼容 |
+| **A** 同 minor 线补丁已发布 | **12** | 目标与现装同 `major.minor`（如 spring-web 5.3.31→**5.3.34**、logback 1.2.12→**1.2.13**、netty 4.1.101.Final→**4.1.137.Final**、spring-security-core 5.7.11→**5.7.12**） | **Nova**（落在 **A 批 24** 内）：一行 `<properties>` 版本覆盖 + 回归 |
+| **B** 同 major 内需升 minor | **11** | 目标同 major、跨 minor（jackson 2.13.5→**2.15.0/2.18.8/2.18.11**、bcprov 1.78.1→**1.80.2/1.85**、commons-io 2.11.0→**2.14.0**、snakeyaml 1.30→**1.31**） | **Nova**（落在 **A 批 24** 内）：升 minor + 回归（Jackson 跨 5 个 minor，需跑 SDK 全测） |
+| **C** 同 major 内无干净版本（须跨 major） | **10** | 该模块在现 major 内**没有任何已发布版本**能清掉本公告全部区间 → 目标落在更高 major（spring-web/webmvc/spring-expression/spring-core→**6.x**、spring-security-crypto→**6.3.8**、snakeyaml→**2.0**、spring-boot 2.7.18→**3.0.0**） | **按批次拆**：**9 条 → B 批**（Spring 6 / Security 6 / Boot 3 要 Java 17，与 SDK 的 Java 8 契约冲突）→ **spencer 拍板**（α 加 Boot 3 轨／β 风险接受 + 书面续期／γ 缩 SBOM 面，见 `sdk/java/SBOM-REMEDIATION-PLAN.md` §3）；**1 条 `snakeyaml→2.0`**（Java 8 兼容、与 Boot 2.7.18 实测可解析）→ 随 **A 批**归 Nova |
 
-> **旧账 24/9 作废（记错，纠正）**：那版按"fix 上界与组件同 major"粗判，**没核该版本是否真的发布过**。
-> 典型反例：`spring-security-crypto` 5.7 线要求 5.7.16，而 5.7 线止于 **5.7.14**、5.8 线止于 **5.8.16**（<5.8.18），
+> **两种单位，别混用（2026-11-13 补）**：上表是**逐公告**单位（按"清掉该公告**全部**受影响区间"算，机械可复算）；
+> `sdk/java/SBOM-REMEDIATION-PLAN.md`（#140，已 `mvn verify -Pintegration` 试跑：白名单命中 33 → **9**、class major ≤52）
+> 是**逐批次**单位（**A 批 24 / B 批 9**，按"能不能一批做/是否撞 Java 17"分）。两者**同一笔账、已对账**：
+> **`24 = 12 + 11 + 1`**、**`9 = 10 − 1`**，差额恰为 **`snakeyaml 1.30 → 2.0`**（公告跨 major → 本表归 C；
+> 但目标版本 Java 8 兼容 → Nova 归"可一批"）。**引用时必须写清是哪一种单位**（并列口径见 `docs/acceptance-criteria.md` **§12.1**）。
+>
+> **撤掉的是第三种口径（不是 Nova 的逐批次 24/9）**：`#136` 头注释原先写的「24 同 major / 9 跨 major」按"fix 上界与组件**同 major**"粗判，
+> **没核该版本是否真的发布过** → 不可复算，已撤（它与 Nova 的 24/9 数字相同纯属巧合，**不是**同一套判据；Nova 那套有 `mvn verify` 实跑证据）。
+> 典型反例仍成立：`spring-security-crypto` 5.7 线要求 **5.7.16**，而 5.7 线止于 **5.7.14**、5.8 线止于 **5.8.16**（<5.8.18），
 > 真正干净的只有 **6.3.8** → 属 C 族，不是"小跳"。每条的具体目标版本已写进白名单 `reason` 列，`grep '→'` 可看。
 > 到期即重判红；升级落地后"不再命中必须删行"的收紧规则不变。
 
