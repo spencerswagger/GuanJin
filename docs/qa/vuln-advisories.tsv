@@ -12,12 +12,15 @@
 # 例外只能进 docs/qa/vuln-allowlist.tsv 且逐条带理由 + 到期日。
 # 快照过期（generated_at 超过 MAX_AGE_DAYS）→ 门禁判红：库旧等于没扫。
 #
-# generated_at: 2026-11-12
-# coords_sha256: 6e6c152e2b6d6f9d82d96ee883e099d185a4d3c9c20744a12ecc1433b50c906e
+# generated_at: 2026-11-13
+# coords_sha256: 1639ab3c82613361e4eaef9623a77aa294cd28321ffa9ca0b01a782ca2d13761
+# coords_sha256_go: 7ea0c913e285c36755775786aace215d3fd1c351146e8403fde6212037e547f7
+# coords_sha256_npm: b2b4b7ce895522c61e6df4753552b04f6a0423c60c960bf396513b67edfed74c
+# coords_sha256_maven: db618c104746643fb167524a61c33e108f23709d19a326633f52ae9474a69b33
 # dropped: 0
-# source: https://api.osv.dev/v1/query（Go + npm 两条生态，坐标取自 go.mod / web/package-lock.json）
-# coordinates: Go 18 个模块 + npm 107 个包 = 125 个坐标（**坐标指纹以 coords_sha256 为准**）
-# entries: 185 行（72 个公告）
+# source: https://api.osv.dev/v1/query（Go + npm + Maven 三条生态；坐标取自 go.mod / web/package-lock.json / CycloneDX bom.json --java-bom）
+# coordinates: Go 18 个模块 + npm 107 个包 + Maven 51 个组件 = 176 个坐标（**坐标指纹以 coords_sha256 为准**）
+# entries: 602 行（279 个公告）
 #
 # id	ecosystem	module	affected	severity	aliases	summary
 GHSA-fqpg-rq76-99pq	Go	github.com/jackc/pgx/v5	>=0.0.0,<5.5.2	MODERATE	GO-2024-2567	Panic in Pipeline when PgConn is busy or closed in github.com/jackc/pgx
@@ -33,6 +36,423 @@ GHSA-ppp9-7jff-5vj2	Go	golang.org/x/text	>=0.0.0,<0.3.7	HIGH	CVE-2021-38561,GO-2
 GHSA-69ch-w2m2-3vjp	Go	golang.org/x/text	>=0.0.0,<0.3.8	HIGH	CVE-2022-32149,GO-2022-1059	golang.org/x/text/language Denial of service via crafted Accept-Language header
 GO-2026-5970	Go	golang.org/x/text	>=0.0.0,<0.39.0	-	CVE-2026-56852	Infinite loop on invalid input in golang.org/x/text
 GO-2026-6629	Go	golang.org/x/text	>=0.0.0,<0.41.0	-	CVE-2026-56851	Panic parsing crafted input in x/text/secure/precis in golang.org/x/text
+GHSA-vmfg-rjjm-rjrj	Maven	ch.qos.logback:logback-classic	>=0.0.0,<1.2.0	CRITICAL	CVE-2017-5929	QOS.ch Logback vulnerable to Deserialization of Untrusted Data
+GHSA-vmq6-5m68-f53m	Maven	ch.qos.logback:logback-classic	>=0.0.0,<1.2.13	HIGH	CVE-2023-6378	logback serialization vulnerability
+GHSA-vmq6-5m68-f53m	Maven	ch.qos.logback:logback-classic	>=1.3.0,<1.3.12	HIGH	CVE-2023-6378	logback serialization vulnerability
+GHSA-vmq6-5m68-f53m	Maven	ch.qos.logback:logback-classic	>=1.4.0,<1.4.12	HIGH	CVE-2023-6378	logback serialization vulnerability
+GHSA-vmfg-rjjm-rjrj	Maven	ch.qos.logback:logback-core	>=0.0.0,<1.2.0	CRITICAL	CVE-2017-5929	QOS.ch Logback vulnerable to Deserialization of Untrusted Data
+GHSA-vmq6-5m68-f53m	Maven	ch.qos.logback:logback-core	>=0.0.0,<1.2.13	HIGH	CVE-2023-6378	logback serialization vulnerability
+GHSA-668q-qrv7-99fm	Maven	ch.qos.logback:logback-core	>=0.0.0,<1.2.9	MODERATE	CVE-2021-42550	Deserialization of Untrusted Data in logback
+GHSA-6v67-2wr5-gvf4	Maven	ch.qos.logback:logback-core	>=0.0.0,<1.3.15	LOW	CVE-2024-12801	QOS.CH logback-core Server-Side Request Forgery vulnerability
+GHSA-25qh-j22f-pwp8	Maven	ch.qos.logback:logback-core	>=0.0.0,<1.3.16	MODERATE	CVE-2025-11226	QOS.CH logback-core is vulnerable to Arbitrary Code Execution through file processing
+GHSA-qqpg-mvqg-649v	Maven	ch.qos.logback:logback-core	>=0.0.0,<1.5.25	LOW	CVE-2026-1225	Logback allows an attacker to instantiate classes already present on the class path
+GHSA-p47f-322f-whfh	Maven	ch.qos.logback:logback-core	>=0.0.0,<1.5.33	LOW	CVE-2026-9828	QOS.CH Sarl logback logback-core has a deserialization of untrusted data vulnerability
+GHSA-jhq6-gfmj-v8fx	Maven	ch.qos.logback:logback-core	>=0.0.0,<1.5.34	LOW	CVE-2026-10532	Logback vulnerable to Object Injection through HardenedObjectInputStream modules
+GHSA-gm62-rw4g-vrc4	Maven	ch.qos.logback:logback-core	>=1.2.12,<1.2.13	HIGH	CVE-2023-6481	Logback is vulnerable to an attacker mounting a Denial-Of-Service attack by sending poisoned data
+GHSA-vmq6-5m68-f53m	Maven	ch.qos.logback:logback-core	>=1.3.0,<1.3.12	HIGH	CVE-2023-6378	logback serialization vulnerability
+GHSA-gm62-rw4g-vrc4	Maven	ch.qos.logback:logback-core	>=1.3.13,<1.3.14	HIGH	CVE-2023-6481	Logback is vulnerable to an attacker mounting a Denial-Of-Service attack by sending poisoned data
+GHSA-vmq6-5m68-f53m	Maven	ch.qos.logback:logback-core	>=1.4.0,<1.4.12	HIGH	CVE-2023-6378	logback serialization vulnerability
+GHSA-6v67-2wr5-gvf4	Maven	ch.qos.logback:logback-core	>=1.4.0,<1.5.13	LOW	CVE-2024-12801	QOS.CH logback-core Server-Side Request Forgery vulnerability
+GHSA-25qh-j22f-pwp8	Maven	ch.qos.logback:logback-core	>=1.4.0,<1.5.19	MODERATE	CVE-2025-11226	QOS.CH logback-core is vulnerable to Arbitrary Code Execution through file processing
+GHSA-gm62-rw4g-vrc4	Maven	ch.qos.logback:logback-core	>=1.4.13,<1.4.14	HIGH	CVE-2023-6481	Logback is vulnerable to an attacker mounting a Denial-Of-Service attack by sending poisoned data
+GHSA-h46c-h94j-95f3	Maven	com.fasterxml.jackson.core:jackson-core	>=0.0.0,<2.15.0	HIGH	CVE-2025-52999	jackson-core can throw a StackoverflowError when processing deeply nested data
+GHSA-r7wm-3cxj-wff9	Maven	com.fasterxml.jackson.core:jackson-core	>=0.0.0,<2.18.8	HIGH	CVE-2026-68494	jackson-core: Async parser maxNumberLength bypass via chunked digit accumulation (incomplete fix for GHSA-72hv-8253-57qq)
+GHSA-wf8f-6423-gfxg	Maven	com.fasterxml.jackson.core:jackson-core	>=2.0.0,<2.13.0	MODERATE	CVE-2025-49128	Jackson-core Vulnerable to Memory Disclosure via Source Snippet in JsonLocation
+GHSA-72hv-8253-57qq	Maven	com.fasterxml.jackson.core:jackson-core	>=2.15.0,<2.18.6	MODERATE	CVE-2026-18401	jackson-core: Number Length Constraint Bypass in Async Parser Leads to Potential DoS Condition
+GHSA-p6pp-m3f8-5c89	Maven	com.fasterxml.jackson.core:jackson-core	>=2.17.0,<2.18.11	HIGH	CVE-2026-89407	 jackson-core: ReDoS: quadratic backtracking in NumberInput.PATTERN_FLOAT via looksLikeValidNumber()
+GHSA-72hv-8253-57qq	Maven	com.fasterxml.jackson.core:jackson-core	>=2.19.0,<2.21.1	MODERATE	CVE-2026-18401	jackson-core: Number Length Constraint Bypass in Async Parser Leads to Potential DoS Condition
+GHSA-r7wm-3cxj-wff9	Maven	com.fasterxml.jackson.core:jackson-core	>=2.19.0,<2.21.4	HIGH	CVE-2026-68494	jackson-core: Async parser maxNumberLength bypass via chunked digit accumulation (incomplete fix for GHSA-72hv-8253-57qq)
+GHSA-7hhh-6rmp-j9qf	Maven	com.fasterxml.jackson.core:jackson-core	>=2.19.0,<2.21.7	HIGH	CVE-2026-89425	jackson-core: UTF8DataInputJsonParser._reportInvalidToken() missing maxErrorTokenLength limit -> unbounded StringBuilder growth (DoS)
+GHSA-7hhh-6rmp-j9qf	Maven	com.fasterxml.jackson.core:jackson-core	>=2.22.0,<2.22.3	HIGH	CVE-2026-89425	jackson-core: UTF8DataInputJsonParser._reportInvalidToken() missing maxErrorTokenLength limit -> unbounded StringBuilder growth (DoS)
+GHSA-7hhh-6rmp-j9qf	Maven	com.fasterxml.jackson.core:jackson-core	>=2.8.0,<2.18.11	HIGH	CVE-2026-89425	jackson-core: UTF8DataInputJsonParser._reportInvalidToken() missing maxErrorTokenLength limit -> unbounded StringBuilder growth (DoS)
+GHSA-57j2-w4cx-62h2	Maven	com.fasterxml.jackson.core:jackson-databind	>=0.0.0,<2.12.6.1	HIGH	CVE-2020-36518	Deeply nested json in jackson-databind
+GHSA-qxxx-2pp7-5hmx	Maven	com.fasterxml.jackson.core:jackson-databind	>=0.0.0,<2.6.7.1	CRITICAL	CVE-2017-7525	jackson-databind is vulnerable to a deserialization flaw
+GHSA-85cw-hj65-qqv9	Maven	com.fasterxml.jackson.core:jackson-databind	>=0.0.0,<2.6.7.3	CRITICAL	CVE-2019-16335	Polymorphic Typing issue in FasterXML jackson-databind
+GHSA-5949-rw7g-wx7w	Maven	com.fasterxml.jackson.core:jackson-databind	>=0.0.0,<2.6.7.5	HIGH	BIT-nifi-2021-20190,CVE-2021-20190	Deserialization of untrusted data in jackson-databind
+GHSA-rfx6-vp9g-rh7v	Maven	com.fasterxml.jackson.core:jackson-databind	>=0.0.0,<2.7.9.2	CRITICAL	CVE-2017-17485	jackson-databind vulnerable to remote code execution due to incorrect deserialization and blocklist bypass
+GHSA-cjjf-94ff-43w7	Maven	com.fasterxml.jackson.core:jackson-databind	>=0.0.0,<2.7.9.4	HIGH	CVE-2018-12022	jackson-databind Deserialization of Untrusted Data vulnerability
+GHSA-w3f4-3q6j-rh82	Maven	com.fasterxml.jackson.core:jackson-databind	>=0.0.0,<2.7.9.5	HIGH	CVE-2018-5968	Deserialization of Untrusted Data in jackson-databind
+GHSA-6fpp-rgj9-8rwc	Maven	com.fasterxml.jackson.core:jackson-databind	>=0.0.0,<2.7.9.6	CRITICAL	CVE-2019-14379	Deserialization of untrusted data in FasterXML jackson-databind
+GHSA-f3j5-rmmp-3fc5	Maven	com.fasterxml.jackson.core:jackson-databind	>=0.0.0,<2.8.11.5	CRITICAL	CVE-2019-17267	Improper Input Validation in jackson-databind
+GHSA-rpr3-cw39-3pxh	Maven	com.fasterxml.jackson.core:jackson-databind	>=0.0.0,<2.9.10.4	HIGH	CVE-2020-10650	jackson-databind vulnerable to unsafe deserialization
+GHSA-qjw2-hr98-qgfh	Maven	com.fasterxml.jackson.core:jackson-databind	>=2.0,<2.6.7.5	HIGH	CVE-2020-24750	Unsafe Deserialization in jackson-databind
+GHSA-wv8q-qhhj-9h54	Maven	com.fasterxml.jackson.core:jackson-databind	>=2.0.0,<2.18.11	HIGH	CVE-2026-91776	jackson-databind retains every unknown raw type ID 
+GHSA-hgj6-7826-r7m5	Maven	com.fasterxml.jackson.core:jackson-databind	>=2.0.0,<2.18.8	MODERATE	CVE-2026-54514	jackson-databind: InetSocketAddress deserialization triggers eager DNS resolution (SSRF)
+GHSA-vvgp-rfg2-7rr6	Maven	com.fasterxml.jackson.core:jackson-databind	>=2.0.0,<2.18.9	MODERATE	CVE-2026-77310	jackson-databind: Incomplete fix for CVE-2026-54514: eager DNS resolution (SSRF) still present in InetAddress deserialization
+GHSA-5ww9-j83m-q7qx	Maven	com.fasterxml.jackson.core:jackson-databind	>=2.0.0,<2.6.7.3	HIGH	CVE-2019-12086	Information exposure in FasterXML jackson-databind
+GHSA-4w82-r329-3q67	Maven	com.fasterxml.jackson.core:jackson-databind	>=2.0.0,<2.6.7.4	CRITICAL	CVE-2020-8840	Deserialization of Untrusted Data in jackson-databind
+GHSA-89qr-369f-5m5x	Maven	com.fasterxml.jackson.core:jackson-databind	>=2.0.0,<2.6.7.5	HIGH	CVE-2020-36182	Unsafe Deserialization in jackson-databind
+GHSA-qr7j-h6gg-jmgc	Maven	com.fasterxml.jackson.core:jackson-databind	>=2.0.0,<2.7.9.4	CRITICAL	CVE-2018-11307	Deserialization of Untrusted Data in jackson-databind
+GHSA-4gq5-ch57-c2mg	Maven	com.fasterxml.jackson.core:jackson-databind	>=2.0.0,<2.7.9.5	CRITICAL	CVE-2018-14719	Arbitrary Code Execution in jackson-databind
+GHSA-p43x-xfjf-5jhr	Maven	com.fasterxml.jackson.core:jackson-databind	>=2.0.0,<2.7.9.7	CRITICAL	CVE-2020-9548	jackson-databind mishandles the interaction between serialization gadgets and typing
+GHSA-h3cw-g4mq-c5x2	Maven	com.fasterxml.jackson.core:jackson-databind	>=2.0.0,<2.9.10.6	HIGH	CVE-2020-24616	Code Injection in jackson-databind
+GHSA-5r5r-6hpj-8gg9	Maven	com.fasterxml.jackson.core:jackson-databind	>=2.0.0,<2.9.10.8	HIGH	CVE-2020-35728	Serialization gadget exploit in jackson-databind
+GHSA-5gvw-p9qm-jgwh	Maven	com.fasterxml.jackson.core:jackson-databind	>=2.0.0-RC1,<2.18.9	MODERATE	CVE-2026-59889	jackson-databind: @JsonView bypassed for @JsonUnwrapped container properties on deserialization
+GHSA-3x8x-79m2-3w2w	Maven	com.fasterxml.jackson.core:jackson-databind	>=2.10.0,<2.12.6	HIGH	CVE-2021-46877	jackson-databind possible Denial of Service if using JDK serialization to serialize JsonNode
+GHSA-3wrr-7qpf-2prh	Maven	com.fasterxml.jackson.core:jackson-databind	>=2.10.0,<2.14.0	MODERATE	CVE-2026-50193	jackson-databind: Deeply nested JsonNode throws StackOverflowError for toString()
+GHSA-j3rv-43j4-c7qm	Maven	com.fasterxml.jackson.core:jackson-databind	>=2.10.0,<2.18.8	HIGH	CVE-2026-54512	jackson-databind has a PolymorphicTypeValidator bypass via generic type parameters that allows arbitrary class instantiation
+GHSA-288c-cq4h-88gq	Maven	com.fasterxml.jackson.core:jackson-databind	>=2.10.0.0,<2.10.5.1	HIGH	CVE-2020-25649	XML External Entity (XXE) Injection in Jackson Databind
+GHSA-gx83-3vf8-gh7j	Maven	com.fasterxml.jackson.core:jackson-databind	>=2.11.0,<2.18.10	MODERATE	CVE-2026-83557	jackson-databind: Comparable missing from DefaultBaseTypeLimitingValidator's unsafe base types (incomplete PolymorphicTypeValidator denylist)
+GHSA-3x8x-79m2-3w2w	Maven	com.fasterxml.jackson.core:jackson-databind	>=2.13.0,<2.13.1	HIGH	CVE-2021-46877	jackson-databind possible Denial of Service if using JDK serialization to serialize JsonNode
+GHSA-57j2-w4cx-62h2	Maven	com.fasterxml.jackson.core:jackson-databind	>=2.13.0,<2.13.2.1	HIGH	CVE-2020-36518	Deeply nested json in jackson-databind
+GHSA-rgv9-q543-rqg4	Maven	com.fasterxml.jackson.core:jackson-databind	>=2.13.0,<2.13.4	HIGH	CVE-2022-42004	Uncontrolled Resource Consumption in FasterXML jackson-databind
+GHSA-jjjh-jjxp-wpff	Maven	com.fasterxml.jackson.core:jackson-databind	>=2.13.0,<2.13.4.2	HIGH	CVE-2022-42003	Uncontrolled Resource Consumption in Jackson-databind
+GHSA-q4xh-88c3-wmh7	Maven	com.fasterxml.jackson.core:jackson-databind	>=2.14.0,<2.18.10	HIGH	CVE-2026-68497	jackson-databind: Duration XMLGregorianCalendar Unbounded Number Parse DoS
+GHSA-3pjw-73gf-8qr5	Maven	com.fasterxml.jackson.core:jackson-databind	>=2.15.0,<2.18.8	MODERATE	CVE-2026-59888	jackson-databind: @JsonIgnore on a Record property is bypassed with a PropertyNamingStrategy
+GHSA-mhm7-754m-9p8w	Maven	com.fasterxml.jackson.core:jackson-databind	>=2.18.0,<2.18.9	MODERATE	-	jackson-databind: `@JsonView` bypass for creator properties with `@JsonTypeInfo(include=As.EXTERNAL_PROPERTY)`
+GHSA-3pjw-73gf-8qr5	Maven	com.fasterxml.jackson.core:jackson-databind	>=2.19.0,<2.21.4	MODERATE	CVE-2026-59888	jackson-databind: @JsonIgnore on a Record property is bypassed with a PropertyNamingStrategy
+GHSA-5gvw-p9qm-jgwh	Maven	com.fasterxml.jackson.core:jackson-databind	>=2.19.0,<2.21.5	MODERATE	CVE-2026-59889	jackson-databind: @JsonView bypassed for @JsonUnwrapped container properties on deserialization
+GHSA-gx83-3vf8-gh7j	Maven	com.fasterxml.jackson.core:jackson-databind	>=2.19.0,<2.21.6	MODERATE	CVE-2026-83557	jackson-databind: Comparable missing from DefaultBaseTypeLimitingValidator's unsafe base types (incomplete PolymorphicTypeValidator denylist)
+GHSA-cxp5-3px4-pw24	Maven	com.fasterxml.jackson.core:jackson-databind	>=2.19.0,<2.21.7	HIGH	CVE-2026-91777	jackson-databind quadratic forward-reference completion 
+GHSA-5hh8-q8hv-fr38	Maven	com.fasterxml.jackson.core:jackson-databind	>=2.21.0,<2.21.4	MODERATE	CVE-2026-54517	jackson-databind has @JsonView bypass for setterless creator properties
+GHSA-mhm7-754m-9p8w	Maven	com.fasterxml.jackson.core:jackson-databind	>=2.21.0,<2.21.5	MODERATE	-	jackson-databind: `@JsonView` bypass for creator properties with `@JsonTypeInfo(include=As.EXTERNAL_PROPERTY)`
+GHSA-5gvw-p9qm-jgwh	Maven	com.fasterxml.jackson.core:jackson-databind	>=2.22.0,<2.22.1	MODERATE	CVE-2026-59889	jackson-databind: @JsonView bypassed for @JsonUnwrapped container properties on deserialization
+GHSA-gx83-3vf8-gh7j	Maven	com.fasterxml.jackson.core:jackson-databind	>=2.22.0,<2.22.2	MODERATE	CVE-2026-83557	jackson-databind: Comparable missing from DefaultBaseTypeLimitingValidator's unsafe base types (incomplete PolymorphicTypeValidator denylist)
+GHSA-cxp5-3px4-pw24	Maven	com.fasterxml.jackson.core:jackson-databind	>=2.22.0,<2.22.3	HIGH	CVE-2026-91777	jackson-databind quadratic forward-reference completion 
+GHSA-jjjh-jjxp-wpff	Maven	com.fasterxml.jackson.core:jackson-databind	>=2.4.0-rc1,<2.12.7.1	HIGH	CVE-2022-42003	Uncontrolled Resource Consumption in Jackson-databind
+GHSA-cxp5-3px4-pw24	Maven	com.fasterxml.jackson.core:jackson-databind	>=2.5.0,<2.18.11	HIGH	CVE-2026-91777	jackson-databind quadratic forward-reference completion 
+GHSA-288c-cq4h-88gq	Maven	com.fasterxml.jackson.core:jackson-databind	>=2.6.0,<2.6.7.4	HIGH	CVE-2020-25649	XML External Entity (XXE) Injection in Jackson Databind
+GHSA-qxxx-2pp7-5hmx	Maven	com.fasterxml.jackson.core:jackson-databind	>=2.7.0,<2.7.9.1	CRITICAL	CVE-2017-7525	jackson-databind is vulnerable to a deserialization flaw
+GHSA-h592-38cm-4ggp	Maven	com.fasterxml.jackson.core:jackson-databind	>=2.7.0,<2.7.9.2	CRITICAL	CVE-2017-15095	jackson-databind vulnerable to deserialization flaw leading to unauthenticated remote code execution
+GHSA-cggj-fvv3-cqwv	Maven	com.fasterxml.jackson.core:jackson-databind	>=2.7.0,<2.7.9.3	CRITICAL	CVE-2018-7489	FasterXML jackson-databind allows unauthenticated remote code execution 
+GHSA-6wqp-v4v6-c87c	Maven	com.fasterxml.jackson.core:jackson-databind	>=2.7.0,<2.7.9.4	HIGH	CVE-2018-12023	Deserialization of Untrusted Data
+GHSA-645p-88qh-w398	Maven	com.fasterxml.jackson.core:jackson-databind	>=2.7.0,<2.7.9.5	CRITICAL	CVE-2018-14718	Arbitrary Code Execution in jackson-databind
+GHSA-5ww9-j83m-q7qx	Maven	com.fasterxml.jackson.core:jackson-databind	>=2.7.0,<2.7.9.6	HIGH	CVE-2019-12086	Information exposure in FasterXML jackson-databind
+GHSA-4w82-r329-3q67	Maven	com.fasterxml.jackson.core:jackson-databind	>=2.7.0,<2.7.9.7	CRITICAL	CVE-2020-8840	Deserialization of Untrusted Data in jackson-databind
+GHSA-85cw-hj65-qqv9	Maven	com.fasterxml.jackson.core:jackson-databind	>=2.7.0,<2.8.11.5	CRITICAL	CVE-2019-16335	Polymorphic Typing issue in FasterXML jackson-databind
+GHSA-fqwf-pjwf-7vqv	Maven	com.fasterxml.jackson.core:jackson-databind	>=2.7.0,<2.9.10.4	HIGH	CVE-2020-10673	jackson-databind mishandles the interaction between serialization gadgets and typing
+GHSA-qjw2-hr98-qgfh	Maven	com.fasterxml.jackson.core:jackson-databind	>=2.7.0,<2.9.10.6	HIGH	CVE-2020-24750	Unsafe Deserialization in jackson-databind
+GHSA-5949-rw7g-wx7w	Maven	com.fasterxml.jackson.core:jackson-databind	>=2.7.0,<2.9.10.7	HIGH	BIT-nifi-2021-20190,CVE-2021-20190	Deserialization of untrusted data in jackson-databind
+GHSA-89qr-369f-5m5x	Maven	com.fasterxml.jackson.core:jackson-databind	>=2.7.0,<2.9.10.8	HIGH	CVE-2020-36182	Unsafe Deserialization in jackson-databind
+GHSA-288c-cq4h-88gq	Maven	com.fasterxml.jackson.core:jackson-databind	>=2.7.0.0,<2.9.10.7	HIGH	CVE-2020-25649	XML External Entity (XXE) Injection in Jackson Databind
+GHSA-9m6f-7xcq-8vf8	Maven	com.fasterxml.jackson.core:jackson-databind	>=2.7.00,<2.9.10.8	HIGH	CVE-2020-36183	Unsafe Deserialization in jackson-databind
+GHSA-wjgm-6hv5-3cvf	Maven	com.fasterxml.jackson.core:jackson-databind	>=2.8.0,<2.18.10	MODERATE	CVE-2026-19032	jackson-databind: Path Deserialization Missing Scheme Allowlist for FileSystemProvider Resolution
+GHSA-5jmj-h7xm-6q6v	Maven	com.fasterxml.jackson.core:jackson-databind	>=2.8.0,<2.18.9	MODERATE	CVE-2026-54515	jackson-databind has case-insensitive deserialization bypasses per-property @JsonIgnoreProperties
+GHSA-h592-38cm-4ggp	Maven	com.fasterxml.jackson.core:jackson-databind	>=2.8.0,<2.8.11	CRITICAL	CVE-2017-15095	jackson-databind vulnerable to deserialization flaw leading to unauthenticated remote code execution
+GHSA-cggj-fvv3-cqwv	Maven	com.fasterxml.jackson.core:jackson-databind	>=2.8.0,<2.8.11.1	CRITICAL	CVE-2018-7489	FasterXML jackson-databind allows unauthenticated remote code execution 
+GHSA-6wqp-v4v6-c87c	Maven	com.fasterxml.jackson.core:jackson-databind	>=2.8.0,<2.8.11.2	HIGH	CVE-2018-12023	Deserialization of Untrusted Data
+GHSA-4gq5-ch57-c2mg	Maven	com.fasterxml.jackson.core:jackson-databind	>=2.8.0,<2.8.11.3	CRITICAL	CVE-2018-14719	Arbitrary Code Execution in jackson-databind
+GHSA-5ww9-j83m-q7qx	Maven	com.fasterxml.jackson.core:jackson-databind	>=2.8.0,<2.8.11.4	HIGH	CVE-2019-12086	Information exposure in FasterXML jackson-databind
+GHSA-4w82-r329-3q67	Maven	com.fasterxml.jackson.core:jackson-databind	>=2.8.0,<2.8.11.5	CRITICAL	CVE-2020-8840	Deserialization of Untrusted Data in jackson-databind
+GHSA-p43x-xfjf-5jhr	Maven	com.fasterxml.jackson.core:jackson-databind	>=2.8.0,<2.8.11.6	CRITICAL	CVE-2020-9548	jackson-databind mishandles the interaction between serialization gadgets and typing
+GHSA-qxxx-2pp7-5hmx	Maven	com.fasterxml.jackson.core:jackson-databind	>=2.8.0,<2.8.9	CRITICAL	CVE-2017-7525	jackson-databind is vulnerable to a deserialization flaw
+GHSA-85cw-hj65-qqv9	Maven	com.fasterxml.jackson.core:jackson-databind	>=2.9.0,<2.9.10	CRITICAL	CVE-2019-16335	Polymorphic Typing issue in FasterXML jackson-databind
+GHSA-fmmc-742q-jg75	Maven	com.fasterxml.jackson.core:jackson-databind	>=2.9.0,<2.9.10.1	CRITICAL	CVE-2019-16943	jackson-databind polymorphic typing issue
+GHSA-gww7-p5w4-wrfv	Maven	com.fasterxml.jackson.core:jackson-databind	>=2.9.0,<2.9.10.2	CRITICAL	CVE-2019-20330	Deserialization of Untrusted Data in jackson-databind
+GHSA-4w82-r329-3q67	Maven	com.fasterxml.jackson.core:jackson-databind	>=2.9.0,<2.9.10.3	CRITICAL	CVE-2020-8840	Deserialization of Untrusted Data in jackson-databind
+GHSA-27xj-rqx5-2255	Maven	com.fasterxml.jackson.core:jackson-databind	>=2.9.0,<2.9.10.4	HIGH	CVE-2020-11619	jackson-databind mishandles the interaction between serialization gadgets and typing
+GHSA-c265-37vj-cwcc	Maven	com.fasterxml.jackson.core:jackson-databind	>=2.9.0,<2.9.10.5	HIGH	CVE-2020-14062	Deserialization of untrusted data in Jackson Databind
+GHSA-h592-38cm-4ggp	Maven	com.fasterxml.jackson.core:jackson-databind	>=2.9.0,<2.9.4	CRITICAL	CVE-2017-15095	jackson-databind vulnerable to deserialization flaw leading to unauthenticated remote code execution
+GHSA-cggj-fvv3-cqwv	Maven	com.fasterxml.jackson.core:jackson-databind	>=2.9.0,<2.9.5	CRITICAL	CVE-2018-7489	FasterXML jackson-databind allows unauthenticated remote code execution 
+GHSA-6wqp-v4v6-c87c	Maven	com.fasterxml.jackson.core:jackson-databind	>=2.9.0,<2.9.6	HIGH	CVE-2018-12023	Deserialization of Untrusted Data
+GHSA-4gq5-ch57-c2mg	Maven	com.fasterxml.jackson.core:jackson-databind	>=2.9.0,<2.9.7	CRITICAL	CVE-2018-14719	Arbitrary Code Execution in jackson-databind
+GHSA-c8hm-7hpq-7jhg	Maven	com.fasterxml.jackson.core:jackson-databind	>=2.9.0,<2.9.8	CRITICAL	CVE-2018-19362	com.fasterxml.jackson.core:jackson-databind vulnerable to Deserialization of Untrusted Data
+GHSA-5ww9-j83m-q7qx	Maven	com.fasterxml.jackson.core:jackson-databind	>=2.9.0,<2.9.9	HIGH	CVE-2019-12086	Information exposure in FasterXML jackson-databind
+GHSA-cmfg-87vq-g5g4	Maven	com.fasterxml.jackson.core:jackson-databind	>=2.9.0,<2.9.9.1	MODERATE	CVE-2019-12814	Deserialization of untrusted data in FasterXML jackson-databind
+GHSA-6fpp-rgj9-8rwc	Maven	com.fasterxml.jackson.core:jackson-databind	>=2.9.0,<2.9.9.2	CRITICAL	CVE-2019-14379	Deserialization of untrusted data in FasterXML jackson-databind
+GHSA-5hh8-q8hv-fr38	Maven	com.fasterxml.jackson.core:jackson-databind	>=3.0.0,<3.1.4	MODERATE	CVE-2026-54517	jackson-databind has @JsonView bypass for setterless creator properties
+GHSA-5jmj-h7xm-6q6v	Maven	com.fasterxml.jackson.core:jackson-databind	>=3.1.0,<3.1.4	MODERATE	CVE-2026-54515	jackson-databind has case-insensitive deserialization bypasses per-property @JsonIgnoreProperties
+GHSA-4jrv-ppp4-jm57	Maven	com.google.code.gson:gson	>=0.0.0,<2.8.9	HIGH	CVE-2022-25647,SNYK-JAVA-COMGOOGLECODEGSON-1730327	Deserialization of Untrusted Data in Gson
+GHSA-xpv2-8ppj-79hh	Maven	com.googlecode.aviator:aviator	>=5.2.1,<=5.2.7	CRITICAL	CVE-2021-41862	Expression injection in AviatorScript
+GHSA-gwrp-pvrq-jmwv	Maven	commons-io:commons-io	>=0.0.0,<2.7	MODERATE	CVE-2021-29425	Path Traversal and Improper Input Validation in Apache Commons IO
+GHSA-78wr-2p64-hpwj	Maven	commons-io:commons-io	>=2.0,<2.14.0	HIGH	CVE-2024-47554	Apache Commons IO: Possible denial of service attack on untrusted input to XmlStreamReader
+GHSA-3p8m-j85q-pgmj	Maven	io.netty:netty-codec	>=0.0.0,<4.1.125.Final	MODERATE	CVE-2025-58057	Netty's decoders vulnerable to DoS via zip bomb style attack
+GHSA-mj4r-2hfc-f8p6	Maven	io.netty:netty-codec	>=0.0.0,<4.1.133.Final	HIGH	CVE-2026-42583	Netty Lz4FrameDecoder is vulnerable to resource exhaustion 
+GHSA-558v-64gr-wgg4	Maven	io.netty:netty-codec	>=0.0.0,<4.1.136.Final	HIGH	CVE-2026-59901	Netty: [Bzip2Decoder] Infinite Loop in RLE State Machine Leads to Event-Loop Thread Hang
+GHSA-grg4-wf29-r9vv	Maven	io.netty:netty-codec	>=0.0.0,<4.1.68.Final	HIGH	CVE-2021-37136	Bzip2Decoder doesn't allow setting size restrictions for decompressed data
+GHSA-9vjp-v76f-g363	Maven	io.netty:netty-codec	>=4.0.0,<4.1.68.Final	HIGH	CVE-2021-37137	 SnappyFrameDecoder doesn't restrict chunk length any may buffer skippable chunks in an unnecessary way
+GHSA-xq3w-v528-46rv	Maven	io.netty:netty-common	>=0.0.0,<4.1.115.Final	MODERATE	CVE-2024-47535	Denial of Service attack on windows app using netty
+GHSA-389x-839f-4rhx	Maven	io.netty:netty-common	>=0.0.0,<4.1.118.Final	MODERATE	CVE-2025-25193	Denial of Service attack on windows app using Netty
+GHSA-9959-6p3m-wxpc	Maven	io.netty:netty-handler	>=0.0.0,<3.9.2	MODERATE	CVE-2014-3488	Denial of service in Netty
+GHSA-3qp7-7mw8-wx86	Maven	io.netty:netty-handler	>=0.0.0,<4.1.135.Final	HIGH	CVE-2026-44249	Netty has an IPv6 Subnet Filter Bypass via Incorrect Comparator Masking
+GHSA-c4c3-7fpv-j4q5	Maven	io.netty:netty-handler	>=0.0.0,<4.1.137.Final	CRITICAL	CVE-2026-75595	Netty: SNI Routing Bypass via Fragmented TLS ClientHello Causing Fallback to Default SslContext
+GHSA-6mjq-h674-j845	Maven	io.netty:netty-handler	>=0.0.0,<4.1.94.Final	MODERATE	CVE-2023-34462	netty-handler SniHandler 16MB allocation
+GHSA-p2v9-g2qv-p635	Maven	io.netty:netty-handler	>=4.0.0,<4.1.45	MODERATE	CVE-2019-20445	HTTP Request Smuggling in Netty
+GHSA-rv63-gqm8-9w8q	Maven	io.netty:netty-handler	>=4.0.0.Alpha1,<4.0.37.Final	HIGH	CVE-2016-4970	Loop with Unreachable Exit Condition in Netty
+GHSA-mm9x-g8pc-w292	Maven	io.netty:netty-handler	>=4.1.0,<4.1.46	HIGH	CVE-2020-11612	Denial of Service in Netty
+GHSA-rv63-gqm8-9w8q	Maven	io.netty:netty-handler	>=4.1.0.Beta1,<4.1.1.Final	HIGH	CVE-2016-4970	Loop with Unreachable Exit Condition in Netty
+GHSA-ff2w-cq2g-wv5f	Maven	io.netty:netty-handler	>=4.1.43,<4.1.45	HIGH	CVE-2020-7238	HTTP Request Smuggling in Netty
+GHSA-4g8c-wm8x-jfhw	Maven	io.netty:netty-handler	>=4.1.91.Final,<4.1.118.Final	HIGH	CVE-2025-24970	SslHandler doesn't correctly validate packets which can lead to native crash when using native SSLEngine
+GHSA-3qp7-7mw8-wx86	Maven	io.netty:netty-handler	>=4.2.0.Final,<4.2.15.Final	HIGH	CVE-2026-44249	Netty has an IPv6 Subnet Filter Bypass via Incorrect Comparator Masking
+GHSA-c4c3-7fpv-j4q5	Maven	io.netty:netty-handler	>=4.2.0.Final,<4.2.17.Final	CRITICAL	CVE-2026-75595	Netty: SNI Routing Bypass via Fragmented TLS ClientHello Causing Fallback to Default SslContext
+GHSA-qv9r-c865-cp47	Maven	org.apache.logging.log4j:log4j-api	>=2.13.1,<2.25.5	MODERATE	CVE-2026-49844	Apache Log4j API: Improper encoding of non-finite floating-point values during MapMessage JSON serialization
+GHSA-qv9r-c865-cp47	Maven	org.apache.logging.log4j:log4j-api	>=2.26.0,<2.26.1	MODERATE	CVE-2026-49844	Apache Log4j API: Improper encoding of non-finite floating-point values during MapMessage JSON serialization
+GHSA-wjxj-5m7g-mg7q	Maven	org.bouncycastle:bcprov-jdk18on	>=0.0.0,<1.73	MODERATE	CVE-2023-33202	Bouncy Castle Denial of Service (DoS)
+GHSA-hr8g-6v94-x4m9	Maven	org.bouncycastle:bcprov-jdk18on	>=0.0.0,<1.74	MODERATE	CVE-2023-33201	Bouncy Castle For Java LDAP injection vulnerability
+GHSA-8xfc-gm6g-vgpv	Maven	org.bouncycastle:bcprov-jdk18on	>=0.0.0,<1.78	MODERATE	CVE-2024-29857	Bouncy Castle certificate parsing issues cause high CPU usage during parameter evaluation.
+GHSA-9pwp-9qqc-pr26	Maven	org.bouncycastle:bcprov-jdk18on	>=0.0.0,<1.85	CRITICAL	CVE-2026-8763	Bouncy Castle: Name Constraints bypass via trailing dot in rfc822Name and URI
+GHSA-67mf-3cr5-8w23	Maven	org.bouncycastle:bcprov-jdk18on	>=1.0,<1.78	MODERATE	CVE-2025-8885	Bouncy Castle for Java on All (API modules) allows Excessive Allocation
+GHSA-574f-3g2m-x479	Maven	org.bouncycastle:bcprov-jdk18on	>=1.59,<1.80.2	CRITICAL	CVE-2025-14813	Bouncy Castle for Java GOST 28147 CTR mode reuses keystream after 255 blocks
+GHSA-4h8f-2wvx-gg5w	Maven	org.bouncycastle:bcprov-jdk18on	>=1.61,<1.78	MODERATE	CVE-2024-34447	Bouncy Castle Java Cryptography API vulnerable to DNS poisoning
+GHSA-p93r-85wp-75v3	Maven	org.bouncycastle:bcprov-jdk18on	>=1.71,<1.80.2	HIGH	CVE-2026-5598	Bouncy Castle Has Covert Timing Channel Vulnerability
+GHSA-m44j-cfrm-g8qc	Maven	org.bouncycastle:bcprov-jdk18on	>=1.73,<1.78	MODERATE	CVE-2024-30172	Bouncy Castle crafted signature and public key can be used to trigger an infinite loop
+GHSA-c3fc-8qff-9hwx	Maven	org.bouncycastle:bcprov-jdk18on	>=1.74,<1.80.2	MODERATE	CVE-2026-0636	Bouncy Castle has an LDAP injection
+GHSA-c3fc-8qff-9hwx	Maven	org.bouncycastle:bcprov-jdk18on	>=1.81,<1.81.1	MODERATE	CVE-2026-0636	Bouncy Castle has an LDAP injection
+GHSA-p93r-85wp-75v3	Maven	org.bouncycastle:bcprov-jdk18on	>=1.81,<1.84	HIGH	CVE-2026-5598	Bouncy Castle Has Covert Timing Channel Vulnerability
+GHSA-574f-3g2m-x479	Maven	org.bouncycastle:bcprov-jdk18on	>=1.81.0,<1.81.1	CRITICAL	CVE-2025-14813	Bouncy Castle for Java GOST 28147 CTR mode reuses keystream after 255 blocks
+GHSA-574f-3g2m-x479	Maven	org.bouncycastle:bcprov-jdk18on	>=1.82,<1.84	CRITICAL	CVE-2025-14813	Bouncy Castle for Java GOST 28147 CTR mode reuses keystream after 255 blocks
+GHSA-cm59-pr5q-cw85	Maven	org.springframework.boot:spring-boot	>=0.0.0,<2.2.11.RELEASE	HIGH	CVE-2022-27772	Temporary Directory Hijacking to Local Privilege Escalation Vulnerability in org.springframework.boot:spring-boot
+GHSA-rc42-6c7j-7h5r	Maven	org.springframework.boot:spring-boot	>=0.0.0,<=2.7.24.2	HIGH	CVE-2025-22235	Spring Boot EndpointRequest.to() creates wrong matcher if actuator endpoint is not exposed
+GHSA-wwpq-f5c3-7hvx	Maven	org.springframework.boot:spring-boot	>=0.0.0,<=2.7.32	HIGH	CVE-2026-40973	Spring Boot accepts predictable temp directory without ownership verification
+GHSA-xx65-cc7g-9pfp	Maven	org.springframework.boot:spring-boot	>=1.5.0,<1.5.10	MODERATE	CVE-2018-1196	Moderate severity vulnerability that affects org.springframework.boot:spring-boot
+GHSA-rc42-6c7j-7h5r	Maven	org.springframework.boot:spring-boot	>=3.1.0,<=3.1.15.2	HIGH	CVE-2025-22235	Spring Boot EndpointRequest.to() creates wrong matcher if actuator endpoint is not exposed
+GHSA-rc42-6c7j-7h5r	Maven	org.springframework.boot:spring-boot	>=3.2.0,<=3.2.13.2	HIGH	CVE-2025-22235	Spring Boot EndpointRequest.to() creates wrong matcher if actuator endpoint is not exposed
+GHSA-rc42-6c7j-7h5r	Maven	org.springframework.boot:spring-boot	>=3.3.0,<3.3.11	HIGH	CVE-2025-22235	Spring Boot EndpointRequest.to() creates wrong matcher if actuator endpoint is not exposed
+GHSA-wwpq-f5c3-7hvx	Maven	org.springframework.boot:spring-boot	>=3.3.0,<=3.3.18	HIGH	CVE-2026-40973	Spring Boot accepts predictable temp directory without ownership verification
+GHSA-rc42-6c7j-7h5r	Maven	org.springframework.boot:spring-boot	>=3.4.0,<3.4.5	HIGH	CVE-2025-22235	Spring Boot EndpointRequest.to() creates wrong matcher if actuator endpoint is not exposed
+GHSA-wwpq-f5c3-7hvx	Maven	org.springframework.boot:spring-boot	>=3.4.0,<=3.4.15	HIGH	CVE-2026-40973	Spring Boot accepts predictable temp directory without ownership verification
+GHSA-wwpq-f5c3-7hvx	Maven	org.springframework.boot:spring-boot	>=3.5.0,<3.5.14	HIGH	CVE-2026-40973	Spring Boot accepts predictable temp directory without ownership verification
+GHSA-8v8j-3hxp-93wr	Maven	org.springframework.boot:spring-boot	>=4.0.0,<4.0.6	CRITICAL	CVE-2026-40976	Spring Boot's default security filter chain has no authorization rule with Actuator but without Health
+GHSA-xf96-w227-r7c4	Maven	org.springframework.boot:spring-boot-autoconfigure	>=0.0.0,<2.5.15	HIGH	CVE-2023-20883	Spring Boot Welcome Page Denial of Service
+GHSA-xf96-w227-r7c4	Maven	org.springframework.boot:spring-boot-autoconfigure	>=2.6.0,<2.6.15	HIGH	CVE-2023-20883	Spring Boot Welcome Page Denial of Service
+GHSA-xf96-w227-r7c4	Maven	org.springframework.boot:spring-boot-autoconfigure	>=2.7.0,<2.7.12	HIGH	CVE-2023-20883	Spring Boot Welcome Page Denial of Service
+GHSA-ggg2-9786-hwc8	Maven	org.springframework.boot:spring-boot-autoconfigure	>=2.7.0,<=2.7.33	MODERATE	CVE-2026-41001	Spring Boot: Predictable Temp Directory in Artemis Auto-configuration
+GHSA-xf96-w227-r7c4	Maven	org.springframework.boot:spring-boot-autoconfigure	>=3.0.0,<3.0.7	HIGH	CVE-2023-20883	Spring Boot Welcome Page Denial of Service
+GHSA-ggg2-9786-hwc8	Maven	org.springframework.boot:spring-boot-autoconfigure	>=3.3.0,<=3.3.19	MODERATE	CVE-2026-41001	Spring Boot: Predictable Temp Directory in Artemis Auto-configuration
+GHSA-ggg2-9786-hwc8	Maven	org.springframework.boot:spring-boot-autoconfigure	>=3.4.0,<=3.4.16	MODERATE	CVE-2026-41001	Spring Boot: Predictable Temp Directory in Artemis Auto-configuration
+GHSA-ggg2-9786-hwc8	Maven	org.springframework.boot:spring-boot-autoconfigure	>=3.5.0,<3.5.15	MODERATE	CVE-2026-41001	Spring Boot: Predictable Temp Directory in Artemis Auto-configuration
+GHSA-ggg2-9786-hwc8	Maven	org.springframework.boot:spring-boot-autoconfigure	>=4.0.0,<4.0.7	MODERATE	CVE-2026-41001	Spring Boot: Predictable Temp Directory in Artemis Auto-configuration
+GHSA-5q8m-mqmx-pxp9	Maven	org.springframework.data:spring-data-commons	>=0.0.0,<1.13.11	HIGH	CVE-2018-1274	Spring Data Commons contain a property path parser vulnerability caused by unlimited resource allocation
+GHSA-5m4m-73w9-8433	Maven	org.springframework.data:spring-data-commons	>=0.0.0,<=2.7.19	MODERATE	CVE-2026-41721	Spring Data Commons: Denial of Service via excessive memory allocation in projection binding
+GHSA-4fq3-mr56-cg6r	Maven	org.springframework.data:spring-data-commons	>=1.13.0,<1.13.11	CRITICAL	CVE-2018-1273	Spring Data Commons remote code injection vulnerability
+GHSA-m929-7fr6-cvjg	Maven	org.springframework.data:spring-data-commons	>=1.13.0,<1.13.12	HIGH	CVE-2018-1259	Spring Data Commons, used in combination with XMLBeam, contains a property binder vulnerability caused by improper restriction of XML external entity references
+GHSA-4fq3-mr56-cg6r	Maven	org.springframework.data:spring-data-commons	>=2.0.0,<2.0.6	CRITICAL	CVE-2018-1273	Spring Data Commons remote code injection vulnerability
+GHSA-m929-7fr6-cvjg	Maven	org.springframework.data:spring-data-commons	>=2.0.0,<2.0.7	HIGH	CVE-2018-1259	Spring Data Commons, used in combination with XMLBeam, contains a property binder vulnerability caused by improper restriction of XML external entity references
+GHSA-5m4m-73w9-8433	Maven	org.springframework.data:spring-data-commons	>=3.0.0,<=3.3.16	MODERATE	CVE-2026-41721	Spring Data Commons: Denial of Service via excessive memory allocation in projection binding
+GHSA-9fw2-h3hf-293r	Maven	org.springframework.data:spring-data-commons	>=3.3.0,<=3.3.16	HIGH	CVE-2026-41716	Spring Data Commons: Heap exhaustion from unbounded property-lookup cache retaining crafted string keys
+GHSA-88fw-v6x4-3f58	Maven	org.springframework.data:spring-data-commons	>=3.4.0,<=3.4.13	HIGH	CVE-2026-41695	Spring Data: Unbounded property-path cache keyed by externally-supplied path string
+GHSA-5m4m-73w9-8433	Maven	org.springframework.data:spring-data-commons	>=3.4.0,<=3.4.14	MODERATE	CVE-2026-41721	Spring Data Commons: Denial of Service via excessive memory allocation in projection binding
+GHSA-5m4m-73w9-8433	Maven	org.springframework.data:spring-data-commons	>=3.5.0,<3.5.12	MODERATE	CVE-2026-41721	Spring Data Commons: Denial of Service via excessive memory allocation in projection binding
+GHSA-5m4m-73w9-8433	Maven	org.springframework.data:spring-data-commons	>=4.0.0,<4.0.6	MODERATE	CVE-2026-41721	Spring Data Commons: Denial of Service via excessive memory allocation in projection binding
+GHSA-xg2j-3hj6-pc24	Maven	org.springframework.data:spring-data-keyvalue	>=0.0.0,<=2.7.19	MODERATE	CVE-2026-41719	Spring Data KeyValue: Remote code execution via SpEL Injection in Sort-based repository queries
+GHSA-xg2j-3hj6-pc24	Maven	org.springframework.data:spring-data-keyvalue	>=3.0.0,<=3.3.16	MODERATE	CVE-2026-41719	Spring Data KeyValue: Remote code execution via SpEL Injection in Sort-based repository queries
+GHSA-xg2j-3hj6-pc24	Maven	org.springframework.data:spring-data-keyvalue	>=3.4.0,<=3.4.14	MODERATE	CVE-2026-41719	Spring Data KeyValue: Remote code execution via SpEL Injection in Sort-based repository queries
+GHSA-xg2j-3hj6-pc24	Maven	org.springframework.data:spring-data-keyvalue	>=3.5.0,<3.5.12	MODERATE	CVE-2026-41719	Spring Data KeyValue: Remote code execution via SpEL Injection in Sort-based repository queries
+GHSA-xg2j-3hj6-pc24	Maven	org.springframework.data:spring-data-keyvalue	>=4.0.0,<4.0.6	MODERATE	CVE-2026-41719	Spring Data KeyValue: Remote code execution via SpEL Injection in Sort-based repository queries
+GHSA-4644-hg35-55m9	Maven	org.springframework.security:spring-security-core	>=0.0.0,<2.0.7	MODERATE	CVE-2011-2731	Concurrent Execution using Shared Resource with Improper Synchronization in Spring Security
+GHSA-3533-rvpc-6x56	Maven	org.springframework.security:spring-security-core	>=0.0.0,<2.0.8	MODERATE	CVE-2012-5055	Exposure of Sensitive Information to an Unauthorized Actor in Spring Security
+GHSA-wmv4-5w76-vp9g	Maven	org.springframework.security:spring-security-core	>=0.0.0,<3.1.7	CRITICAL	CVE-2014-3527	Authorization Bypass in Spring Security
+GHSA-v35c-49j6-q8hq	Maven	org.springframework.security:spring-security-core	>=0.0.0,<3.2.10.RELEASE	HIGH	CVE-2016-9879	Security Constraint Bypass in Spring Security
+GHSA-8crv-49fr-2h6j	Maven	org.springframework.security:spring-security-core	>=0.0.0,<4.1.1	HIGH	CVE-2016-5007	Spring Security and Spring Framework may not recognize certain paths that should be protected
+GHSA-v33x-prhc-gph5	Maven	org.springframework.security:spring-security-core	>=0.0.0,<4.2.13	HIGH	CVE-2019-11272	Insufficiently Protected Credentials and Improper Authentication in Spring Security
+GHSA-2ppp-9496-p23q	Maven	org.springframework.security:spring-security-core	>=0.0.0,<4.2.16	MODERATE	CVE-2020-5408	Insufficient Entropy in Spring Security
+GHSA-hh32-7344-cg2f	Maven	org.springframework.security:spring-security-core	>=0.0.0,<5.4.11	CRITICAL	CVE-2022-22978	Authorization bypass in Spring Security
+GHSA-f3jh-qvm4-mg39	Maven	org.springframework.security:spring-security-core	>=0.0.0,<5.7.12	HIGH	CVE-2024-22257	Erroneous authentication pass in Spring Security
+GHSA-q3v6-hm2v-pw99	Maven	org.springframework.security:spring-security-core	>=0.0.0,<5.7.14	MODERATE	CVE-2024-38827	Spring Framework has Authorization Bypass for Case Sensitive Comparisons
+GHSA-3295-h9qx-r82x	Maven	org.springframework.security:spring-security-core	>=2.0.0,<2.0.6	MODERATE	CVE-2010-3700	Authentication Bypass Using an Alternate Path or Channel in SpringSource Spring Security and Acegi Security
+GHSA-f866-m9mv-2xr3	Maven	org.springframework.security:spring-security-core	>=2.0.0,<2.0.7	MODERATE	CVE-2011-2894	Spring Framework and Spring Security vulnerable to Deserialization of Untrusted Data
+GHSA-3295-h9qx-r82x	Maven	org.springframework.security:spring-security-core	>=3.0.0,<3.0.4	MODERATE	CVE-2010-3700	Authentication Bypass Using an Alternate Path or Channel in SpringSource Spring Security and Acegi Security
+GHSA-4644-hg35-55m9	Maven	org.springframework.security:spring-security-core	>=3.0.0,<3.0.6	MODERATE	CVE-2011-2731	Concurrent Execution using Shared Resource with Improper Synchronization in Spring Security
+GHSA-3533-rvpc-6x56	Maven	org.springframework.security:spring-security-core	>=3.0.0,<3.0.8	MODERATE	CVE-2012-5055	Exposure of Sensitive Information to an Unauthorized Actor in Spring Security
+GHSA-3533-rvpc-6x56	Maven	org.springframework.security:spring-security-core	>=3.1.0,<3.1.3	MODERATE	CVE-2012-5055	Exposure of Sensitive Information to an Unauthorized Actor in Spring Security
+GHSA-gv9v-c375-hvmg	Maven	org.springframework.security:spring-security-core	>=3.1.0,<3.1.5.RELEASE	HIGH	CVE-2014-0097	Improper Authentication in Spring Security
+GHSA-gv9v-c375-hvmg	Maven	org.springframework.security:spring-security-core	>=3.2.0,<3.2.2.RELEASE	HIGH	CVE-2014-0097	Improper Authentication in Spring Security
+GHSA-wmv4-5w76-vp9g	Maven	org.springframework.security:spring-security-core	>=3.2.0,<3.2.5	CRITICAL	CVE-2014-3527	Authorization Bypass in Spring Security
+GHSA-v35c-49j6-q8hq	Maven	org.springframework.security:spring-security-core	>=4.0.0.RELEASE,<4.1.4.RELEASE	HIGH	CVE-2016-9879	Security Constraint Bypass in Spring Security
+GHSA-v596-fwhq-8x48	Maven	org.springframework.security:spring-security-core	>=4.1.0,<4.1.5	MODERATE	CVE-2018-1199	Improper Input Validation in org.springframework.security:spring-security-core, org.springframework.security:spring-security-core , and org.springframework:spri
+GHSA-v2r2-7qm7-jj6v	Maven	org.springframework.security:spring-security-core	>=4.2.0,<4.2.12	MODERATE	CVE-2019-3795	Spring Security uses insufficiently random values
+GHSA-v596-fwhq-8x48	Maven	org.springframework.security:spring-security-core	>=4.2.0,<4.2.4	MODERATE	CVE-2018-1199	Improper Input Validation in org.springframework.security:spring-security-core, org.springframework.security:spring-security-core , and org.springframework:spri
+GHSA-v35c-49j6-q8hq	Maven	org.springframework.security:spring-security-core	>=4.2.0.RELEASE,<4.2.1.RELEASE	HIGH	CVE-2016-9879	Security Constraint Bypass in Spring Security
+GHSA-vhrg-v3cv-p247	Maven	org.springframework.security:spring-security-core	>=4.2.0.RELEASE,<4.2.3.RELEASE	HIGH	CVE-2017-4995	Deserialization of Untrusted Data in Spring Security
+GHSA-v596-fwhq-8x48	Maven	org.springframework.security:spring-security-core	>=5.0.0,<5.0.1	MODERATE	CVE-2018-1199	Improper Input Validation in org.springframework.security:spring-security-core, org.springframework.security:spring-security-core , and org.springframework:spri
+GHSA-v2r2-7qm7-jj6v	Maven	org.springframework.security:spring-security-core	>=5.0.0,<5.0.12	MODERATE	CVE-2019-3795	Spring Security uses insufficiently random values
+GHSA-2ppp-9496-p23q	Maven	org.springframework.security:spring-security-core	>=5.0.0,<5.0.16	MODERATE	CVE-2020-5408	Insufficient Entropy in Spring Security
+GHSA-vhrg-v3cv-p247	Maven	org.springframework.security:spring-security-core	>=5.0.0.M1,<5.0.0.M2	HIGH	CVE-2017-4995	Deserialization of Untrusted Data in Spring Security
+GHSA-2ppp-9496-p23q	Maven	org.springframework.security:spring-security-core	>=5.1.0,<5.1.10	MODERATE	CVE-2020-5408	Insufficient Entropy in Spring Security
+GHSA-27xw-p8v6-9jjr	Maven	org.springframework.security:spring-security-core	>=5.1.0,<5.1.2	HIGH	CVE-2018-15801	Spring Security vulnerable to Authorization Bypass
+GHSA-v2r2-7qm7-jj6v	Maven	org.springframework.security:spring-security-core	>=5.1.0,<5.1.5	MODERATE	CVE-2019-3795	Spring Security uses insufficiently random values
+GHSA-w9jg-gvgr-354m	Maven	org.springframework.security:spring-security-core	>=5.2.0,<5.2.11	HIGH	CVE-2021-22119	Resource Exhaustion in Spring Security
+GHSA-2ppp-9496-p23q	Maven	org.springframework.security:spring-security-core	>=5.2.0,<5.2.4	MODERATE	CVE-2020-5408	Insufficient Entropy in Spring Security
+GHSA-wx54-3278-m5g4	Maven	org.springframework.security:spring-security-core	>=5.2.0.RELEASE,<5.5.7	MODERATE	CVE-2022-22976	Integer overflow in BCrypt class in Spring Security
+GHSA-w9jg-gvgr-354m	Maven	org.springframework.security:spring-security-core	>=5.3.0,<5.3.10	HIGH	CVE-2021-22119	Resource Exhaustion in Spring Security
+GHSA-2ppp-9496-p23q	Maven	org.springframework.security:spring-security-core	>=5.3.0,<5.3.2	MODERATE	CVE-2020-5408	Insufficient Entropy in Spring Security
+GHSA-w9jg-gvgr-354m	Maven	org.springframework.security:spring-security-core	>=5.4.0,<5.4.7	HIGH	CVE-2021-22119	Resource Exhaustion in Spring Security
+GHSA-w9jg-gvgr-354m	Maven	org.springframework.security:spring-security-core	>=5.5.0,<5.5.1	HIGH	CVE-2021-22119	Resource Exhaustion in Spring Security
+GHSA-hh32-7344-cg2f	Maven	org.springframework.security:spring-security-core	>=5.5.0,<5.5.7	CRITICAL	CVE-2022-22978	Authorization bypass in Spring Security
+GHSA-hh32-7344-cg2f	Maven	org.springframework.security:spring-security-core	>=5.6.0,<5.6.4	CRITICAL	CVE-2022-22978	Authorization bypass in Spring Security
+GHSA-mmmh-wcxm-2wr4	Maven	org.springframework.security:spring-security-core	>=5.6.0,<5.6.9	CRITICAL	CVE-2022-31692	Spring Security authorization rules can be bypassed via forward or include dispatcher types
+GHSA-mmmh-wcxm-2wr4	Maven	org.springframework.security:spring-security-core	>=5.7.0,<5.7.5	CRITICAL	CVE-2022-31692	Spring Security authorization rules can be bypassed via forward or include dispatcher types
+GHSA-x873-6rgc-94jc	Maven	org.springframework.security:spring-security-core	>=5.7.0,<5.7.8	MODERATE	CVE-2023-20862	Spring Security logout not clearing security context
+GHSA-vxf7-qj7q-83fh	Maven	org.springframework.security:spring-security-core	>=5.7.0,<=5.7.22	LOW	CVE-2026-22746	Spring Security Vulnerable to User Attribute Enumeration when Using DaoAuthenticationProvider
+GHSA-f3jh-qvm4-mg39	Maven	org.springframework.security:spring-security-core	>=5.8.0,<5.8.11	HIGH	CVE-2024-22257	Erroneous authentication pass in Spring Security
+GHSA-q3v6-hm2v-pw99	Maven	org.springframework.security:spring-security-core	>=5.8.0,<5.8.16	MODERATE	CVE-2024-38827	Spring Framework has Authorization Bypass for Case Sensitive Comparisons
+GHSA-x873-6rgc-94jc	Maven	org.springframework.security:spring-security-core	>=5.8.0,<5.8.3	MODERATE	CVE-2023-20862	Spring Security logout not clearing security context
+GHSA-vxf7-qj7q-83fh	Maven	org.springframework.security:spring-security-core	>=5.8.0,<=5.8.24	LOW	CVE-2026-22746	Spring Security Vulnerable to User Attribute Enumeration when Using DaoAuthenticationProvider
+GHSA-q3v6-hm2v-pw99	Maven	org.springframework.security:spring-security-core	>=6.0.0,<6.0.14	MODERATE	CVE-2024-38827	Spring Framework has Authorization Bypass for Case Sensitive Comparisons
+GHSA-x873-6rgc-94jc	Maven	org.springframework.security:spring-security-core	>=6.0.0,<6.0.3	MODERATE	CVE-2023-20862	Spring Security logout not clearing security context
+GHSA-f3jh-qvm4-mg39	Maven	org.springframework.security:spring-security-core	>=6.0.0,<6.1.8	HIGH	CVE-2024-22257	Erroneous authentication pass in Spring Security
+GHSA-q3v6-hm2v-pw99	Maven	org.springframework.security:spring-security-core	>=6.1.0,<6.1.12	MODERATE	CVE-2024-38827	Spring Framework has Authorization Bypass for Case Sensitive Comparisons
+GHSA-w3w6-26f2-p474	Maven	org.springframework.security:spring-security-core	>=6.1.0,<6.1.7	HIGH	CVE-2024-22234	Broken Access Control in Spring Security With Direct Use of isFullyAuthenticated
+GHSA-w3w6-26f2-p474	Maven	org.springframework.security:spring-security-core	>=6.2.0,<6.2.2	HIGH	CVE-2024-22234	Broken Access Control in Spring Security With Direct Use of isFullyAuthenticated
+GHSA-f3jh-qvm4-mg39	Maven	org.springframework.security:spring-security-core	>=6.2.0,<6.2.3	HIGH	CVE-2024-22257	Erroneous authentication pass in Spring Security
+GHSA-q3v6-hm2v-pw99	Maven	org.springframework.security:spring-security-core	>=6.2.0,<6.2.8	MODERATE	CVE-2024-38827	Spring Framework has Authorization Bypass for Case Sensitive Comparisons
+GHSA-hmqf-wpq9-jq83	Maven	org.springframework.security:spring-security-core	>=6.3.0,<6.3.2	MODERATE	CVE-2024-38810	Spring Security Missing Authorization vulnerability
+GHSA-q3v6-hm2v-pw99	Maven	org.springframework.security:spring-security-core	>=6.3.0,<6.3.5	MODERATE	CVE-2024-38827	Spring Framework has Authorization Bypass for Case Sensitive Comparisons
+GHSA-vxf7-qj7q-83fh	Maven	org.springframework.security:spring-security-core	>=6.3.0,<=6.3.15	LOW	CVE-2026-22746	Spring Security Vulnerable to User Attribute Enumeration when Using DaoAuthenticationProvider
+GHSA-vqxh-445g-37fc	Maven	org.springframework.security:spring-security-core	>=6.3.8,<6.3.9	MODERATE	CVE-2025-22234	Spring Security has a broken timing attack mitigation implemented in DaoAuthenticationProvide
+GHSA-8v5q-rhf3-jphm	Maven	org.springframework.security:spring-security-core	>=6.4.0,<6.4.10	HIGH	CVE-2025-41248	Spring Security annotation detection mechanism has authorization bypass
+GHSA-hh3m-g4qj-4835	Maven	org.springframework.security:spring-security-core	>=6.4.0,<6.4.4	MODERATE	CVE-2025-22223	Spring Security Vulnerable to Authorization Bypass via Security Annotations
+GHSA-9pp5-9c7g-4r83	Maven	org.springframework.security:spring-security-core	>=6.4.0,<6.4.6	CRITICAL	CVE-2025-41232	Spring Security authorization bypass for method security annotations on private methods
+GHSA-x2wq-9x2f-fhj7	Maven	org.springframework.security:spring-security-core	>=6.4.0,<=6.4.13	MODERATE	CVE-2026-22751	Spring Security Core has a TOCTOU race condition when One-Time Token login with JdbcOneTimeTokenService is configured
+GHSA-vxf7-qj7q-83fh	Maven	org.springframework.security:spring-security-core	>=6.4.0,<=6.4.15	LOW	CVE-2026-22746	Spring Security Vulnerable to User Attribute Enumeration when Using DaoAuthenticationProvider
+GHSA-vqxh-445g-37fc	Maven	org.springframework.security:spring-security-core	>=6.4.4,<6.4.5	MODERATE	CVE-2025-22234	Spring Security has a broken timing attack mitigation implemented in DaoAuthenticationProvide
+GHSA-vxf7-qj7q-83fh	Maven	org.springframework.security:spring-security-core	>=6.5.0,<6.5.10	LOW	CVE-2026-22746	Spring Security Vulnerable to User Attribute Enumeration when Using DaoAuthenticationProvider
+GHSA-8v5q-rhf3-jphm	Maven	org.springframework.security:spring-security-core	>=6.5.0,<6.5.4	HIGH	CVE-2025-41248	Spring Security annotation detection mechanism has authorization bypass
+GHSA-vxf7-qj7q-83fh	Maven	org.springframework.security:spring-security-core	>=7.0.0,<7.0.5	LOW	CVE-2026-22746	Spring Security Vulnerable to User Attribute Enumeration when Using DaoAuthenticationProvider
+GHSA-x2wq-9x2f-fhj7	Maven	org.springframework.security:spring-security-core	>=7.0.3,<7.0.5	MODERATE	CVE-2026-22751	Spring Security Core has a TOCTOU race condition when One-Time Token login with JdbcOneTimeTokenService is configured
+GHSA-mg83-c7gq-rv5c	Maven	org.springframework.security:spring-security-crypto	>=0.0.0,<5.7.16	HIGH	CVE-2025-22228	Spring Security Does Not Enforce Password Length
+GHSA-mg83-c7gq-rv5c	Maven	org.springframework.security:spring-security-crypto	>=5.8.0,<5.8.18	HIGH	CVE-2025-22228	Spring Security Does Not Enforce Password Length
+GHSA-mg83-c7gq-rv5c	Maven	org.springframework.security:spring-security-crypto	>=6.0.0,<6.0.16	HIGH	CVE-2025-22228	Spring Security Does Not Enforce Password Length
+GHSA-mg83-c7gq-rv5c	Maven	org.springframework.security:spring-security-crypto	>=6.1.0,<6.1.14	HIGH	CVE-2025-22228	Spring Security Does Not Enforce Password Length
+GHSA-mg83-c7gq-rv5c	Maven	org.springframework.security:spring-security-crypto	>=6.2.0,<6.2.10	HIGH	CVE-2025-22228	Spring Security Does Not Enforce Password Length
+GHSA-mg83-c7gq-rv5c	Maven	org.springframework.security:spring-security-crypto	>=6.3.0,<6.3.8	HIGH	CVE-2025-22228	Spring Security Does Not Enforce Password Length
+GHSA-mg83-c7gq-rv5c	Maven	org.springframework.security:spring-security-crypto	>=6.4.0,<6.4.4	HIGH	CVE-2025-22228	Spring Security Does Not Enforce Password Length
+GHSA-36p3-wjmg-h94x	Maven	org.springframework:spring-beans	>=0.0.0,<5.2.20.RELEASE	CRITICAL	CVE-2022-22965	Remote Code Execution in Spring Framework
+GHSA-hh26-6xwr-ggv7	Maven	org.springframework:spring-beans	>=0.0.0,<5.2.22.RELEASE	HIGH	CVE-2022-22970	Denial of service in Spring Framework
+GHSA-36p3-wjmg-h94x	Maven	org.springframework:spring-beans	>=5.3.0,<5.3.18	CRITICAL	CVE-2022-22965	Remote Code Execution in Spring Framework
+GHSA-hh26-6xwr-ggv7	Maven	org.springframework:spring-beans	>=5.3.0,<5.3.20	HIGH	CVE-2022-22970	Denial of service in Spring Framework
+GHSA-g5mm-vmx4-3rg7	Maven	org.springframework:spring-context	>=0.0.0,<5.2.21.RELEASE	HIGH	CVE-2022-22968	Improper handling of case sensitivity in Spring Framework
+GHSA-4wp7-92pw-q264	Maven	org.springframework:spring-context	>=0.0.0,<=5.3.39	LOW	CVE-2025-22233	Spring Framework DataBinder Case Sensitive Match Exception
+GHSA-4gc7-5j7h-4qph	Maven	org.springframework:spring-context	>=0.0.0,<=5.3.40	MODERATE	CVE-2024-38820	Spring Framework DataBinder Case Sensitive Match Exception
+GHSA-g5mm-vmx4-3rg7	Maven	org.springframework:spring-context	>=5.3.0,<5.3.19	HIGH	CVE-2022-22968	Improper handling of case sensitivity in Spring Framework
+GHSA-4wp7-92pw-q264	Maven	org.springframework:spring-context	>=6.0.0,<=6.0.23	LOW	CVE-2025-22233	Spring Framework DataBinder Case Sensitive Match Exception
+GHSA-4gc7-5j7h-4qph	Maven	org.springframework:spring-context	>=6.0.0,<=6.0.24	MODERATE	CVE-2024-38820	Spring Framework DataBinder Case Sensitive Match Exception
+GHSA-4gc7-5j7h-4qph	Maven	org.springframework:spring-context	>=6.1.0,<6.1.14	MODERATE	CVE-2024-38820	Spring Framework DataBinder Case Sensitive Match Exception
+GHSA-4wp7-92pw-q264	Maven	org.springframework:spring-context	>=6.1.0,<6.1.20	LOW	CVE-2025-22233	Spring Framework DataBinder Case Sensitive Match Exception
+GHSA-4wp7-92pw-q264	Maven	org.springframework:spring-context	>=6.2.0,<6.2.7	LOW	CVE-2025-22233	Spring Framework DataBinder Case Sensitive Match Exception
+GHSA-wv88-pf73-x22p	Maven	org.springframework:spring-core	>=0.0.0,<2.5.6.SEC03	HIGH	CVE-2011-2730	Improper Neutralization of Directives in Dynamically Evaluated Code in Spring Framework
+GHSA-pgf9-h69p-pcgf	Maven	org.springframework:spring-core	>=0.0.0,<3.2.15	HIGH	CVE-2015-5211	Files or Directories Accessible to External Parties in org.springframework:spring-core
+GHSA-8crv-49fr-2h6j	Maven	org.springframework:spring-core	>=0.0.0,<4.3.1	HIGH	CVE-2016-5007	Spring Security and Spring Framework may not recognize certain paths that should be protected
+GHSA-4487-x383-qpph	Maven	org.springframework:spring-core	>=0.0.0,<4.3.15	HIGH	CVE-2018-1272	Possible privilege escalation in org.springframework:spring-core
+GHSA-rcpf-vj53-7h2m	Maven	org.springframework:spring-core	>=0.0.0,<4.3.17	MODERATE	CVE-2018-1257	Denial of Service in org.springframework:spring-core
+GHSA-659m-px2c-25wj	Maven	org.springframework:spring-core	>=0.0.0,<=5.3.39	LOW	CVE-2026-41848	Spring Framework Denial of Service via AntPathMatcher
+GHSA-wjjr-h4wh-w6vv	Maven	org.springframework:spring-core	>=1.1.0,<3.0.0.RELEASE	MODERATE	CVE-2009-1190	Spring Framework Inefficient Regular Expression Complexity
+GHSA-wv88-pf73-x22p	Maven	org.springframework:spring-core	>=2.5.7.SR0,<2.5.7.SR023	HIGH	CVE-2011-2730	Improper Neutralization of Directives in Dynamically Evaluated Code in Spring Framework
+GHSA-f866-m9mv-2xr3	Maven	org.springframework:spring-core	>=3.0.0,<3.0.6	MODERATE	CVE-2011-2894	Spring Framework and Spring Security vulnerable to Deserialization of Untrusted Data
+GHSA-rhcg-rwhx-qj3j	Maven	org.springframework:spring-core	>=3.0.0,<3.2.9	MODERATE	CVE-2014-3578	Improper Limitation of a Pathname to a Restricted Directory in Spring Framework
+GHSA-rhcg-rwhx-qj3j	Maven	org.springframework:spring-core	>=4.0.0,<4.0.5	MODERATE	CVE-2014-3578	Improper Limitation of a Pathname to a Restricted Directory in Spring Framework
+GHSA-pgf9-h69p-pcgf	Maven	org.springframework:spring-core	>=4.0.0,<4.1.8	HIGH	CVE-2015-5211	Files or Directories Accessible to External Parties in org.springframework:spring-core
+GHSA-45vg-2v73-vm62	Maven	org.springframework:spring-core	>=4.1.0,<4.1.5	MODERATE	CVE-2015-0201	Moderate severity vulnerability that affects org.springframework:spring-core
+GHSA-pgf9-h69p-pcgf	Maven	org.springframework:spring-core	>=4.2.0,<4.2.2	HIGH	CVE-2015-5211	Files or Directories Accessible to External Parties in org.springframework:spring-core
+GHSA-ffvq-7w96-97p7	Maven	org.springframework:spring-core	>=4.2.0.RELEASE,<4.3.20.RELEASE	HIGH	CVE-2018-15756	Denial of Service in Spring Framework
+GHSA-v596-fwhq-8x48	Maven	org.springframework:spring-core	>=4.3.0,<4.3.14	MODERATE	CVE-2018-1199	Improper Input Validation in org.springframework.security:spring-security-core, org.springframework.security:spring-security-core , and org.springframework:spri
+GHSA-f26x-pr96-vw86	Maven	org.springframework:spring-core	>=4.3.0.RELEASE,<4.3.18.RELEASE	MODERATE	CVE-2018-11040	Moderate severity vulnerability that affects org.springframework:spring-core
+GHSA-v596-fwhq-8x48	Maven	org.springframework:spring-core	>=5.0.0,<5.0.3	MODERATE	CVE-2018-1199	Improper Input Validation in org.springframework.security:spring-security-core, org.springframework.security:spring-security-core , and org.springframework:spri
+GHSA-4487-x383-qpph	Maven	org.springframework:spring-core	>=5.0.0,<5.0.5	HIGH	CVE-2018-1272	Possible privilege escalation in org.springframework:spring-core
+GHSA-rcpf-vj53-7h2m	Maven	org.springframework:spring-core	>=5.0.0,<5.0.6	MODERATE	CVE-2018-1257	Denial of Service in org.springframework:spring-core
+GHSA-ffvq-7w96-97p7	Maven	org.springframework:spring-core	>=5.0.0.RELEASE,<5.0.10.RELEASE	HIGH	CVE-2018-15756	Denial of Service in Spring Framework
+GHSA-f26x-pr96-vw86	Maven	org.springframework:spring-core	>=5.0.0.RELEASE,<5.0.7.RELEASE	MODERATE	CVE-2018-11040	Moderate severity vulnerability that affects org.springframework:spring-core
+GHSA-cxrj-66c5-9fmh	Maven	org.springframework:spring-core	>=5.0.5.RELEASE,<5.0.6.RELEASE	HIGH	CVE-2018-1258	Spring Framework when used in combination with any versions of Spring Security contains an authorization bypass
+GHSA-ffvq-7w96-97p7	Maven	org.springframework:spring-core	>=5.1.0.RELEASE,<5.1.1.RELEASE	HIGH	CVE-2018-15756	Denial of Service in Spring Framework
+GHSA-rfmp-97jj-h8m6	Maven	org.springframework:spring-core	>=5.2.0,<5.2.18	MODERATE	CVE-2021-22096	Improper Output Neutralization for Logs in Spring Framework
+GHSA-6gf2-pvqw-37ph	Maven	org.springframework:spring-core	>=5.2.0,<5.2.19	MODERATE	CVE-2021-22060	Log entry injection in Spring Framework
+GHSA-rfmp-97jj-h8m6	Maven	org.springframework:spring-core	>=5.3.0,<5.3.11	MODERATE	CVE-2021-22096	Improper Output Neutralization for Logs in Spring Framework
+GHSA-6gf2-pvqw-37ph	Maven	org.springframework:spring-core	>=5.3.0,<5.3.14	MODERATE	CVE-2021-22060	Log entry injection in Spring Framework
+GHSA-jmp9-x22r-554x	Maven	org.springframework:spring-core	>=5.3.0,<=5.3.44	HIGH	CVE-2025-41249	Spring Framework annotation detection mechanism may result in improper authorization
+GHSA-jmp9-x22r-554x	Maven	org.springframework:spring-core	>=6.0.0,<=6.1.22	HIGH	CVE-2025-41249	Spring Framework annotation detection mechanism may result in improper authorization
+GHSA-r4q3-7g4q-x89m	Maven	org.springframework:spring-core	>=6.0.15,<6.0.16	HIGH	CVE-2024-22233	Spring Framework server Web DoS Vulnerability
+GHSA-659m-px2c-25wj	Maven	org.springframework:spring-core	>=6.1.0,<=6.1.21	LOW	CVE-2026-41848	Spring Framework Denial of Service via AntPathMatcher
+GHSA-r4q3-7g4q-x89m	Maven	org.springframework:spring-core	>=6.1.2,<6.1.3	HIGH	CVE-2024-22233	Spring Framework server Web DoS Vulnerability
+GHSA-jmp9-x22r-554x	Maven	org.springframework:spring-core	>=6.2.0,<6.2.11	HIGH	CVE-2025-41249	Spring Framework annotation detection mechanism may result in improper authorization
+GHSA-659m-px2c-25wj	Maven	org.springframework:spring-core	>=6.2.0,<6.2.19	LOW	CVE-2026-41848	Spring Framework Denial of Service via AntPathMatcher
+GHSA-659m-px2c-25wj	Maven	org.springframework:spring-core	>=7.0.0,<7.0.8	LOW	CVE-2026-41848	Spring Framework Denial of Service via AntPathMatcher
+GHSA-558x-2xjg-6232	Maven	org.springframework:spring-expression	>=0.0.0,<5.2.20.RELEASE	MODERATE	CVE-2022-22950	Allocation of Resources Without Limits or Throttling in Spring Framework
+GHSA-564r-hj7v-mcr5	Maven	org.springframework:spring-expression	>=0.0.0,<5.2.23.RELEASE	MODERATE	CVE-2023-20861	Spring Framework vulnerable to denial of service via specially crafted SpEL expression
+GHSA-wxqc-pxw9-g2p8	Maven	org.springframework:spring-expression	>=0.0.0,<5.2.24.RELEASE	HIGH	CVE-2023-20863	Spring Framework vulnerable to denial of service
+GHSA-9cmq-m9j5-mvww	Maven	org.springframework:spring-expression	>=0.0.0,<5.3.39	MODERATE	CVE-2024-38808	Spring Framework vulnerable to Denial of Service
+GHSA-775g-4xr8-78h8	Maven	org.springframework:spring-expression	>=0.0.0,<=5.3.39	HIGH	CVE-2026-41849	Spring Framework Denial of Service via Integer Overflow in SpEL Expressions
+GHSA-558x-2xjg-6232	Maven	org.springframework:spring-expression	>=5.3.0,<5.3.17	MODERATE	CVE-2022-22950	Allocation of Resources Without Limits or Throttling in Spring Framework
+GHSA-564r-hj7v-mcr5	Maven	org.springframework:spring-expression	>=5.3.0,<5.3.26	MODERATE	CVE-2023-20861	Spring Framework vulnerable to denial of service via specially crafted SpEL expression
+GHSA-wxqc-pxw9-g2p8	Maven	org.springframework:spring-expression	>=5.3.0,<5.3.27	HIGH	CVE-2023-20863	Spring Framework vulnerable to denial of service
+GHSA-564r-hj7v-mcr5	Maven	org.springframework:spring-expression	>=6.0.0,<6.0.7	MODERATE	CVE-2023-20861	Spring Framework vulnerable to denial of service via specially crafted SpEL expression
+GHSA-wxqc-pxw9-g2p8	Maven	org.springframework:spring-expression	>=6.0.0,<6.0.8	HIGH	CVE-2023-20863	Spring Framework vulnerable to denial of service
+GHSA-9f52-rjqv-25qv	Maven	org.springframework:spring-expression	>=6.1.0,<=6.1.21	LOW	CVE-2026-41852	Spring Framework Arbitrary Method Invocation in SpEL Expressions
+GHSA-9f52-rjqv-25qv	Maven	org.springframework:spring-expression	>=6.2.0,<6.2.19	LOW	CVE-2026-41852	Spring Framework Arbitrary Method Invocation in SpEL Expressions
+GHSA-9f52-rjqv-25qv	Maven	org.springframework:spring-expression	>=7.0.0,<7.0.8	LOW	CVE-2026-41852	Spring Framework Arbitrary Method Invocation in SpEL Expressions
+GHSA-rp4p-g69r-438x	Maven	org.springframework:spring-oxm	>=0.0.0,<3.2.4.RELEASE	MODERATE	CVE-2013-4152	Cross-Site Request Forgery in Spring Framework
+GHSA-6v7w-535j-rq5m	Maven	org.springframework:spring-web	>=0.0.0,<3.2.14	MODERATE	CVE-2015-3192	Pivotal Spring Framework DoS Attack with XML Input
+GHSA-xjrf-8x4f-43h4	Maven	org.springframework:spring-web	>=0.0.0,<3.2.2.RELEASE	MODERATE	CVE-2013-6430	Improper Neutralization of Input During Web Page Generation in Spring Framework
+GHSA-g6hf-f9cq-q7w7	Maven	org.springframework:spring-web	>=0.0.0,<3.2.5.RELEASE	MODERATE	CVE-2013-6429	Cross-Site Request Forgery in Spring Framework
+GHSA-hgjh-9rj2-g67j	Maven	org.springframework:spring-web	>=0.0.0,<5.3.33	HIGH	CVE-2024-22259	Spring Framework URL Parsing with Host Validation Vulnerability
+GHSA-2wrp-6fg6-hmc5	Maven	org.springframework:spring-web	>=0.0.0,<5.3.34	HIGH	CVE-2024-22262	Spring Framework URL Parsing with Host Validation
+GHSA-2rmj-mq67-h97g	Maven	org.springframework:spring-web	>=0.0.0,<5.3.38	MODERATE	CVE-2024-38809	Spring Framework DoS via conditional HTTP request
+GHSA-4wrc-f8pq-fpqp	Maven	org.springframework:spring-web	>=0.0.0,<6.0.0	CRITICAL	CVE-2016-1000027	Pivotal Spring Framework contains unsafe Java deserialization methods
+GHSA-ccgv-vj62-xf9h	Maven	org.springframework:spring-web	>=0.0.0,<=5.2.25.RELEASE	HIGH	CVE-2024-22243	Spring Web vulnerable to Open Redirect or Server Side Request Forgery
+GHSA-4gc7-5j7h-4qph	Maven	org.springframework:spring-web	>=0.0.0,<=5.3.40	MODERATE	CVE-2024-38820	Spring Framework DataBinder Case Sensitive Match Exception
+GHSA-6v7w-535j-rq5m	Maven	org.springframework:spring-web	>=4.0.0,<4.1.7	MODERATE	CVE-2015-3192	Pivotal Spring Framework DoS Attack with XML Input
+GHSA-9gcm-f4x3-8jpw	Maven	org.springframework:spring-web	>=4.3.0,<4.3.18	MODERATE	CVE-2018-11039	Spring Framework Cross Site Tracing (XST)
+GHSA-9gcm-f4x3-8jpw	Maven	org.springframework:spring-web	>=5.0.0,<5.0.7	MODERATE	CVE-2018-11039	Spring Framework Cross Site Tracing (XST)
+GHSA-6v7w-535j-rq5m	Maven	org.springframework:spring-web	>=5.0.0.RC2,<5.0.0.RC3	MODERATE	CVE-2015-3192	Pivotal Spring Framework DoS Attack with XML Input
+GHSA-gfwj-fwqj-fp3v	Maven	org.springframework:spring-web	>=5.2.0,<5.2.15	HIGH	CVE-2021-22118	Improper Privilege Management in Spring Framework
+GHSA-ccgv-vj62-xf9h	Maven	org.springframework:spring-web	>=5.3.0,<5.3.32	HIGH	CVE-2024-22243	Spring Web vulnerable to Open Redirect or Server Side Request Forgery
+GHSA-gfwj-fwqj-fp3v	Maven	org.springframework:spring-web	>=5.3.0,<5.3.7	HIGH	CVE-2021-22118	Improper Privilege Management in Spring Framework
+GHSA-ccgv-vj62-xf9h	Maven	org.springframework:spring-web	>=6.0.0,<6.0.17	HIGH	CVE-2024-22243	Spring Web vulnerable to Open Redirect or Server Side Request Forgery
+GHSA-hgjh-9rj2-g67j	Maven	org.springframework:spring-web	>=6.0.0,<6.0.18	HIGH	CVE-2024-22259	Spring Framework URL Parsing with Host Validation Vulnerability
+GHSA-2wrp-6fg6-hmc5	Maven	org.springframework:spring-web	>=6.0.0,<6.0.19	HIGH	CVE-2024-22262	Spring Framework URL Parsing with Host Validation
+GHSA-2rmj-mq67-h97g	Maven	org.springframework:spring-web	>=6.0.0,<6.0.23	MODERATE	CVE-2024-38809	Spring Framework DoS via conditional HTTP request
+GHSA-4gc7-5j7h-4qph	Maven	org.springframework:spring-web	>=6.0.0,<=6.0.24	MODERATE	CVE-2024-38820	Spring Framework DataBinder Case Sensitive Match Exception
+GHSA-6r3c-xf4w-jxjm	Maven	org.springframework:spring-web	>=6.0.5,<=6.0.23	MODERATE	CVE-2025-41234	Spring Framework vulnerable to a reflected file download (RFD)
+GHSA-2rmj-mq67-h97g	Maven	org.springframework:spring-web	>=6.1.0,<6.1.12	MODERATE	CVE-2024-38809	Spring Framework DoS via conditional HTTP request
+GHSA-4gc7-5j7h-4qph	Maven	org.springframework:spring-web	>=6.1.0,<6.1.14	MODERATE	CVE-2024-38820	Spring Framework DataBinder Case Sensitive Match Exception
+GHSA-6r3c-xf4w-jxjm	Maven	org.springframework:spring-web	>=6.1.0,<6.1.21	MODERATE	CVE-2025-41234	Spring Framework vulnerable to a reflected file download (RFD)
+GHSA-ccgv-vj62-xf9h	Maven	org.springframework:spring-web	>=6.1.0,<6.1.4	HIGH	CVE-2024-22243	Spring Web vulnerable to Open Redirect or Server Side Request Forgery
+GHSA-hgjh-9rj2-g67j	Maven	org.springframework:spring-web	>=6.1.0,<6.1.5	HIGH	CVE-2024-22259	Spring Framework URL Parsing with Host Validation Vulnerability
+GHSA-2wrp-6fg6-hmc5	Maven	org.springframework:spring-web	>=6.1.0,<6.1.6	HIGH	CVE-2024-22262	Spring Framework URL Parsing with Host Validation
+GHSA-7m2p-62gw-p8qq	Maven	org.springframework:spring-web	>=6.2.0,<6.2.19	MODERATE	CVE-2026-41854	Spring Framework Server-Side Request Forgery via UriComponentsBuilder
+GHSA-6r3c-xf4w-jxjm	Maven	org.springframework:spring-web	>=6.2.0,<6.2.8	MODERATE	CVE-2025-41234	Spring Framework vulnerable to a reflected file download (RFD)
+GHSA-7m2p-62gw-p8qq	Maven	org.springframework:spring-web	>=7.0.0,<7.0.8	MODERATE	CVE-2026-41854	Spring Framework Server-Side Request Forgery via UriComponentsBuilder
+GHSA-2m8h-fgr8-2q9w	Maven	org.springframework:spring-webmvc	>=0.0.0,<3.2.18	HIGH	CVE-2016-9878	Pivotal Spring Framework Paths provided to the ResourceServlet were not properly sanitized
+GHSA-8cmm-qj8g-fcp6	Maven	org.springframework:spring-webmvc	>=0.0.0,<3.2.8	MODERATE	CVE-2014-0054	Cross-Site Request Forgery in Spring Framework
+GHSA-36p3-wjmg-h94x	Maven	org.springframework:spring-webmvc	>=0.0.0,<5.2.20.RELEASE	CRITICAL	CVE-2022-22965	Remote Code Execution in Spring Framework
+GHSA-pc63-qcmh-9cmg	Maven	org.springframework:spring-webmvc	>=0.0.0,<=5.2.25.RELEASE	CRITICAL	CVE-2026-47884	Spring Framework Improper Path Limitation in XsltView
+GHSA-3chg-m5w7-qfv5	Maven	org.springframework:spring-webmvc	>=0.0.0,<=5.3.39	HIGH	CVE-2026-41845	Spring Framework Cross-site Scripting via JavaScriptUtils
+GHSA-g5vr-rgqm-vf78	Maven	org.springframework:spring-webmvc	>=0.0.0,<=5.3.40	HIGH	CVE-2024-38819	Spring Framework Path Traversal vulnerability
+GHSA-6p4f-wcwh-5vvm	Maven	org.springframework:spring-webmvc	>=0.0.0,<=5.3.47	MODERATE	CVE-2026-22745	Spring MVC and WebFlux applications are vulnerable to Denial of Service attacks when resolving static resources
+GHSA-f93f-g33r-8pcp	Maven	org.springframework:spring-webmvc	>=3.0.0,<3.2.8	HIGH	CVE-2014-0225	Improper Restriction of XML External Entity Reference in Spring Framework
+GHSA-ff7p-jqjm-v66h	Maven	org.springframework:spring-webmvc	>=3.0.0,<3.2.8.RELEASE	MODERATE	CVE-2014-1904	Improper Neutralization of Input During Web Page Generation in Spring Framework
+GHSA-hhm4-hwq6-3c6w	Maven	org.springframework:spring-webmvc	>=3.0.4,<3.2.12	MODERATE	CVE-2014-3625	Improper Limitation of a Pathname to a Restricted Directory in Spring Framework
+GHSA-8cmm-qj8g-fcp6	Maven	org.springframework:spring-webmvc	>=4.0.0,<4.0.2	MODERATE	CVE-2014-0054	Cross-Site Request Forgery in Spring Framework
+GHSA-ff7p-jqjm-v66h	Maven	org.springframework:spring-webmvc	>=4.0.0,<4.0.2.RELEASE	MODERATE	CVE-2014-1904	Improper Neutralization of Input During Web Page Generation in Spring Framework
+GHSA-f93f-g33r-8pcp	Maven	org.springframework:spring-webmvc	>=4.0.0,<4.0.5	HIGH	CVE-2014-0225	Improper Restriction of XML External Entity Reference in Spring Framework
+GHSA-hhm4-hwq6-3c6w	Maven	org.springframework:spring-webmvc	>=4.0.0,<4.0.8	MODERATE	CVE-2014-3625	Improper Limitation of a Pathname to a Restricted Directory in Spring Framework
+GHSA-hhm4-hwq6-3c6w	Maven	org.springframework:spring-webmvc	>=4.1.0,<4.1.2	MODERATE	CVE-2014-3625	Improper Limitation of a Pathname to a Restricted Directory in Spring Framework
+GHSA-2m8h-fgr8-2q9w	Maven	org.springframework:spring-webmvc	>=4.2.0,<4.2.9	HIGH	CVE-2016-9878	Pivotal Spring Framework Paths provided to the ResourceServlet were not properly sanitized
+GHSA-2m8h-fgr8-2q9w	Maven	org.springframework:spring-webmvc	>=4.3.0,<4.3.5	HIGH	CVE-2016-9878	Pivotal Spring Framework Paths provided to the ResourceServlet were not properly sanitized
+GHSA-8wx2-9q48-vm9r	Maven	org.springframework:spring-webmvc	>=5.0.0.RELEASE,<5.0.16.RELEASE	HIGH	CVE-2020-5398	RFD attack via Content-Disposition header sourced from request input by Spring MVC or Spring WebFlux Application
+GHSA-8wx2-9q48-vm9r	Maven	org.springframework:spring-webmvc	>=5.1.0.RELEASE,<5.1.13.RELEASE	HIGH	CVE-2020-5398	RFD attack via Content-Disposition header sourced from request input by Spring MVC or Spring WebFlux Application
+GHSA-7pm4-g2qj-j85x	Maven	org.springframework:spring-webmvc	>=5.2.0,<5.2.3	MODERATE	CVE-2020-5397	CSRF attack via CORS preflight requests with Spring MVC or Spring WebFlux
+GHSA-8wx2-9q48-vm9r	Maven	org.springframework:spring-webmvc	>=5.2.0.RELEASE,<5.2.3.RELEASE	HIGH	CVE-2020-5398	RFD attack via Content-Disposition header sourced from request input by Spring MVC or Spring WebFlux Application
+GHSA-36p3-wjmg-h94x	Maven	org.springframework:spring-webmvc	>=5.3.0,<5.3.18	CRITICAL	CVE-2022-22965	Remote Code Execution in Spring Framework
+GHSA-7phw-cxx7-q9vq	Maven	org.springframework:spring-webmvc	>=5.3.0,<5.3.26	CRITICAL	CVE-2023-20860	Spring Framework is vulnerable to security bypass via mvcRequestMatcher pattern mismatch
+GHSA-w3c8-7r8f-9jp8	Maven	org.springframework:spring-webmvc	>=5.3.0,<5.3.42	MODERATE	CVE-2024-38828	Spring MVC controller vulnerable to a DoS attack
+GHSA-4773-3jfm-qmx3	Maven	org.springframework:spring-webmvc	>=5.3.0,<=5.3.39	MODERATE	CVE-2026-22737	Spring Framework Improper Path Limitation with Script View Templates
+GHSA-r936-gwx5-v52f	Maven	org.springframework:spring-webmvc	>=5.3.0,<=5.3.43	MODERATE	CVE-2025-41242	Spring Framework MVC Applications Path Traversal Vulnerability
+GHSA-pc63-qcmh-9cmg	Maven	org.springframework:spring-webmvc	>=5.3.0,<=5.3.49	CRITICAL	CVE-2026-47884	Spring Framework Improper Path Limitation in XsltView
+GHSA-v94h-hvhg-mf9h	Maven	org.springframework:spring-webmvc	>=6.0.0,<6.0.14	HIGH	CVE-2023-34053	Spring Framework vulnerable to denial of service
+GHSA-7phw-cxx7-q9vq	Maven	org.springframework:spring-webmvc	>=6.0.0,<6.0.7	CRITICAL	CVE-2023-20860	Spring Framework is vulnerable to security bypass via mvcRequestMatcher pattern mismatch
+GHSA-cx7f-g6mp-7hqm	Maven	org.springframework:spring-webmvc	>=6.0.0,<=6.0.23	HIGH	CVE-2024-38816	Path traversal vulnerability in functional web frameworks
+GHSA-g5vr-rgqm-vf78	Maven	org.springframework:spring-webmvc	>=6.0.0,<=6.0.24	HIGH	CVE-2024-38819	Spring Framework Path Traversal vulnerability
+GHSA-r936-gwx5-v52f	Maven	org.springframework:spring-webmvc	>=6.0.0,<=6.0.29	MODERATE	CVE-2025-41242	Spring Framework MVC Applications Path Traversal Vulnerability
+GHSA-pc63-qcmh-9cmg	Maven	org.springframework:spring-webmvc	>=6.0.0,<=6.0.30	CRITICAL	CVE-2026-47884	Spring Framework Improper Path Limitation in XsltView
+GHSA-4773-3jfm-qmx3	Maven	org.springframework:spring-webmvc	>=6.0.0,<=6.1.21	MODERATE	CVE-2026-22737	Spring Framework Improper Path Limitation with Script View Templates
+GHSA-cx7f-g6mp-7hqm	Maven	org.springframework:spring-webmvc	>=6.1.0,<6.1.13	HIGH	CVE-2024-38816	Path traversal vulnerability in functional web frameworks
+GHSA-g5vr-rgqm-vf78	Maven	org.springframework:spring-webmvc	>=6.1.0,<6.1.14	HIGH	CVE-2024-38819	Spring Framework Path Traversal vulnerability
+GHSA-3chg-m5w7-qfv5	Maven	org.springframework:spring-webmvc	>=6.1.0,<=6.1.21	HIGH	CVE-2026-41845	Spring Framework Cross-site Scripting via JavaScriptUtils
+GHSA-6p4f-wcwh-5vvm	Maven	org.springframework:spring-webmvc	>=6.1.0,<=6.1.26	MODERATE	CVE-2026-22745	Spring MVC and WebFlux applications are vulnerable to Denial of Service attacks when resolving static resources
+GHSA-pc63-qcmh-9cmg	Maven	org.springframework:spring-webmvc	>=6.1.0,<=6.1.28	CRITICAL	CVE-2026-47884	Spring Framework Improper Path Limitation in XsltView
+GHSA-r936-gwx5-v52f	Maven	org.springframework:spring-webmvc	>=6.2.0,<6.2.10	MODERATE	CVE-2025-41242	Spring Framework MVC Applications Path Traversal Vulnerability
+GHSA-4773-3jfm-qmx3	Maven	org.springframework:spring-webmvc	>=6.2.0,<6.2.17	MODERATE	CVE-2026-22737	Spring Framework Improper Path Limitation with Script View Templates
+GHSA-6p4f-wcwh-5vvm	Maven	org.springframework:spring-webmvc	>=6.2.0,<6.2.18	MODERATE	CVE-2026-22745	Spring MVC and WebFlux applications are vulnerable to Denial of Service attacks when resolving static resources
+GHSA-3chg-m5w7-qfv5	Maven	org.springframework:spring-webmvc	>=6.2.0,<6.2.19	HIGH	CVE-2026-41845	Spring Framework Cross-site Scripting via JavaScriptUtils
+GHSA-j9f9-w8pj-32f8	Maven	org.springframework:spring-webmvc	>=6.2.0,<=6.2.19	CRITICAL	CVE-2026-47890	Spring Framework Server Sent Event stream corruption while rendering fragments
+GHSA-6p4f-wcwh-5vvm	Maven	org.springframework:spring-webmvc	>=7.0.0,<7.0.7	MODERATE	CVE-2026-22745	Spring MVC and WebFlux applications are vulnerable to Denial of Service attacks when resolving static resources
+GHSA-3chg-m5w7-qfv5	Maven	org.springframework:spring-webmvc	>=7.0.0,<7.0.8	HIGH	CVE-2026-41845	Spring Framework Cross-site Scripting via JavaScriptUtils
+GHSA-j9f9-w8pj-32f8	Maven	org.springframework:spring-webmvc	>=7.0.0,<7.0.9	CRITICAL	CVE-2026-47890	Spring Framework Server Sent Event stream corruption while rendering fragments
+GHSA-4773-3jfm-qmx3	Maven	org.springframework:spring-webmvc	>=7.0.0-M1,<7.0.6	MODERATE	CVE-2026-22737	Spring Framework Improper Path Limitation with Script View Templates
+GHSA-rvwf-54qp-4r6v	Maven	org.yaml:snakeyaml	>=0.0.0,<1.26	HIGH	CVE-2017-18640	SnakeYAML Entity Expansion during load operation
+GHSA-3mc7-4q67-w48m	Maven	org.yaml:snakeyaml	>=0.0.0,<1.31	HIGH	CVE-2022-25857	Uncontrolled Resource Consumption in snakeyaml
+GHSA-9w3m-gqgf-c4p9	Maven	org.yaml:snakeyaml	>=0.0.0,<1.32	MODERATE	CVE-2022-38752	snakeYAML before 1.32 vulnerable to Denial of Service due to Out-of-bounds Write
+GHSA-mjmj-j48q-9wg2	Maven	org.yaml:snakeyaml	>=0.0.0,<2.0	HIGH	CVE-2022-1471	SnakeYaml Constructor Deserialization Remote Code Execution
 GHSA-g2v6-rqmx-r4w6	npm	@vue/server-renderer	>=0.0.0,<3.5.42	HIGH	-	@vue/server-renderer: XSS via missing CR in attribute-name blacklist
 GHSA-g2v6-rqmx-r4w6	npm	@vue/server-renderer	>=3.6.0-rc.0,<3.6.0-rc.6	HIGH	-	@vue/server-renderer: XSS via missing CR in attribute-name blacklist
 GHSA-f886-m6hf-6m8v	npm	brace-expansion	>=0.0.0,<1.1.13	MODERATE	CVE-2026-33750	brace-expansion: Zero-step sequence causes process hang and memory exhaustion

@@ -12,17 +12,27 @@
   | 生态 | 阻断阈值 | 依据 |
   |---|---|---|
   | Go  | **命中即红**（含 `severity` 为 `-` 的官方 OSV 条目） | Go 官方 OSV 不带 CVSS；#98/`vuln-scan.md` 已定"可达即红"。离线数据没有可达性信息，只能按坐标命中判 → **更宽，只会多报不会漏报** |
-  | npm | **HIGH/CRITICAL 红**；MODERATE/LOW 打 `[INFO]` 并计数 | 判据原文（`acceptance-criteria.md` §AC-ENG-07）"发现 HIGH/CRITICAL 判红" |
+  | npm / Maven | **HIGH/CRITICAL 红**；MODERATE/LOW 打 `[INFO]` 并计数 | 判据原文（`acceptance-criteria.md` §AC-ENG-07）"发现 HIGH/CRITICAL 判红" |
+
+Maven（sdk/java，D23③ 第二段，2026-11-13 落地）：
+  坐标**不解析 pom**（要外网、429），而是消费 `sdk` job 产出的 **CycloneDX 1.5 聚合 BOM**（离线 JSON）：
+  `--java-bom sdk/java/target/bom.json`。组件 `group:artifact@version` 逐条判，生态名 `Maven`。
+  **不传 `--java-bom` = Maven 生态未覆盖**，会显式打一行 `[UNCOVERED] sdk/java …`（不许静默跳过，
+  D23③ 第一段的行为不变，只是触发条件从"永远"收窄为"没给 BOM"）。
+  链路 =「Nova 产（sdk job 生成+上传 artifact）→ Gate 判（本引擎离线消费）」；artifact 缺失或
+  与本次 commit 不符的校验在 `vuln` job 的步骤断言里（ci.yml）。
 
 fail-closed 清单（任一条命中即退出 1）：
   1. 有未白名单的阻断级命中；
   2. 快照缺失 / 头部无 `generated_at` / 过期（> `--max-age-days`，默认 90）；
   3. 快照行不合法（列数不对、区间表达式不可解析、生态未知）→ 数据坏了等于没扫；
-  4. 依赖坐标的版本号不可解析（`go.mod` / `package-lock.json` 解析不完整也算）→ 未验证 = 红；
-  5. 白名单行不合法（非 5 列 / 理由空 / 到期日非法）、条目已过期、条目本次不再命中（不许只增不减）。
+  4. 依赖坐标的版本号不可解析（`go.mod` / `package-lock.json` / `bom.json` 解析不完整也算）→ 未验证 = 红；
+  5. 白名单行不合法（非 5 列 / 理由空 / 到期日非法）、条目已过期、条目本次不再命中（不许只增不减）；
+  6. 传了 `--java-bom` 但文件缺失 / 不是合法 JSON / specVersion 非 1.x / 0 个可判组件 → 未验证 = 红。
 
 用法：
-  python3 scripts/vuln-gate.py                 # 判本仓（CI 用法，由 scripts/check-vuln.sh 调用）
+  python3 scripts/vuln-gate.py                 # 判本仓（Go + npm；sdk/java 打 [UNCOVERED]）
+  python3 scripts/vuln-gate.py --java-bom sdk/java/target/bom.json   # CI vuln job 用法（三生态）
   python3 scripts/vuln-gate.py --self-test     # 正控/负控（离线，临时目录注入，不动工作树）
 """
 
@@ -60,6 +70,17 @@ def vparse(text):
 
     Go 侧形态：v9.7.0 / v9.7.0-beta.1 / v0.0.0-20200520072559-a9ecdc9d1d3a / v2.0.0+incompatible
     npm 侧形态：3.5.13 / 6.4.6-beta.1
+    Maven 侧形态（D23③ 第二段）：1.78.1 / 4.1.101.Final / 5.2.0.RELEASE / 5.0.0.RC2 / 5.0.0.M1 /
+      5.3.39.SEC03 / 2.5.7.SR5。规则（对齐 Maven ComparableVersion 的**保守近似**）：
+      - 尾缀 `.RELEASE` / `.Final` / `.GA`（大小写不敏感）= 发布版本身 → 剥掉后按数字比；
+      - 尾缀 `.SEC<n>` / `.SP<n>` / `.SR<n>` = 发布版**之后**的安全/补丁修订（Spring 的 SR=Service
+        Release）→ 剥掉后**末段（micro）+n**（5.3.39.SEC03 ⇒ 5.3.39.3；2.5.7.SR5 ⇒ 2.5.7.5；
+        SR0<SR5<SR023 ⇒ .0 < .5 < .23，与 Maven 序一致）；
+      - 其余点号尾缀（`.RC2` / `.M1` / `.Alpha1` …）与连字符尾缀（`-jre` / `-beta.1`）按**预发布**
+        处理（< 同数字发布版）；预发布序号**数值感知**比较（RC10 > RC2，不按字典序）——残余边界：
+        "未知尾缀 vs 纯发布版"的相对序是近似（OSV 同公告的区间与坐标形态同源，实际影响限于跨形态混用）；
+      - 四段数字版本（Maven 微版本：2.13.4.2 / 2.12.6.1）按 (major,minor,patch,micro) 比；
+        数字段 5 段以上（剥尾缀后）→ None（fail-closed）。
     """
     if text is None:
         return None
@@ -69,18 +90,47 @@ def vparse(text):
     s = s.split("+", 1)[0]              # +incompatible / build metadata 不参与比较
     core, _, pre = s.partition("-")
     parts = core.split(".")
-    if not 1 <= len(parts) <= 3:
+    if not 1 <= len(parts) <= 5:
+        return None
+    bump = 0
+    last = parts[-1]
+    if last and not last.isdigit():
+        m = re.match(r"^(RELEASE|FINAL|GA)$", last, re.IGNORECASE)
+        if m and len(parts) >= 2:
+            parts = parts[:-1]          # 发布等价尾缀：剥掉按发布版比
+        else:
+            m2 = re.match(r"^(SEC|SP|SR)(\d+)$", last, re.IGNORECASE)
+            if m2 and len(parts) >= 2:
+                bump = int(m2.group(2))  # 发布后补丁：剥掉 + 末段（micro）+n（保守近似）
+                parts = parts[:-1]
+            else:
+                pre = ("%s%s" % (last, ("-" + pre if pre else ""))).lower()  # RC/M/Alpha/jre… = 预发布
+                parts = parts[:-1]
+    if not 1 <= len(parts) <= 4:
         return None
     nums = []
     for p in parts:
         if not p.isdigit():
             return None
         nums.append(int(p))
-    while len(nums) < 3:
+    while len(nums) < 4:
         nums.append(0)
+    if bump:
+        nums[-1] += bump
     if pre and not re.match(r"^[0-9A-Za-z.\-]+$", pre):
         return None
     return (tuple(nums), pre)
+
+
+def _pre_key(pre):
+    """预发布序号的**数值感知**键：'rc2' → ('rc', 2)，'rc10' → ('rc', 10)，'beta.1' → ('beta', 1)。
+
+    纯字典序会把 RC10 排在 RC2 前面（漏报方向）；数字段必须按数值比。
+    """
+    out = []
+    for tok in re.findall(r"\d+|\D+", pre):
+        out.append(int(tok) if tok.isdigit() else tok)
+    return tuple(out)
 
 
 def vcmp(a, b):
@@ -94,7 +144,28 @@ def vcmp(a, b):
         return 1                        # 正式版 > 预发布版
     if not pb:
         return -1
-    return -1 if pa < pb else 1
+    try:
+        ka, kb = _pre_key(pa), _pre_key(pb)
+        # 同位对齐：数字段对数字段、字母段对字母段；先耗尽（更短）= 更小（'beta' < 'beta.1'）
+        n = max(len(ka), len(kb))
+        ka += ("",) * (n - len(ka))
+        kb += ("",) * (n - len(kb))
+        for x, y in zip(ka, kb):
+            if x == y:
+                continue
+            if x == "":
+                return -1
+            if y == "":
+                return 1
+            x_num, y_num = isinstance(x, int), isinstance(y, int)
+            if x_num and y_num:
+                return -1 if x < y else 1
+            sx, sy = str(x), str(y)
+            if sx != sy:
+                return -1 if sx < sy else 1
+        return 0
+    except TypeError:
+        return -1 if pa < pb else 1
 
 
 def parse_expr(expr):
@@ -122,7 +193,63 @@ def vmatch(version, conds):
 
 
 # ---------------------------------------------------------------- 坐标解析
-def read_deps(root):
+def read_java_bom(java_bom):
+    """解析 CycloneDX 1.x 聚合 BOM（sdk job 的 artifact），返回 (deps, errors)。
+
+    deps: [(ecosystem, module, version_text, relpath, lineno)]
+      - ecosystem 固定 "Maven"；module = `group:artifact`（无 group 时裸 artifact）；
+      - relpath/lineno：BOM 是 JSON，没有"行号"——用组件在 `components[]` 里的**序号**充当
+        稳定位点（同一次构建里顺序确定），点名形态 `…bom.json:N` 仍能直接定位到第 N 个组件；
+      - **自有模块排除**：`group == metadata.component.group` 的是本仓模块
+        （guanjin-core / guanjin-spring-boot2），不是第三方依赖，不进坐标集
+        （生产者 scripts/vuln-snapshot-refresh.py 用同一规则，两指纹才一致）。
+    fail-closed：文件缺失 / 非法 JSON / specVersion 非 1.x / 0 个可判组件 / 版本号不可解析 → 全红。
+    """
+    deps, errors = [], []
+    if not os.path.exists(java_bom):
+        return deps, ["--java-bom 指定的 BOM 不存在：%s（artifact 缺失 = 未验证 = 红，D23③②）" % java_bom]
+    try:
+        with open(java_bom, encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (ValueError, UnicodeDecodeError) as exc:
+        return deps, ["--java-bom 不是合法 JSON：%s（%s）→ 未验证 = 红" % (java_bom, exc)]
+    if not isinstance(data, dict):
+        return deps, ["--java-bom 顶层不是 JSON 对象：%s → 未验证 = 红" % java_bom]
+    spec = data.get("specVersion")
+    if not isinstance(spec, str) or not spec.startswith("1."):
+        return deps, ["--java-bom specVersion=%r 非 1.x（只支持 CycloneDX 1.x，生成端锁 1.5）→ 未验证 = 红"
+                      % (spec,)]
+    meta = data.get("metadata") or {}
+    own_group = ((meta.get("component") or {}).get("group") or "")
+    comps = data.get("components")
+    if not isinstance(comps, list) or not comps:
+        return deps, ["--java-bom 里 components 为空/缺失 → 0 个坐标可判（扫描面为空 = 未验证 = 红）"]
+    skipped_own = 0
+    for idx, comp in enumerate(comps, 1):
+        if not isinstance(comp, dict):
+            errors.append("--java-bom components[%d] 不是对象 → BOM 坏了 = 红" % (idx - 1))
+            continue
+        group = (comp.get("group") or "").strip()
+        name = (comp.get("name") or "").strip()
+        ver = (comp.get("version") or "").strip()
+        if group and group == own_group:
+            skipped_own += 1
+            continue
+        if not name or not ver:
+            errors.append("--java-bom components[%d] 缺 name/version（group=%r name=%r）→ 未验证 = 红"
+                          % (idx - 1, group, name))
+            continue
+        if vparse(ver) is None:
+            errors.append("--java-bom components[%d] 版本号不可解析：%s@%s" % (idx - 1, name, ver))
+            continue
+        deps.append(("Maven", "%s:%s" % (group, name) if group else name, ver, os.path.basename(java_bom), idx))
+    if skipped_own == len(comps):
+        errors.append("--java-bom %d 个组件全是本仓自有模块（group=%s）→ 0 个第三方坐标可判（未验证 = 红）"
+                      % (len(comps), own_group or "<无>"))
+    return deps, errors
+
+
+def read_deps(root, java_bom=None):
     """返回 (deps, uncovered, errors)。
 
     deps: [(ecosystem, module, version_text, relpath, lineno)]
@@ -231,6 +358,10 @@ def read_deps(root):
     for eco in ("Go", "npm"):
         if not [d for d in deps if d[0] == eco]:
             errors.append("生态 %s 一个依赖坐标都没解析到（文件缺失/为空/结构变了）→ 未验证 = 红" % eco)
+    if java_bom is not None:
+        bdeps, berrors = read_java_bom(java_bom)
+        deps.extend(bdeps)
+        errors.extend(berrors)
     return deps, uncovered, errors
 
 
@@ -246,7 +377,7 @@ def coords_fingerprint(deps):
 
 
 def load_snapshot(path):
-    """返回 (rows, header, errors)；header: {generated_at, coords_sha256, dropped}。"""
+    """返回 (rows, header, errors)；header: {generated_at, coords_sha256, coords_sha256_<eco>, dropped}。"""
     errors, rows = [], []
     header = {"generated_at": None, "coords_sha256": None, "dropped": None}
     if not os.path.exists(path):
@@ -263,6 +394,9 @@ def load_snapshot(path):
                     m = re.match(pat, line)
                     if m:
                         header[key] = m.group(1)
+                m = re.match(r"^#\s*coords_sha256_(\w+):\s*([0-9a-f]{64})\s*$", line)
+                if m:
+                    header["coords_sha256_%s" % m.group(1).lower()] = m.group(2)
                 continue
             f = line.split("\t")
             if len(f) < 5:
@@ -270,7 +404,7 @@ def load_snapshot(path):
                               % (lineno, line[:80]))
                 continue
             vid, eco, module, expr, sev = f[0].strip(), f[1].strip(), f[2].strip(), f[3].strip(), f[4].strip()
-            if eco not in ("Go", "npm"):
+            if eco not in ("Go", "npm", "Maven"):
                 errors.append("快照第 %d 行生态未知：%r" % (lineno, eco))
                 continue
             conds = parse_expr(expr)
@@ -320,7 +454,7 @@ def blocking(row):
     """该命中行是否阻断。
 
     Go：一律阻断（官方 OSV 不带 CVSS，坐标级命中即红）。
-    npm：HIGH/CRITICAL 阻断；MODERATE/LOW 只提示；**缺少级别（`-`）或未知级别一律阻断**
+    npm / Maven：HIGH/CRITICAL 阻断；MODERATE/LOW 只提示；**缺少级别（`-`）或未知级别一律阻断**
     （缺级别 ≠ 低危：`MAL-*` 恶意包公告常常没有 severity，放行等于给它开绿灯）。
     """
     if row["eco"] == "Go":
@@ -333,13 +467,13 @@ def blocking(row):
     return sev not in ("MODERATE", "LOW", "MEDIUM")
 
 
-def evaluate(root, snapshot, allowlist, max_age_days, today=None, out=sys.stdout):
-    """返回退出码；同时把证据行写到 out。"""
+def evaluate(root, snapshot, allowlist, max_age_days, today=None, out=sys.stdout, java_bom=None):
+    """返回退出码；同时把证据行写到 out。java_bom：CycloneDX 聚合 BOM 路径（None = Maven 生态未覆盖）。"""
     today = today or datetime.date.today()
     emit = lambda s: print(s, file=out)
     fails = []
 
-    deps, uncovered, errors = read_deps(root)
+    deps, uncovered, errors = read_deps(root, java_bom=java_bom)
     rows, header, snap_errors = load_snapshot(snapshot)
     entries, allow_errors = load_allowlist(allowlist, today=today)
     fails.extend(errors)
@@ -348,6 +482,10 @@ def evaluate(root, snapshot, allowlist, max_age_days, today=None, out=sys.stdout
 
     for u in uncovered:
         emit("[UNCOVERED] " + u)
+    # D23③：没给 BOM = Maven 生态没判 = 必须显式说，不许静默（CI 的 vuln job 必须传 --java-bom）。
+    if java_bom is None:
+        emit("[UNCOVERED] sdk/java：未提供 --java-bom（CycloneDX bom.json）→ Maven 生态未纳入本次判定"
+             "（D23③；CI vuln job 必须消费 sdk job 上传的 artifact）")
 
     # 数据面三条"没数据就算绿"的缝：一次判死（Owl II P0-1/P0-3）
     if not rows:
@@ -360,11 +498,29 @@ def evaluate(root, snapshot, allowlist, max_age_days, today=None, out=sys.stdout
     if deps and header["coords_sha256"] is None:
         fails.append("快照缺少 `# coords_sha256:` 头 → 无法判断快照是否覆盖当前依赖坐标（未验证 = 红）")
     elif deps:
-        want = coords_fingerprint(deps)
-        if want != header["coords_sha256"]:
-            fails.append("快照与当前依赖坐标不一致（快照指纹 %s… ≠ 当前 %s…）：**新增 / 删掉 / 换掉**依赖后"
-                         "都必须重跑 `python3 scripts/vuln-snapshot-refresh.py` 并提交 diff"
-                         % (header["coords_sha256"][:12], want[:12]))
+        if dep_ecos >= have_ecos:
+            # 全生态运行（CI：带 BOM）→ 全集指纹，口径与 #127 逐字节一致。
+            want = coords_fingerprint(deps)
+            if want != header["coords_sha256"]:
+                fails.append("快照与当前依赖坐标不一致（快照指纹 %s… ≠ 当前 %s…）：**新增 / 删掉 / 换掉**依赖后"
+                             "都必须重跑 `python3 scripts/vuln-snapshot-refresh.py` 并提交 diff"
+                             % (header["coords_sha256"][:12], want[:12]))
+        else:
+            # 子集运行（本地没传 --java-bom）：快照指纹是全集（含 Maven），本地算不出来。
+            # 退到**分生态指纹**（快照头 `# coords_sha256_<eco>:`，与全集同算法）——逐生态对，
+            # 口径没有变松：CI 全生态运行仍查全集指纹。
+            for eco in sorted(dep_ecos):
+                key = "coords_sha256_%s" % eco.lower()
+                if header.get(key) is None:
+                    fails.append("快照缺 `%s:` 分生态指纹头（本运行只判 %s 生态，无法核对坐标覆盖）→ 未验证 = 红"
+                                 % (key, eco))
+                    continue
+                eco_deps = [d for d in deps if d[0] == eco]
+                want = coords_fingerprint(eco_deps)
+                if want != header[key]:
+                    fails.append("快照 %s 生态坐标与当前不一致（快照 %s… ≠ 当前 %s…）：该生态有依赖新增/删掉/换掉，"
+                                 "必须重跑 `python3 scripts/vuln-snapshot-refresh.py` 并提交 diff"
+                                 % (eco, header[key][:12], want[:12]))
     if header["dropped"] is None:
         fails.append("快照缺少 `# dropped:` 头 → 无法判断生成时有没有丢区间（未验证 = 红）")
     elif header["dropped"] != "0":
@@ -406,7 +562,7 @@ def evaluate(root, snapshot, allowlist, max_age_days, today=None, out=sys.stdout
             loc = "%s:%d" % (rel, lineno)
             where = "%s %s（命中区间 %s，级别 %s）" % (loc, row["module"] + "@" + ver, row["expr"], row["sev"])
             if not blocking(row):
-                notes.append("[INFO] %s %s —— 低于阻断阈值（npm 只阻断 HIGH/CRITICAL）" % (where, row["id"]))
+                notes.append("[INFO] %s %s —— 低于阻断阈值（npm/Maven 只阻断 HIGH/CRITICAL）" % (where, row["id"]))
                 continue
             entry = entries.get(key)
             if entry is None:
@@ -422,6 +578,11 @@ def evaluate(root, snapshot, allowlist, max_age_days, today=None, out=sys.stdout
                 allowed.append("[INFO] %s %s —— 白名单内（到期 %s）：%s" % (where, row["id"], exp, reason))
 
     for key, (reason, exp) in entries.items():
+        # 「不再命中 → 红（白名单不许只增不减）」只对该生态**本次实际参与判定**时强制：
+        # Maven 条目在本地跑（没传 --java-bom）时不算"不再命中"——生态没进判定 ≠ 豁免过期，
+        # CI 的 vuln job 永远传 BOM，收紧在那里生效（D23③）。
+        if key[1] not in dep_ecos:
+            continue
         if key not in hit_keys:
             fails.append("白名单条目本次不再命中：%s / %s / %s —— 请删掉该行（白名单不许只增不减），"
                          "原理由：%s" % (key[0], key[1], key[2], reason))
@@ -434,9 +595,10 @@ def evaluate(root, snapshot, allowlist, max_age_days, today=None, out=sys.stdout
 
     go_n = len([d for d in deps if d[0] == "Go"])
     npm_n = len([d for d in deps if d[0] == "npm"])
-    summary = ("扫描 %d 个依赖坐标（Go %d / npm %d）· 快照 %d 行 / %d 个公告 · 快照年龄 %s 天（上限 %d）"
+    mvn_n = len([d for d in deps if d[0] == "Maven"])
+    summary = ("扫描 %d 个依赖坐标（Go %d / npm %d / Maven %d）· 快照 %d 行 / %d 个公告 · 快照年龄 %s 天（上限 %d）"
                "· 阻断 %d / 白名单 %d / 仅提示 %d"
-               % (len(deps), go_n, npm_n, len(rows), len({(r["id"], r["module"]) for r in rows}),
+               % (len(deps), go_n, npm_n, mvn_n, len(rows), len({(r["id"], r["module"]) for r in rows}),
                   "?" if age is None else age, max_age_days, len(blocked), len(allowed), len(notes)))
     if fails:
         for f in fails:
@@ -455,13 +617,16 @@ SNAP_HEADER = """# generated_at: {gen}
 """
 
 
-def _snapshot(dirpath, gen, extra="", fp="auto", gen_header=True, dropped="0"):
-    """造一份快照夹具；默认把 `coords_sha256` 按**夹具当前依赖**算好（与生产者同源）。"""
+def _snapshot(dirpath, gen, extra="", fp="auto", gen_header=True, dropped="0", java_bom=None):
+    """造一份快照夹具；默认把 `coords_sha256` 按**夹具当前依赖**算好（与生产者同源）。
+
+    传 java_bom 时指纹也把 Maven 坐标算进去（与 CI 的三生态口径一致）。
+    """
     header = ""
     if gen_header:
         header += "# generated_at: %s\n" % gen
     if fp == "auto":
-        deps, _uncovered, _errors = read_deps(dirpath)
+        deps, _uncovered, _errors = read_deps(dirpath, java_bom=java_bom)
         header += "# coords_sha256: %s\n" % coords_fingerprint(deps)
     elif fp:
         header += "# coords_sha256: %s\n" % fp
@@ -525,11 +690,11 @@ def self_test(out=sys.stdout):
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
 
-    def run(root, snap, allow, max_age=MAX_AGE_DAYS_DEFAULT):
+    def run(root, snap, allow, max_age=MAX_AGE_DAYS_DEFAULT, java_bom=None):
         buf = []
         import io
         stream = io.StringIO()
-        rc = evaluate(root, snap, allow, max_age, today=today, out=stream)
+        rc = evaluate(root, snap, allow, max_age, today=today, out=stream, java_bom=java_bom)
         buf = stream.getvalue().splitlines()
         return rc, buf
 
@@ -613,9 +778,10 @@ def self_test(out=sys.stdout):
         return run(tmp, os.path.join(tmp, "nope.tsv"), _allow(tmp))
     check("缺快照 → 红", 1, c11, want_text=["快照不存在"])
 
-    # ⑪ go.mod 版本不可解析 → 红（未验证 = 红）
+    # ⑪ go.mod 版本不可解析 → 红（未验证 = 红）。vparse 现支持四段数字（Maven 微版本），
+    #    五段数字才不可解析——夹具随之升级为五段。
     def c12(tmp):
-        _fixture(tmp, [("golang.org/x/text", "v9.7.0.1")])
+        _fixture(tmp, [("golang.org/x/text", "v9.7.0.1.2")])
         return run(tmp, _snapshot(tmp, gen, SNAP_BASE), _allow(tmp))
     check("依赖版本不可解析 → 红", 1, c12, want_text=["版本号不可解析"])
 
@@ -697,6 +863,146 @@ def self_test(out=sys.stdout):
         return run(tmp, _snapshot(tmp, future, SNAP_BASE), _allow(tmp))
     check("generated_at 在未来 → 红", 1, c23, want_text=["在未来日期"])
 
+    # ---------------- Maven / CycloneDX BOM（D23③ 第二段，2026-11-13） ----------------
+    # BOM 夹具：CycloneDX 1.5 聚合 BOM 的最小形态；自有模块 group 必须与 metadata.component.group
+    # 一致才会被排除。MVN_SAFE = 一条不命中夹具的 Maven 公告（保证 Maven 生态"有快照行"，
+    # 不与"缺生态红"那条 fail-closed 互相污染——每个用例只测一件事）。
+    def _bom(dirpath, components, spec="1.5"):
+        path = os.path.join(dirpath, "bom.json")
+        data = {
+            "bomFormat": "CycloneDX",
+            "specVersion": spec,
+            "metadata": {"component": {"group": "com.guanjin", "name": "guanjin-sdk-parent",
+                                       "type": "library", "version": "0.1.0-SNAPSHOT"}},
+            "components": [{"type": "library", "group": g, "name": n, "version": v}
+                           for g, n, v in components],
+        }
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(data, fh)
+        return path
+
+    OWN = [("com.guanjin", "guanjin-core", "0.1.0-SNAPSHOT"),
+           ("com.guanjin", "guanjin-spring-boot2", "0.1.0-SNAPSHOT")]
+    MVN_SAFE = "GHSA-java-other\tMaven\torg.example:not-in-fixture\t<9.9.9\tHIGH\t-\tno hit\n"
+    MVN_HIGH = "GHSA-java-high\tMaven\torg.bouncycastle:bcprov-jdk18on\t<1.80.0\tHIGH\t-\tpadding oracle\n"
+    MVN_MOD = "GHSA-java-mod\tMaven\torg.bouncycastle:bcprov-jdk18on\t<1.80.0\tMODERATE\t-\tinfo only\n"
+    MVN_NOSEV = "MAL-2026-0001\tMaven\torg.bouncycastle:bcprov-jdk18on\t<1.80.0\t-\t-\tmalicious jar\n"
+
+    # ㉔ Maven HIGH 命中 → 红，并点名 bom.json 的组件序号（bcprov 是第 3 个组件 → bom.json:3）
+    def c24(tmp):
+        _fixture(tmp, [("golang.org/x/text", "v0.41.0")])
+        bom = _bom(tmp, OWN + [("org.bouncycastle", "bcprov-jdk18on", "1.78.1"),
+                               ("com.fasterxml.jackson.core", "jackson-databind", "2.13.5")])
+        return run(tmp, _snapshot(tmp, gen, SNAP_BASE + MVN_HIGH + MVN_SAFE, java_bom=bom),
+                   _allow(tmp), java_bom=bom)
+    check("maven/HIGH 命中判红并点名 bom.json:3", 1, c24,
+          want_text=["[FAIL] bom.json:3 org.bouncycastle:bcprov-jdk18on@1.78.1", "GHSA-java-high",
+                     "Maven 2"])  # 汇总行必须把 Maven 坐标数报出来
+
+    # ㉕ 同组件升到修复版 → 绿（版本敏感，不是永远红）
+    def c25(tmp):
+        _fixture(tmp, [("golang.org/x/text", "v0.41.0")])
+        bom = _bom(tmp, OWN + [("org.bouncycastle", "bcprov-jdk18on", "1.80.0")])
+        return run(tmp, _snapshot(tmp, gen, SNAP_BASE + MVN_HIGH + MVN_SAFE, java_bom=bom),
+                   _allow(tmp), java_bom=bom)
+    check("maven/修复版判绿（版本敏感）", 0, c25,
+          want_text=["[OK] 依赖漏洞门禁通过", "Maven 1"], forbid_text=["[FAIL]", "[UNCOVERED]"])
+
+    # ㉖ 不传 --java-bom → 显式 [UNCOVERED] sdk/java（D23③ 第一段：不许静默跳过），且其余生态照判
+    def c26(tmp):
+        _fixture(tmp, [("golang.org/x/text", "v0.41.0")])
+        return run(tmp, _snapshot(tmp, gen, SNAP_BASE), _allow(tmp))
+    check("maven/无 BOM → 显式 [UNCOVERED] sdk/java", 0, c26,
+          want_text=["[UNCOVERED] sdk/java：未提供 --java-bom"])
+
+    # ㉗ 传了 --java-bom 但文件缺失 → 红（artifact 缺失 = 未验证 = 红，D23③②）
+    def c27(tmp):
+        _fixture(tmp, [("golang.org/x/text", "v0.41.0")])
+        missing = os.path.join(tmp, "nope.json")
+        return run(tmp, _snapshot(tmp, gen, SNAP_BASE + MVN_SAFE, java_bom=missing),
+                   _allow(tmp), java_bom=missing)
+    check("maven/BOM 文件缺失 → 红", 1, c27, want_text=["--java-bom 指定的 BOM 不存在"])
+
+    # ㉘ BOM 非法 JSON → 红（数据坏了等于没扫）
+    def c28(tmp):
+        _fixture(tmp, [("golang.org/x/text", "v0.41.0")])
+        path = os.path.join(tmp, "bom.json")
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write("{not-json")
+        return run(tmp, _snapshot(tmp, gen, SNAP_BASE, java_bom=path), _allow(tmp), java_bom=path)
+    check("maven/BOM 非法 JSON → 红", 1, c28, want_text=["不是合法 JSON"])
+
+    # ㉙ BOM 0 组件 → 红（扫描面为空 = 未验证 = 红）
+    def c29(tmp):
+        _fixture(tmp, [("golang.org/x/text", "v0.41.0")])
+        path = _bom(tmp, [])
+        return run(tmp, _snapshot(tmp, gen, SNAP_BASE, java_bom=path), _allow(tmp), java_bom=path)
+    check("maven/BOM 0 组件 → 红", 1, c29, want_text=["components 为空/缺失"])
+
+    # ㉚ BOM 只剩自有模块（全部被排除）→ 红：0 个第三方坐标可判
+    def c30(tmp):
+        _fixture(tmp, [("golang.org/x/text", "v0.41.0")])
+        path = _bom(tmp, OWN)
+        return run(tmp, _snapshot(tmp, gen, SNAP_BASE, java_bom=path), _allow(tmp), java_bom=path)
+    check("maven/全是自有模块 → 红（0 第三方坐标）", 1, c30, want_text=["全是本仓自有模块"])
+
+    # ㉛ Maven MODERATE → 只提示不阻断（与 npm 同阈值）
+    def c31(tmp):
+        _fixture(tmp, [("golang.org/x/text", "v0.41.0")])
+        bom = _bom(tmp, OWN + [("org.bouncycastle", "bcprov-jdk18on", "1.78.1")])
+        return run(tmp, _snapshot(tmp, gen, SNAP_BASE + MVN_MOD + MVN_SAFE, java_bom=bom),
+                   _allow(tmp), java_bom=bom)
+    check("maven/MODERATE 只打 INFO 不阻断", 0, c31,
+          want_text=["[INFO] bom.json:3 org.bouncycastle:bcprov-jdk18on@1.78.1", "仅提示 1"],
+          forbid_text=["[FAIL]"])
+
+    # ㉜ Maven 缺级别（MAL-* / severity=`-`）→ 阻断（缺级别 ≠ 低危）
+    def c32(tmp):
+        _fixture(tmp, [("golang.org/x/text", "v0.41.0")])
+        bom = _bom(tmp, OWN + [("org.bouncycastle", "bcprov-jdk18on", "1.78.1")])
+        return run(tmp, _snapshot(tmp, gen, SNAP_BASE + MVN_NOSEV + MVN_SAFE, java_bom=bom),
+                   _allow(tmp), java_bom=bom)
+    check("maven/缺级别（MAL-*）→ 阻断", 1, c32, want_text=["MAL-2026-0001"])
+
+    # ㉝ Maven 四段微版本（2.13.4.2 形态）：版本与区间边界都能解析且语义正确
+    def c33(tmp):
+        _fixture(tmp, [("golang.org/x/text", "v0.41.0")])
+        bom = _bom(tmp, OWN + [("com.fasterxml.jackson.core", "jackson-databind", "2.13.2")])
+        row = ("GHSA-micro\tMaven\tcom.fasterxml.jackson.core:jackson-databind\t>=2.13.0,<2.13.4.2\tHIGH\t-\tmicro range\n")
+        return run(tmp, _snapshot(tmp, gen, SNAP_BASE + row, java_bom=bom), _allow(tmp), java_bom=bom)
+    check("maven/四段微版本区间命中 → 红", 1, c33,
+          want_text=["[FAIL] bom.json:3 com.fasterxml.jackson.core:jackson-databind@2.13.2", "GHSA-micro"])
+
+    # ㉞ Maven 白名单条目在**无 BOM**（本地跑）时不判"不再命中"——生态没进判定 ≠ 豁免过期（D23③）
+    def c34(tmp):
+        _fixture(tmp, [("golang.org/x/text", "v0.41.0")])
+        allow = _allow(tmp, ["GHSA-java-high\tMaven\torg.bouncycastle:bcprov-jdk18on\t还没扫 Maven\t%s"
+                             % (today + datetime.timedelta(days=30)).isoformat()])
+        return run(tmp, _snapshot(tmp, gen, SNAP_BASE), allow)
+    check("maven/无 BOM 时 Maven 白名单不判不再命中", 0, c34,
+          want_text=["[UNCOVERED] sdk/java", "[OK]"], forbid_text=["不再命中"])
+
+    # ㉟ Maven 发布后补丁 .SR<n>（Spring Service Release）——**归因敏感**的区间设计：
+    # >=2.5.7,<2.5.7.SR10 的下界是纯发布版。若 SR 不进"发布后补丁类"而被当预发布，
+    # 2.5.7.SR5 < 2.5.7（pre<release）→ 判不命中 = 漏报；进了补丁类（SR5 ⇒ 2.5.7.5）→ 命中 = 红。
+    # （数值感知预发布比较救不了这条：跨了发布版边界。）
+    def c35(tmp):
+        _fixture(tmp, [("golang.org/x/text", "v0.41.0")])
+        bom = _bom(tmp, OWN + [("org.springframework", "spring-core", "2.5.7.SR5")])
+        row = ("GHSA-wv88-pf73-x22p\tMaven\torg.springframework:spring-core\t>=2.5.7,<2.5.7.SR10\tHIGH\t-\tSR range\n")
+        return run(tmp, _snapshot(tmp, gen, SNAP_BASE + row, java_bom=bom), _allow(tmp), java_bom=bom)
+    check("maven/SR 发布后补丁跨发布边界命中 → 红", 1, c35,
+          want_text=["[FAIL] bom.json:3 org.springframework:spring-core@2.5.7.SR5", "GHSA-wv88-pf73-x22p"])
+
+    # ㊱ 预发布序号数值感知（RC10 > RC2，不按字典序）：RC5 ∈ [RC2, RC10) → 红
+    def c36(tmp):
+        _fixture(tmp, [("golang.org/x/text", "v0.41.0")])
+        bom = _bom(tmp, OWN + [("com.example", "probe", "5.0.0.RC5")])
+        row = "GHSA-rc-order\tMaven\tcom.example:probe\t>=5.0.0.RC2,<5.0.0.RC10\tHIGH\t-\trc ordering\n"
+        return run(tmp, _snapshot(tmp, gen, SNAP_BASE + row, java_bom=bom), _allow(tmp), java_bom=bom)
+    check("maven/预发布序号数值感知（RC5 ∈ [RC2,RC10)）→ 红", 1, c36,
+          want_text=["[FAIL] bom.json:3 com.example:probe@5.0.0.RC5", "GHSA-rc-order"])
+
     bad = [r for r in results if not r[0]]
     for ok, name, rc, want, buf, want_text, forbid in results:
         body = "\n".join(buf)
@@ -727,6 +1033,8 @@ def main(argv):
     ap.add_argument("--snapshot", default=None)
     ap.add_argument("--allowlist", default=None)
     ap.add_argument("--max-age-days", type=int, default=MAX_AGE_DAYS_DEFAULT)
+    ap.add_argument("--java-bom", default=None,
+                    help="CycloneDX 1.x 聚合 BOM（sdk job 的 artifact；不传 = Maven 生态未覆盖，显式打 [UNCOVERED]）")
     ap.add_argument("--self-test", action="store_true")
     args = ap.parse_args(argv)
 
@@ -738,7 +1046,9 @@ def main(argv):
     print("== 依赖漏洞门禁（离线快照；零网络）==")
     print("  快照：%s" % os.path.relpath(snap, root))
     print("  白名单：%s" % os.path.relpath(allow, root))
-    return evaluate(root, snap, allow, args.max_age_days)
+    if args.java_bom:
+        print("  Java BOM：%s（CycloneDX，Maven 生态）" % args.java_bom)
+    return evaluate(root, snap, allow, args.max_age_days, java_bom=args.java_bom)
 
 
 if __name__ == "__main__":
