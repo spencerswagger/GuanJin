@@ -294,21 +294,44 @@
 | 合法形态 | **唯一形态**：`<非负整数><单位>`；`trim` 后整串匹配 **`^[0-9]+(ms\|s\|m\|h)$`** |
 | 单位闭合集 | **只 4 个**：`ms` / `s` / `m` / `h`（覆盖 29 键全部默认值 `2s`/`3s`/`60s`/`10m`/`30s`）；**大写单位不认**（`1S`/`10M` 非法） |
 | **必须失败**的形态 | ①纯数字 `3000`；②`d`（`1d`）；③`ns`/`us`/`µs`/`μs`；④小数 `1.5s`；⑤组合 `1h30m`；⑥ISO-8601 `PT60S`；⑦带符号 `+60s`/`-1s`；⑧空串 / 纯空白；⑨内部空白 `60 s` |
-| 首尾空白 | **允许 `trim`**（显式写明，不算隐性）；`trim` 后为空 → 按 ⑧ 失败 |
-| 失败行为 | **启动失败（fail-fast）**，与 §3.6 同口径：进程非 0 退出 / 构造期抛错，**错误信息必须含键名**；**不得静默回落默认值**、不得「告警后按毫秒」 |
-| 语义换算 | `ms`=毫秒、`s`=秒、`m`=分、`h`=时；内部统一按毫秒数（Java `java.time.Duration`、Go `time.Duration`、Node `number` 毫秒），**无隐式单位** |
+| 首尾空白 | **允许 `trim`，但字符集冻结为 4 个 ASCII 空白**：空格 `U+0020`、`\t` `U+0009`、`\n` `U+000A`、`\r` `U+000D`（**只这些，逐个剥，顺序无关**）；**其它空白一律不 trim**——NBSP `U+00A0`、全角空格 `U+3000`、`U+2000–200A`、`U+000B`/`U+000C` 等**都不算**，落在正则外 → 按 ⑨ 失败；`trim` 后为空 → 按 ⑧ 失败。**不得**用语言默认的 trim（Java `String.trim()` 会剥 `\u0000–\u001F`、Go `strings.TrimSpace()` 会剥 Unicode 空白、JS `trim()` 同）——三者的字符集互不相同，用默认实现就必然分叉 |
+| 失败行为 | **启动失败（fail-fast）**，与 §3.6 同口径：进程非 0 退出 / 构造期抛错，**错误信息必须含键名**；**不得静默回落默认值**、不得「告警后按毫秒」。**数值上界 = 必须能无损换算成 `int64` 纳秒**（= Go `time.Duration` 的表示范围，≈ 292 年）：`n × 单位 > 9223372036854775807 ns` 或 `n` 本身超出 `int64` → **启动失败报键名**（fail-closed）；**不许**在某一语言里"截断到最大值"或"退化成 0"（那是隐性逻辑）。三语言取**交集**的理由：`time.Duration` 是三者中表示范围最小的，取它才可能"同接受/同拒绝"（§4.1 M7） |
+| 语义换算 | `ms`=毫秒、`s`=秒、`m`=分、`h`=时；内部统一按毫秒数（Java `java.time.Duration`、Go `time.Duration`、Node `number` 毫秒），**无隐式单位**。**零值 `0s`/`0ms`/`0m`/`0h` 形式合法、语义 = 真零值**（见下方「补口①」），**绝不等于"未配置"** |
 | 各键上下限 | 仍按 §3.2「安全约束」列**逐键**判（`replay-window` ≥ 令牌 `exp`、`clock-skew` > 300s 告警等）；本节**只管解析**，不改任何键的默认值、必填性、数量 |
 
 **三语言落点（谁必须改）**：
 
 | 语言 | 现状 | 要求 |
 |---|---|---|
-| Java 8 | Spring `Duration` 默认转换器接受纯数字（按毫秒）/`d`/ISO-8601 → **偏差方** | **不得依赖**默认转换器：在 `guanjin-core` 的 `Config.validate()`（零 Spring 依赖，§3.6 Java ②）里按上表正则解析，`guanjin-spring-boot2` 绑定阶段调用；违规 → `GuanjinConfigException`（启动失败） |
-| Go | `time.ParseDuration(strings.TrimSpace(raw))`：拒纯数字/`d`，但**接受** `1h30m`/`1.5s`/`100ns` | `Config.Validate()` **先**跑同一正则、**再**用 `time.ParseDuration` 换算；正则不过 → 返回 error 且**不得**同时返回可用实例（§3.6 Go ④） |
+| Java 8 | Spring `Duration` 默认转换器接受纯数字（按毫秒）/`d`/ISO-8601 → **偏差方** | **不得依赖**默认转换器。**真实落点（#152 落地后按实现改写，不再写"`Config.validate()`"）**：① `guanjin-core` 的 **`GuanjinConfigValidator.parseDuration(key, raw)`**（静态工具、零 Spring 依赖）持有唯一正则 `DURATION_PATTERN` 并做换算，溢出即抛 `GuanjinConfigException`；② `guanjin-spring-boot2` 的 **`GuanjinDurationBindingGuard`** 在**绑定期**按 29 键的**类型列**（`isDurationKey`，不硬编码键名）逐键取原始文本校验——Boot 2.7 的 `ConfigurationPropertySource` 不可枚举，故按 `ConfigurationPropertyName` 逐键查、宽松名一并命中；③ 判过后把 **`trim` 值回写最高优先级属性源**（否则 `" 2s "` 判过、binder 仍按宽松名取值失败），**无空白不回写**（零副作用）；违规 → 启动失败 |
+| Go | `time.ParseDuration(strings.TrimSpace(raw))`：拒纯数字/`d`，但**接受** `1h30m`/`1.5s`/`100ns` | **真实落点（#152）**：`parseDurationStrict(key, raw)` **先**跑同一正则 `DurationPattern`、**再** `time.ParseDuration` 换算；装载期由 `setDuration` 调用并**保留原始文本**（`rawDurations`），`Config.Validate()` 再用它**复判一遍**（typed 结构里看不出原文）；正则不过/换算失败 → 返回 error 且**不得**同时返回可用实例（§3.6 Go ④） |
 | Node | 未实现 | 照上表正则实现；非法即 `throw GuanjinConfigError`（附键名 + 可用键清单） |
 
 > **不新增配置键、不改 29 项、不进 CH**：本裁决只把 §1.1 已冻结的「字符串 `<n><unit>`」变成**可执行判定**，未改任何键名/默认值/必填性，业务方仍不能用基线原本不允许的方式配置 SDK → 按三分判据不进 CH。判据侧见 `docs/acceptance-criteria.md` **`AC-SDK-11`**（v19 新增，组末追加）。
 > **向量侧待补（Gate / `scripts/vecgen`）**：`config-mapping.json` 的 `known_divergences.parse_forms` 两条应从「口径差异」改写为**负例**（`3000`、`1d` 必须启动失败），并按上表补 `1h30m` / `1.5s` / `PT60S` 三条负例；改完前它们只是**定性记录**，不构成断言。
+
+**补口（#152 落地后按实现定口径，2026-11-13；锚 #152 `be11a67`）——三处细节**
+
+**① `0s` 的合法性与语义 —— 裁决句：「`0s`/`0ms`/`0m`/`0h` 通过 §3.2.1 正则、按零值如实生效；它「不是」"未配置"的同义词——任何一侧都不得把零值回落成默认值，也不得把零值改写成"最小可用值"。」** 三条配套：
+- **逐键安全约束优先**：`gateway.replay-window` 必须 ≥ 令牌 `exp`（60s），故该键置 `0s` → **启动失败**（这是**安全约束**失败，不是解析失败，报错文案要能区分）；`gateway.clock-skew = 0s` **合法**（= 零容忍，语义明确）。
+- **风险不等于非法**：`connect-timeout`/`read-timeout`/`jwks-cache-ttl`/`agent.pull.interval` 置 `0s` 属"自伤配置"（必超时 / 每请求拉 JWKS / 轮询风暴），但**显式配置的错值不在 SDK 拦截范围**——SDK 不猜业务意图；要拦就是新增判据，须另行立项。
+- **不得**用 `0s` 表达"请用默认值"；要默认就别配这个键（§3.6 禁隐性逻辑）。
+
+**② 落点按真实实现改写**（见上表 Java / Go 两行）：**不再写"core 的 `Config.validate()`"**——Java 真实是 `guanjin-core` 的 `GuanjinConfigValidator.parseDuration`（静态工具、零 Spring）+ `guanjin-spring-boot2` 的 `GuanjinDurationBindingGuard`（绑定期按类型列逐键守卫、判过后回写 `trim` 值、无空白不回写）；Go 真实是 `parseDurationStrict`（先正则再换算）+ `Config.Validate()` 用 `rawDurations` 保留的原文复判。
+
+**③ trim 字符集与数值上界**（见上表「首尾空白」「失败行为」两行）：**trim 只认 4 个 ASCII 空白**（`U+0020`/`\t`/`\n`/`\r`，逐个剥），其它空白（NBSP、全角空格、`U+000B`/`U+000C` 等）**一律不 trim**、落在正则外即失败；**上界 = 可无损换算成 `int64` 纳秒**（≈292 年，取三语言交集），超出或 `n` 超 `int64` → **启动失败报键名**（fail-closed），**不许截断/退化成 0**。
+**#152 实现的现状差异（要改，属实现跟随契约，不是契约让步）**：Java 用 `String.trim()`（会多剥 `\u0000–\u001F`）、Go 用 `strings.TrimSpace()`（会多剥 NBSP 等 Unicode 空白）→ 两侧改成显式 4 字符集；Java `Duration.ofHours(n)` 本身不溢出，**当前接受**远超 Go 范围的值（如 `9999999999999h`）→ 需补 `toNanos()` 溢出判定（抛 `GuanjinConfigException`）。
+
+**向量增删清单（给 Gate，`spec/vectors/config-mapping.json`；现有 7 条负例 `CM-06`~`CM-12` 保留不动，无需删除）**：
+| 新增 | 类型 | 键 / 值 | 期望 | 钉的是什么 |
+|---|---|---|---|---|
+| `CM-13` | **正向**（进 `cases`） | `gateway.clock-skew = "0s"` | 内部值 **0**（毫秒），**且 ≠ 默认 `60000`** | 补口①：零值合法、**不回落默认** |
+| `CM-14` | 负向（`reject_cases`） | `gateway.replay-window = "0s"` | 启动失败 | 补口①：**安全约束**（≥ `exp` 60s），`reason` 要写明"非解析失败" |
+| `CM-15` | 负向 | `platform.connect-timeout = "9999999999999h"` | 启动失败 | 补口③：超 `int64` 纳秒上界 |
+| `CM-16` | 负向 | `gateway.clock-skew = "\u00A02s"`（NBSP 开头） | 启动失败 | 补口③：**不 trim** NBSP |
+| `CM-17` | **正向** | `agent.pull.interval = "\t30s\r\n"` | 内部值 **30000** | 补口③：4 字符 trim 集内合法，同时证「判过要回写 trim 值」 |
+
+> `known_divergences.parse_forms` 的两条（`3000` / `1d`）若已并入 `reject_cases`（#151/#152 已做），**从 divergences 移除**，避免同一件事记两处。
 
 ### 3.2.2 `resource` 类型键的解析口径（`FROZEN`，三语言一致；2026-11-13 补，锚 #143）
 
@@ -780,6 +803,18 @@ M1 的 S9 **只交付 Java 8 两份产物**；Node / Go 随 M2+ 落地。但**�
 
 > **不改的**：29 项键名/类型/默认值/必填性、22 条能力、§3.2.1 的时长口径、判据文件（`acceptance-criteria.md` 本轮只加 §15-**G20** 登记 P2 待办，账目仍 **91 = 84/0/0/6/0/1**）。
 
+### 8.7 v14 → v15 修订点（2026-11-13：#152 落地后的三处细节定口径）
+
+> 起因：Nova 按 §3.2.1 把严格解析落进 Java + Go（#152 `be11a67`）后，**三处口径仍空着**——`0s` 的数值域两侧行为不一、§3.2.1 写的落点与实现不符、trim 字符集与数值上界没写死。本轮只补这三处，**不动正则、不动九类非法形态、不动 29 项**。
+
+| # | 位置 | 原（v14） | 现（v15） | 依据 |
+|---|---|---|---|---|
+| **E39** | §3.2.1「语义换算」行 + 新增「补口①」 | 只写「无隐式单位」，`0s` 未表态（正则放行、语义空白） | **裁决句**：`0s`/`0ms`/`0m`/`0h` **形式合法、语义 = 真零值**，**绝不等于"未配置"**（不得回落默认、不得改写成"最小可用值"）；配套三条：逐键安全约束优先（`replay-window=0s` → 安全约束失败，非解析失败）、风险≠非法（timeout/TTL/interval 置 0 属自伤但 SDK 不拦）、禁止用 `0s` 表达"用默认" | §3.6 禁隐性逻辑；§3.2 各键「安全约束」列 |
+| **E40** | §3.2.1 三语言落点表 Java / Go 两行 | Java 写「在 core 的 `Config.validate()` 里解析、boot2 绑定期调用」——**与实现不符**；Go 写「`Config.Validate()` 先正则再换算」——漏了「装载期解析 + 保留原文复判」 | Java：`GuanjinConfigValidator.parseDuration`（静态工具、零 Spring、持有唯一正则）+ `GuanjinDurationBindingGuard`（绑定期按**类型列**逐键守卫，Boot 2.7 的 `ConfigurationPropertySource` 不可枚举故按 `ConfigurationPropertyName` 逐键查，判过后**回写 trim 值**到最高优先级属性源、无空白不回写）；Go：`parseDurationStrict` + `setDuration` 保留 `rawDurations`、`Validate()` 复判 | #152 实现（`sdk/java/.../GuanjinConfigValidator.java`、`GuanjinDurationBindingGuard.java`、`sdk/go/guanjin/config.go`） |
+| **E41** | §3.2.1「首尾空白」「失败行为」两行 + 新增「补口③」 | 「允许 `trim`」未说**哪些字符**；「失败行为」未说**数值上界** | trim **只认 4 个 ASCII 空白**（`U+0020`/`\t`/`\n`/`\r`），其它空白（NBSP/全角/`U+000B`·`U+000C`）**不 trim**、落在正则外即失败，且**禁用语言默认 trim**（Java `String.trim()` / Go `TrimSpace()` / JS `trim()` 三者字符集互不相同）；**上界 = 可无损换算成 `int64` 纳秒**（≈292 年，三语言取交集），超出 → 启动失败报键名，**不许截断/退化**；并写明 #152 现状差异（Java `Duration.ofHours` 不溢出、当前接受 `9999999999999h` → 需 `toNanos()` 判定） | §4.1 M7（同接受/同拒绝）；Go `time.Duration` 表示范围是三者最小 |
+
+> **向量增删清单**见 §3.2.1 末表（`CM-13`~`CM-17`；现有 `CM-06`~`CM-12` 保留）。**判据侧**：`acceptance-criteria.md` 的 `AC-SDK-11` 补一句「零值/上界/trim 字符集」断言（账目仍 **91 = 84/0/0/6/0/1**，不新增判据）。
+
 ## 9. 附录
 
 ### 附录 A：能力 ID ↔ 基线 §2 编号 ↔ 对外 API 入口
@@ -861,4 +896,4 @@ M1 的 S9 **只交付 Java 8 两份产物**；Node / Go 随 M2+ 落地。但**�
 
 ---
 
-**校对快照（v14，供 Spec 抽查）**：`sdk-contract.md` / 行数 **864** 行（`wc -l`）/ md5 **`519c9c6deffb86b256427eba0307a8fb`**（md5 覆盖范围 = **正文全部，即第 1..860 行**，命令 `head -n 860 docs/sdk-contract.md | md5sum`——不含快照节自身与其上方分隔线，避免自引用；行数含快照节）。上一快照 = v13 837 行 / md5 `1c2f770b95379cec4e5d67db292c00b3`。本版（**E38**，#143 收尾）：①§3.2 **#17** 的 Go/Node 两列由「（文件路径）」改为「**resource 形态**：`classpath:` = 包内资源、不得当文件路径 open」；②新增 **§3.2.2** 写死 `resource` 型键的解析口径（两种形态 / 剥前缀与前导 `/`、不许 `..` / Java 现有 `readModelConf` 为基准、**Go 必须 `//go:embed`**、Node 走包内相对路径 / 三份内置 `model.conf` 逐字节相同 / 空·找不到·未知 scheme·越界 → 启动失败报键名 / 外部文件必须 digest 校验 / 向量 `kind` 缺 `resource` 待补）。**29 项键名·类型·默认值·必填性、22 条能力、§3.2.1 时长口径一处未改、无源码**；判据侧只加 `acceptance-criteria.md` §15-**G20**（P2×3 登记），账目仍 **91 = 84/0/0/6/0/1**。
+**校对快照（v15，供 Spec 抽查）**：`sdk-contract.md` / 行数 **899** 行（`wc -l`）/ md5 **`4262c6831c2b2bbc8a53e053ddf42704`**（md5 覆盖范围 = **正文全部，即第 1..895 行**，命令 `head -n 895 docs/sdk-contract.md | md5sum`——不含快照节自身与其上方分隔线，避免自引用；行数含快照节）。上一快照 = v14 864 行 / md5 `519c9c6deffb86b256427eba0307a8fb`。本版（**E39–E41**，#152 落地后三处细节）：①`0s` **形式合法、语义 = 真零值**（≠"未配置"，不得回落默认），逐键安全约束优先（`replay-window=0s` 属安全约束失败）；②Java/Go **落点按真实实现改写**（core `GuanjinConfigValidator.parseDuration` + boot2 `GuanjinDurationBindingGuard` 回写 trim 值；Go `parseDurationStrict` + `Validate()` 复判）；③**trim 字符集冻结为 4 个 ASCII 空白**（其它空白不 trim）、**数值上界 = 可无损换算 int64 纳秒**（超出启动失败、不许截断），并写明 #152 现状差异与向量增删清单 `CM-13`~`CM-17`。**正则与九类非法形态、29 项键名·类型·默认值·必填性、22 条能力一处未改、无源码**；判据侧 `AC-SDK-11` 补一句断言、账目仍 **91 = 84/0/0/6/0/1**。
