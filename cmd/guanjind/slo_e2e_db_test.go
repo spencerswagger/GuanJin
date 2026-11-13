@@ -183,7 +183,8 @@ func sloKeys(t *testing.T) *signing.Set {
 	if err != nil {
 		t.Fatalf("GenRow(oidc): %v", err)
 	}
-	gw, err := signing.GenRow(rand.Reader, keywrap, "slo-gw", signing.PurposeGateway, signing.AlgSM3WithSM2)
+	// 网关用途键的 alg 必须与真机 keygen 一致 = SM2（decisions.md D29）。
+	gw, err := signing.GenRow(rand.Reader, keywrap, "slo-gw", signing.PurposeGateway, signing.AlgSM2)
 	if err != nil {
 		t.Fatalf("GenRow(gateway): %v", err)
 	}
@@ -192,6 +193,49 @@ func sloKeys(t *testing.T) *signing.Set {
 		t.Fatalf("Load: %v", err)
 	}
 	return set
+}
+
+// verifyGatewayAssertion 按业务系统 SDK 的口径验**网关断言**：`alg` 必须 = `SM2`
+// （decisions.md D29 写死），再用 JWKS 公钥做 SM2 验签并解出 claims。
+// **不用 `signing.VerifyJWT`**——那个入口钉的是「对外令牌」那条轨的 `SM3withSM2`，
+// 拿它验网关断言 = 夹具与真机口径混在一起（真机网关键 alg=SM2，这正是 #51 修掉的 401 根因）。
+func verifyGatewayAssertion(t *testing.T, pub *sm2.PublicKey, token string) (map[string]any, error) {
+	t.Helper()
+	parts := strings.Split(token, ".")
+	if len(parts) != 3 {
+		return nil, fmt.Errorf("断言不是三段式")
+	}
+	hb, err := base64.RawURLEncoding.DecodeString(parts[0])
+	if err != nil {
+		return nil, fmt.Errorf("decode header: %w", err)
+	}
+	var header struct {
+		Alg string `json:"alg"`
+	}
+	if err := json.Unmarshal(hb, &header); err != nil {
+		return nil, fmt.Errorf("unmarshal header: %w", err)
+	}
+	if header.Alg != signing.AlgSM2 {
+		return nil, fmt.Errorf("断言 alg 期望 %q（D29 写死），实际 %q", signing.AlgSM2, header.Alg)
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return nil, fmt.Errorf("decode payload: %w", err)
+	}
+	var claims map[string]any
+	if err := json.Unmarshal(payload, &claims); err != nil {
+		return nil, fmt.Errorf("unmarshal payload: %w", err)
+	}
+	sig, err := base64.RawURLEncoding.DecodeString(parts[2])
+	if err != nil || len(sig) != 64 {
+		return nil, fmt.Errorf("签名段非法（err=%v len=%d）", err, len(sig))
+	}
+	r := new(big.Int).SetBytes(sig[:32])
+	s := new(big.Int).SetBytes(sig[32:])
+	if !crypto.VerifySM2(pub, []byte(parts[0]+"."+parts[1]), r, s) {
+		return nil, fmt.Errorf("SM2 验签失败")
+	}
+	return claims, nil
 }
 
 // newSLORevoker 装出"管理器 + 本仓装配层"，返回撤销入口。
@@ -332,7 +376,7 @@ func verifySLOAssertion(t *testing.T, keys *signing.Set, token string) map[strin
 		x, _ := base64.RawURLEncoding.DecodeString(jwk.X)
 		y, _ := base64.RawURLEncoding.DecodeString(jwk.Y)
 		pub := &sm2.PublicKey{Curve: sm2.P256Sm2(), X: new(big.Int).SetBytes(x), Y: new(big.Int).SetBytes(y)}
-		claims, err := signing.VerifyJWT(pub, token)
+		claims, err := verifyGatewayAssertion(t, pub, token)
 		if err != nil {
 			t.Fatalf("JWKS 验签失败：%v", err)
 		}
