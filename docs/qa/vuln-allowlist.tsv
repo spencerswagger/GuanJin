@@ -18,7 +18,9 @@
 #       B 类 同 major 内需升 minor **11** 条（jackson 2.13→2.15/2.18、bcprov 1.78→1.80/1.85、commons-io 2.11→2.14、
 #            snakeyaml 1.30→1.31）→ Nova 升 minor + 回归；
 #       C 类 同 major 内无干净版本 **10** 条（spring 5.3.x→6.x、spring-security-crypto→6.3.8、snakeyaml→2.x、
-#            spring-boot 2.7.18→3.0）→ 需跨 major / Boot 3，Nova+Spec 排期。
+#            spring-boot 2.7.18→3.0）→ 按批次拆：**9 条 = B 批**（Spring 6 / Security 6 / Boot 3 要 Java 17，
+#            与 SDK 的 Java 8 契约冲突）→ **spencer 拍板**（α/β/γ 见 `sdk/java/SBOM-REMEDIATION-PLAN.md` §3，
+#            γ 只能作 α/β 的辅助口径）；**1 条 `snakeyaml→2.0`**（Java 8 兼容、Boot 2.7.18 实测可解析）→ 随 **A 批**归 Nova。
 #     （**计数单位**：上面 A 12 / B 11 / C 10 是**逐公告**口径；Nova 实施用的**逐批次** A 批 24 / B 批 9 是同一笔账——
 #      换算 `24 = 12 + 11 + 1`、`9 = 10 − 1`，差额恰为 snakeyaml 1.30→2.0（公告跨 major，目标版本 Java 8 兼容、
 #      与 Boot 2.7.18 实测可解析，故 Nova 归"可一批"）。对账依据 `docs/acceptance-criteria.md` §12.1；
@@ -33,14 +35,14 @@
 #
 # id	ecosystem	module	reason	expires
 GHSA-2wrp-6fg6-hmc5	Maven	org.springframework:spring-web	HIGH[spring-web] A 类·同 minor 线补丁已发布（spring-web@5.3.31 → 5.3.34 清掉本公告全部区间；Nova 一行版本覆盖 + 回归）	2026-12-13
-GHSA-3chg-m5w7-qfv5	Maven	org.springframework:spring-webmvc	HIGH[spring-webmvc] C 类·同 major 内无干净版本（spring-webmvc@5.3.31 → 6.0.0 才清掉；需跨 major/Boot 3，Nova+Spec 排期）	2026-12-13
+GHSA-3chg-m5w7-qfv5	Maven	org.springframework:spring-webmvc	HIGH[spring-webmvc] C 类·同 major 内无干净版本（spring-webmvc@5.3.31 → 6.0.0 才清掉；需跨 major/Boot 3，需 Boot 3 / Java 17 → 属 B 批，spencer 拍板）	2026-12-13
 GHSA-3mc7-4q67-w48m	Maven	org.yaml:snakeyaml	HIGH[snakeyaml] B 类·同 major 内需升 minor（snakeyaml@1.30 → 1.31 清掉本公告全部区间；Nova 升 minor + 回归）	2026-12-13
 GHSA-3qp7-7mw8-wx86	Maven	io.netty:netty-handler	HIGH[netty-handler] A 类·同 minor 线补丁已发布（netty-handler@4.1.101.Final → 4.1.135.Final 清掉本公告全部区间；Nova 一行版本覆盖 + 回归）	2026-12-13
 GHSA-4g8c-wm8x-jfhw	Maven	io.netty:netty-handler	HIGH[netty-handler] A 类·同 minor 线补丁已发布（netty-handler@4.1.101.Final → 4.1.118.Final 清掉本公告全部区间；Nova 一行版本覆盖 + 回归）	2026-12-13
-GHSA-4wrc-f8pq-fpqp	Maven	org.springframework:spring-web	CRITICAL[spring-web] C 类·同 major 内无干净版本（spring-web@5.3.31 → 6.0.0 才清掉；需跨 major/Boot 3，Nova+Spec 排期）	2026-12-13
+GHSA-4wrc-f8pq-fpqp	Maven	org.springframework:spring-web	CRITICAL[spring-web] C 类·同 major 内无干净版本（spring-web@5.3.31 → 6.0.0 才清掉；需跨 major/Boot 3，需 Boot 3 / Java 17 → 属 B 批，spencer 拍板）	2026-12-13
 GHSA-558v-64gr-wgg4	Maven	io.netty:netty-codec	HIGH[netty-codec] A 类·同 minor 线补丁已发布（netty-codec@4.1.101.Final → 4.1.136.Final 清掉本公告全部区间；Nova 一行版本覆盖 + 回归）	2026-12-13
 GHSA-574f-3g2m-x479	Maven	org.bouncycastle:bcprov-jdk18on	CRITICAL[bcprov-jdk18on] B 类·同 major 内需升 minor（bcprov-jdk18on@1.78.1 → 1.80.2 清掉本公告全部区间；Nova 升 minor + 回归）	2026-12-13
-GHSA-775g-4xr8-78h8	Maven	org.springframework:spring-expression	HIGH[spring-expression] C 类·同 major 内无干净版本（spring-expression@5.3.31 → 6.0.0 才清掉；需跨 major/Boot 3，Nova+Spec 排期）	2026-12-13
+GHSA-775g-4xr8-78h8	Maven	org.springframework:spring-expression	HIGH[spring-expression] C 类·同 major 内无干净版本（spring-expression@5.3.31 → 6.0.0 才清掉；需跨 major/Boot 3，需 Boot 3 / Java 17 → 属 B 批，spencer 拍板）	2026-12-13
 GHSA-78wr-2p64-hpwj	Maven	commons-io:commons-io	HIGH[commons-io] B 类·同 major 内需升 minor（commons-io@2.11.0 → 2.14.0 清掉本公告全部区间；Nova 升 minor + 回归）	2026-12-13
 GHSA-7hhh-6rmp-j9qf	Maven	com.fasterxml.jackson.core:jackson-core	HIGH[jackson-core] B 类·同 major 内需升 minor（jackson-core@2.13.5 → 2.18.11 清掉本公告全部区间；Nova 升 minor + 回归）	2026-12-13
 GHSA-9pwp-9qqc-pr26	Maven	org.bouncycastle:bcprov-jdk18on	CRITICAL[bcprov-jdk18on] B 类·同 major 内需升 minor（bcprov-jdk18on@1.78.1 → 1.85 清掉本公告全部区间；Nova 升 minor + 回归）	2026-12-13
@@ -48,20 +50,20 @@ GHSA-c4c3-7fpv-j4q5	Maven	io.netty:netty-handler	CRITICAL[netty-handler] A 类·
 GHSA-ccgv-vj62-xf9h	Maven	org.springframework:spring-web	HIGH[spring-web] A 类·同 minor 线补丁已发布（spring-web@5.3.31 → 5.3.32 清掉本公告全部区间；Nova 一行版本覆盖 + 回归）	2026-12-13
 GHSA-cxp5-3px4-pw24	Maven	com.fasterxml.jackson.core:jackson-databind	HIGH[jackson-databind] B 类·同 major 内需升 minor（jackson-databind@2.13.5 → 2.18.11 清掉本公告全部区间；Nova 升 minor + 回归）	2026-12-13
 GHSA-f3jh-qvm4-mg39	Maven	org.springframework.security:spring-security-core	HIGH[spring-security-core] A 类·同 minor 线补丁已发布（spring-security-core@5.7.11 → 5.7.12 清掉本公告全部区间；Nova 一行版本覆盖 + 回归）	2026-12-13
-GHSA-g5vr-rgqm-vf78	Maven	org.springframework:spring-webmvc	HIGH[spring-webmvc] C 类·同 major 内无干净版本（spring-webmvc@5.3.31 → 6.1.14 才清掉；需跨 major/Boot 3，Nova+Spec 排期）	2026-12-13
+GHSA-g5vr-rgqm-vf78	Maven	org.springframework:spring-webmvc	HIGH[spring-webmvc] C 类·同 major 内无干净版本（spring-webmvc@5.3.31 → 6.1.14 才清掉；需跨 major/Boot 3，需 Boot 3 / Java 17 → 属 B 批，spencer 拍板）	2026-12-13
 GHSA-gm62-rw4g-vrc4	Maven	ch.qos.logback:logback-core	HIGH[logback-core] A 类·同 minor 线补丁已发布（logback-core@1.2.12 → 1.2.13 清掉本公告全部区间；Nova 一行版本覆盖 + 回归）	2026-12-13
 GHSA-h46c-h94j-95f3	Maven	com.fasterxml.jackson.core:jackson-core	HIGH[jackson-core] B 类·同 major 内需升 minor（jackson-core@2.13.5 → 2.15.0 清掉本公告全部区间；Nova 升 minor + 回归）	2026-12-13
 GHSA-hgjh-9rj2-g67j	Maven	org.springframework:spring-web	HIGH[spring-web] A 类·同 minor 线补丁已发布（spring-web@5.3.31 → 5.3.33 清掉本公告全部区间；Nova 一行版本覆盖 + 回归）	2026-12-13
 GHSA-j3rv-43j4-c7qm	Maven	com.fasterxml.jackson.core:jackson-databind	HIGH[jackson-databind] B 类·同 major 内需升 minor（jackson-databind@2.13.5 → 2.18.8 清掉本公告全部区间；Nova 升 minor + 回归）	2026-12-13
-GHSA-jmp9-x22r-554x	Maven	org.springframework:spring-core	HIGH[spring-core] C 类·同 major 内无干净版本（spring-core@5.3.31 → 6.2.11 才清掉；需跨 major/Boot 3，Nova+Spec 排期）	2026-12-13
-GHSA-mg83-c7gq-rv5c	Maven	org.springframework.security:spring-security-crypto	HIGH[spring-security-crypto] C 类·同 major 内无干净版本（spring-security-crypto@5.7.11 → 6.3.8 才清掉；需跨 major/Boot 3，Nova+Spec 排期）	2026-12-13
+GHSA-jmp9-x22r-554x	Maven	org.springframework:spring-core	HIGH[spring-core] C 类·同 major 内无干净版本（spring-core@5.3.31 → 6.2.11 才清掉；需跨 major/Boot 3，需 Boot 3 / Java 17 → 属 B 批，spencer 拍板）	2026-12-13
+GHSA-mg83-c7gq-rv5c	Maven	org.springframework.security:spring-security-crypto	HIGH[spring-security-crypto] C 类·同 major 内无干净版本（spring-security-crypto@5.7.11 → 6.3.8 才清掉；需跨 major/Boot 3，需 Boot 3 / Java 17 → 属 B 批，spencer 拍板）	2026-12-13
 GHSA-mj4r-2hfc-f8p6	Maven	io.netty:netty-codec	HIGH[netty-codec] A 类·同 minor 线补丁已发布（netty-codec@4.1.101.Final → 4.1.133.Final 清掉本公告全部区间；Nova 一行版本覆盖 + 回归）	2026-12-13
-GHSA-mjmj-j48q-9wg2	Maven	org.yaml:snakeyaml	HIGH[snakeyaml] C 类·同 major 内无干净版本（snakeyaml@1.30 → 2.0 才清掉；需跨 major/Boot 3，Nova+Spec 排期）	2026-12-13
+GHSA-mjmj-j48q-9wg2	Maven	org.yaml:snakeyaml	HIGH[snakeyaml] C 类·同 major 内无干净版本（snakeyaml@1.30 → 2.0 才清掉；需跨 major/Boot 3，跨 major，但目标 Java 8 兼容 → 随 A 批归 Nova）	2026-12-13
 GHSA-p93r-85wp-75v3	Maven	org.bouncycastle:bcprov-jdk18on	HIGH[bcprov-jdk18on] B 类·同 major 内需升 minor（bcprov-jdk18on@1.78.1 → 1.80.2 清掉本公告全部区间；Nova 升 minor + 回归）	2026-12-13
-GHSA-pc63-qcmh-9cmg	Maven	org.springframework:spring-webmvc	CRITICAL[spring-webmvc] C 类·同 major 内无干净版本（spring-webmvc@5.3.31 → 6.2.0 才清掉；需跨 major/Boot 3，Nova+Spec 排期）	2026-12-13
+GHSA-pc63-qcmh-9cmg	Maven	org.springframework:spring-webmvc	CRITICAL[spring-webmvc] C 类·同 major 内无干净版本（spring-webmvc@5.3.31 → 6.2.0 才清掉；需跨 major/Boot 3，需 Boot 3 / Java 17 → 属 B 批，spencer 拍板）	2026-12-13
 GHSA-r7wm-3cxj-wff9	Maven	com.fasterxml.jackson.core:jackson-core	HIGH[jackson-core] B 类·同 major 内需升 minor（jackson-core@2.13.5 → 2.18.8 清掉本公告全部区间；Nova 升 minor + 回归）	2026-12-13
-GHSA-rc42-6c7j-7h5r	Maven	org.springframework.boot:spring-boot	HIGH[spring-boot] C 类·同 major 内无干净版本（spring-boot@2.7.18 → 3.0.0 才清掉；需跨 major/Boot 3，Nova+Spec 排期）	2026-12-13
+GHSA-rc42-6c7j-7h5r	Maven	org.springframework.boot:spring-boot	HIGH[spring-boot] C 类·同 major 内无干净版本（spring-boot@2.7.18 → 3.0.0 才清掉；需跨 major/Boot 3，需 Boot 3 / Java 17 → 属 B 批，spencer 拍板）	2026-12-13
 GHSA-vmq6-5m68-f53m	Maven	ch.qos.logback:logback-classic	HIGH[logback-classic] A 类·同 minor 线补丁已发布（logback-classic@1.2.12 → 1.2.13 清掉本公告全部区间；Nova 一行版本覆盖 + 回归）	2026-12-13
 GHSA-vmq6-5m68-f53m	Maven	ch.qos.logback:logback-core	HIGH[logback-core] A 类·同 minor 线补丁已发布（logback-core@1.2.12 → 1.2.13 清掉本公告全部区间；Nova 一行版本覆盖 + 回归）	2026-12-13
 GHSA-wv8q-qhhj-9h54	Maven	com.fasterxml.jackson.core:jackson-databind	HIGH[jackson-databind] B 类·同 major 内需升 minor（jackson-databind@2.13.5 → 2.18.11 清掉本公告全部区间；Nova 升 minor + 回归）	2026-12-13
-GHSA-wwpq-f5c3-7hvx	Maven	org.springframework.boot:spring-boot	HIGH[spring-boot] C 类·同 major 内无干净版本（spring-boot@2.7.18 → 3.0.0 才清掉；需跨 major/Boot 3，Nova+Spec 排期）	2026-12-13
+GHSA-wwpq-f5c3-7hvx	Maven	org.springframework.boot:spring-boot	HIGH[spring-boot] C 类·同 major 内无干净版本（spring-boot@2.7.18 → 3.0.0 才清掉；需跨 major/Boot 3，需 Boot 3 / Java 17 → 属 B 批，spencer 拍板）	2026-12-13
