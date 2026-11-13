@@ -9,8 +9,8 @@
 #   4. 不许整类 ignore（"忽略所有 devDependencies"这类写法不支持，只认 id + 生态 + 模块）。
 #
 # 当前条目 = **33 条，全部是 Maven（sdk/java）**，到期日统一 2026-12-13（登记日 2026-11-13，30 天）。
-#   - 来源：`sdk/java` 首次经 CycloneDX BOM 入闸（#136 / merge `2df9879`，D23③②）一次性暴露的**阻断级真实命中**
-#     （同一日志另有 34 条 LOW 级"仅提示"，不在本文件），**不是**放宽阈值换来的绿；
+#   - 来源：`sdk/java` 首次经 CycloneDX BOM 入闸（#136，squash 合入 `2df9879`，D23③②）一次性暴露的**阻断级真实命中**
+#     （同一日志另有 **34 条低于阻断阈值**、只打 INFO 的命中：**LOW 7 / MODERATE 27**，不在本文件），**不是**放宽阈值换来的绿；
 #   - 级别：CRITICAL **5** 条（bcprov-jdk18on ×2、spring-web、spring-webmvc、netty-handler）/ HIGH **28** 条；
 #   - 分族（**可复算口径，2026-11-13 修正**）：对每条公告取该模块**全部受影响区间**，找"**已发布**且不在任一区间"
 #     的最小版本（Maven Central `maven-metadata.xml` + 本仓 `vuln-gate.py` 的 vparse/vcmp/vmatch 判），再与当前版本比：
@@ -22,7 +22,7 @@
 #     （**旧账 24/9 作废**：那是按"fix 版本同 major"粗判，未核该版本是否真的发布过 —— 例：spring-security-crypto
 #      区间要 5.7.16，而 5.7 线止于 5.7.14、5.8 线止于 5.8.16（<5.8.18），真正干净的只有 6.3.8。
 #      按同一口径复核全部 33 条见 `docs/qa/vuln-scan.md` §5。）
-#   - **Go / npm 条目 = 0 条**：go-redis v9.7.3、vue 3.5.45、vite 6.4.6 已真修（D23①②，#127）；
+#   - **Go / npm 条目 = 0 条**：go-redis v9.7.3、vue 3.5.45、vite 6.4.6 已真修（D23② 的 vue/vite 随 #127 落地；go-redis 更早）；
 #     Go 标准库条目同为 0 条 —— stdlib **一律不得进本文件**，只能升 Go（D23①，现行 `go.mod` = `1.26.10`）。
 #   - 到期（2026-12-13）由 `scripts/vuln-gate.py` **自动重新判红**，不靠人记得；逾期未升级则 `AC-ENG-07` 降级。
 # 新增条目必须写清「为什么现在不能修」+ 谁在什么期限内修。
