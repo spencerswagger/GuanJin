@@ -11,7 +11,7 @@
 |---|---|---|---|
 | **A 批（同线小跳）** | **24** | **能，已试跑验证** | 1 个 PR 全清：8 个模块、19 条 dependencyManagement 配置，单测 120 + 集成 10 全绿，无需改代码 |
 | **B 批（撞 Java 17 墙）** | **9** | **不能** | Spring 6/7、Boot 3、Security 6 都要 Java 17；Java 8 轨（契约 §5.1）线内无补丁。要 spencer 拍板：加 Boot 3 轨道 / 风险接受并续期 |
-| 合计 | 33 | | **最晚动手日：2026-12-12；死线 2026-12-13（白名单到期即重判红）** |
+| 合计 | 33 | | **最晚 2026-12-10 动手 / 2026-12-12 前合入；死线 2026-12-13（到期即重判红）** |
 
 **不做会怎样**：2026-12-13 白名单到期，`vuln` job 对 33 条重判红 → main 全红、所有 PR 的合并门禁被堵；
 且「到期就续期」等于把"不升级"制度化（D23 的教训写死了不许这么干）。
@@ -147,7 +147,7 @@ main 合并门禁停摆。真正的解法只有 α（换 Java 17 线）或 β（
 | 2 | B 批决策（α / β）+ 白名单 9 行按决策改写到期日/理由 | **2026-11-27 前** | 需 spencer 拍板 |
 | 3 | 若选 α：`guanjin-spring-boot3` 排入里程碑，B 批白名单挂到该里程碑 | M2 之后 | — |
 | 4 | 若选 β：README 写宿主最低版本指引 + 到期日 ≤ 90 天 | 同 #2 | 不许"到期自动续期" |
-| **最晚** | **必须已动手** | **2026-12-12** | **2026-12-13 白名单到期 = 全红** |
+| **最晚** | **动手日 / 合入日** | **2026-12-10 动手 / 2026-12-12 前合入**（留 1 天缓冲，不压在到期当天） | **2026-12-13 白名单到期 = 全红** |
 
 ## 5. 待拍板（3 项）
 
@@ -202,9 +202,9 @@ GUANJIN_TEST_REDIS_ADDR=127.0.0.1:<port> \
 | A13 | `io.netty:netty-handler@4.1.101.Final` | HIGH | `GHSA-3qp7-7mw8-wx86` | `>=0.0.0,<4.1.135.Final` | 4.1.135.Final（fix） | **4.1.137.Final** | gate 实测不再命中 ✓ |
 | A14 | `io.netty:netty-handler@4.1.101.Final` | HIGH | `GHSA-4g8c-wm8x-jfhw` | `>=4.1.91.Final,<4.1.118.Final` | 4.1.118.Final（fix） | **4.1.137.Final** | gate 实测不再命中 ✓ |
 | A15 | `io.netty:netty-handler@4.1.101.Final` | CRITICAL | `GHSA-c4c3-7fpv-j4q5` | `>=0.0.0,<4.1.137.Final` | 4.1.137.Final（fix） | **4.1.137.Final** | gate 实测不再命中 ✓ |
-| A16 | `org.bouncycastle:bcprov-jdk18on@1.78.1` | CRITICAL | `GHSA-574f-3g2m-x479` | `>=1.59,<1.80.2` | 1.80.2（fix） | **1.85** | gate 实测不再命中 ✓ |
+| A16 | `org.bouncycastle:bcprov-jdk18on@1.78.1` | CRITICAL | `GHSA-574f-3g2m-x479` | `>=1.59,<1.80.2; >=1.81.0,<1.81.1; >=1.82,<1.84` | 1.80.2（fix） | **1.85** | gate 实测不再命中 ✓ |
 | A17 | `org.bouncycastle:bcprov-jdk18on@1.78.1` | CRITICAL | `GHSA-9pwp-9qqc-pr26` | `>=0.0.0,<1.85` | 1.85（fix） | **1.85** | gate 实测不再命中 ✓ |
-| A18 | `org.bouncycastle:bcprov-jdk18on@1.78.1` | HIGH | `GHSA-p93r-85wp-75v3` | `>=1.71,<1.80.2` | 1.80.2（fix） | **1.85** | gate 实测不再命中 ✓ |
+| A18 | `org.bouncycastle:bcprov-jdk18on@1.78.1` | HIGH | `GHSA-p93r-85wp-75v3` | `>=1.71,<1.80.2; >=1.81,<1.84` | 1.80.2（fix） | **1.85** | gate 实测不再命中 ✓ |
 | A19 | `org.springframework.security:spring-security-core@5.7.11` | HIGH | `GHSA-f3jh-qvm4-mg39` | `>=0.0.0,<5.7.12` | 5.7.12（fix） | **5.7.12** | gate 实测不再命中 ✓ |
 | A20 | `org.springframework:spring-web@5.3.31` | HIGH | `GHSA-2wrp-6fg6-hmc5` | `>=0.0.0,<5.3.34` | 5.3.34（fix） | **5.3.39** | gate 实测不再命中 ✓ |
 | A21 | `org.springframework:spring-web@5.3.31` | HIGH | `GHSA-ccgv-vj62-xf9h` | `>=5.3.0,<5.3.32` | 5.3.32（fix） | **5.3.39** | gate 实测不再命中 ✓ |
@@ -218,7 +218,7 @@ GUANJIN_TEST_REDIS_ADDR=127.0.0.1:<port> \
 |---|---|---|---|---|---|---|
 | B1 | `org.springframework.boot:spring-boot@2.7.18` | HIGH | `GHSA-rc42-6c7j-7h5r` | `>=0.0.0,<=2.7.24.2` | 2.7.24.2（last_affected） | 否（last_affected，线内无 fix） |
 | B2 | `org.springframework.boot:spring-boot@2.7.18` | HIGH | `GHSA-wwpq-f5c3-7hvx` | `>=0.0.0,<=2.7.32` | 2.7.32（last_affected） | 否（last_affected，线内无 fix） |
-| B3 | `org.springframework.security:spring-security-crypto@5.7.11` | HIGH | `GHSA-mg83-c7gq-rv5c` | `>=0.0.0,<5.7.16` | 5.7.16（fix） | 否（该版本未在 Central 发布） |
+| B3 | `org.springframework.security:spring-security-crypto@5.7.12`（A 批后；#136 基线 5.7.11） | HIGH | `GHSA-mg83-c7gq-rv5c` | `>=0.0.0,<5.7.16` | 5.7.16（fix） | 否（该版本未在 Central 发布） |
 | B4 | `org.springframework:spring-core@5.3.31` | HIGH | `GHSA-jmp9-x22r-554x` | `>=5.3.0,<=5.3.44` | 5.3.44（last_affected） | 否（last_affected，线内无 fix） |
 | B5 | `org.springframework:spring-expression@5.3.31` | HIGH | `GHSA-775g-4xr8-78h8` | `>=0.0.0,<=5.3.39` | 5.3.39（last_affected） | 否（last_affected，线内无 fix） |
 | B6 | `org.springframework:spring-web@5.3.31` | CRITICAL | `GHSA-4wrc-f8pq-fpqp` | `>=0.0.0,<6.0.0` | 6.0.0（fix） | 否（fix 在更高 major 线） |
@@ -226,11 +226,14 @@ GUANJIN_TEST_REDIS_ADDR=127.0.0.1:<port> \
 | B8 | `org.springframework:spring-webmvc@5.3.31` | HIGH | `GHSA-g5vr-rgqm-vf78` | `>=0.0.0,<=5.3.40` | 5.3.40（last_affected） | 否（last_affected，线内无 fix） |
 | B9 | `org.springframework:spring-webmvc@5.3.31` | CRITICAL | `GHSA-pc63-qcmh-9cmg` | `>=5.3.0,<=5.3.49` | 5.3.49（last_affected） | 否（last_affected，线内无 fix） |
 
-> B 批 = 9 条（试跑后仍命中，全部需换线/Java 17）
+> B 批 = 9 条（试跑后仍命中，全部需换线/Java 17）。
+> **版本口径**：B 表按「A 批落地后」写——B3 已到 5.7.12（仍 < 5.7.16）；
+> B4–B9 的 spring 5.3.x 在 A 批后为 5.3.39，仍落在 `<=5.3.39/40/44/49` 区间内；B1/B2（spring-boot）不变。
 
 **口径说明（三条取最大修正）**：
 - `jackson` 3 条公告本线 fix 分别是 2.15.0/2.18.8/2.18.11 → 一次取 **2.18.11**；
-- `bcprov` 本线 fix 1.80.2（两条）+ 1.85（`GHSA-9pwp`）→ 取 **1.85**；
+- `bcprov` 本线 fix 1.80.2（两条）+ 1.85（`GHSA-9pwp`）→ 取 **1.85**；另注意 bcprov 两条公告各有第二/第三窗口
+  （`>=1.81,<1.84` 等，A16/A18 已整列列出），**1.85 同时越过全部窗口**；
 - `netty` 本线 fix 4.1.118/4.1.133/4.1.135/4.1.136/4.1.137 → 取 **4.1.137.Final**；
 - `spring-web` 本线 fix 5.3.32/5.3.33/5.3.34 → 取 **5.3.39**（5.3 线 OSS 最后一版，也是 B 批 `GHSA-775g`/`3chg` 的线内顶点）。
   `本线最低安全版本` 一列由离线快照的 `affected` 区间机算（`<X` → X=fix；`<=X` → last_affected），与 Gate 对账表逐条一致。
