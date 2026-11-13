@@ -68,7 +68,7 @@ go run ./artifacts/local/gen-sdk-vectors
 ```
 
 8 条向量：`valid` / `tamperedPayload`（签名真、payload 被换）/ `unknownKid` / `expired` / `futureIat` /
-`wrongIss` / `wrongAud` / `oidcAlg`（`alg=SM2` 的用户令牌用途键 → 拒绝算法降级）。
+`wrongIss` / `wrongAud` / `oidcAlg`（`alg=SM3withSM2` 的用户令牌用途键 → 拒绝算法降级）。
 `valid` 的 `iat` 取过去、`exp` 取 2030，保证"运行时刻"的 `ClaimValidator` 也接受它；
 时间敏感的 claim 断言用向量里的 `referenceNow` 判，不依赖跑测试的钟。
 
