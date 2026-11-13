@@ -6,7 +6,7 @@ import com.guanjin.core.error.GuanjinSdkException;
  * 断言验签 SPI（契约 GJ-CAP-01：{@code AssertionVerifier.verify(raw)}，**无跳过开关**）。
  *
  * <p>本切片（S9）只交付"验签之后的链路"：claim 校验、{@code jti} 防重放、剥离、上下文注入。
- * SM2 验签实现（BouncyCastle + {@code kid} 选键 + {@code alg} 固定 {@code SM3withSM2}）在后续切片
+ * SM2 验签实现（BouncyCastle + {@code kid} 选键 + {@code alg} 固定 {@code SM2}（D29））在后续切片
  * 提供 {@code Sm2AssertionVerifier}；**在那之前，宿主拿不到验签器 bean 时启动会失败**，
  * 不会出现"没验签却开始放行"的形态（见 {@code guanjin-spring-boot2} 的启动守卫）。
  *

@@ -322,7 +322,7 @@ func verifySloAssertion(t *testing.T, keys *signing.Set, token string) map[strin
 		if jwk.Kid != header.Kid {
 			continue
 		}
-		claims, err := signing.VerifyJWT(jwkPublicForTest(t, jwk), token)
+		claims, err := verifyGatewayAssertion(t, jwkPublicForTest(t, jwk), token)
 		if err != nil {
 			t.Fatalf("通知断言验签失败：%v", err)
 		}

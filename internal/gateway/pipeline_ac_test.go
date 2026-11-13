@@ -20,7 +20,7 @@ import (
 
 // 本文件是**断言签发与剥离**的端到端单测（AC-DP-01/02/03/10/13）。
 //
-// 上游是真的 `httptest.Server`，断言由**真 SM2 密钥**签，验签走 **JWKS → 公钥点 → VerifyJWT**，
+// 上游是真的 `httptest.Server`，断言由**真 SM2 密钥**签，验签走 **JWKS → 公钥点 → verifyGatewayAssertion（alg=SM2，与 SDK 同口径）**，
 // 也就是"上游业务系统按 SDK 的方式验一遍"——不是拿内部结构自证。
 
 // assertionClaims 解出断言并**用 JWKS 里的公钥真验签**（AC-DP-01 的核心动作）。
@@ -41,8 +41,8 @@ func assertionClaims(t *testing.T, keys *signing.Set, token string) map[string]a
 	if err := json.Unmarshal(hb, &header); err != nil {
 		t.Fatalf("unmarshal header: %v", err)
 	}
-	if header.Alg != signing.AlgSM3WithSM2 {
-		t.Fatalf("alg 期望 %s，实际 %q", signing.AlgSM3WithSM2, header.Alg)
+	if header.Alg != signing.AlgSM2 {
+		t.Fatalf("alg 期望 %s（D29 写死），实际 %q", signing.AlgSM2, header.Alg)
 	}
 	if header.Kid == "" {
 		t.Fatal("断言必须带 kid（SDK 靠它选公钥）")
@@ -72,7 +72,7 @@ func assertionClaims(t *testing.T, keys *signing.Set, token string) map[string]a
 		t.Fatalf("decode jwk.y: %v", err)
 	}
 	pub := &sm2.PublicKey{Curve: sm2.P256Sm2(), X: new(big.Int).SetBytes(x), Y: new(big.Int).SetBytes(y)}
-	claims, err := signing.VerifyJWT(pub, token)
+	claims, err := verifyGatewayAssertion(t, pub, token)
 	if err != nil {
 		t.Fatalf("JWKS 公钥验签失败（AC-DP-01 的核心断言）：%v", err)
 	}

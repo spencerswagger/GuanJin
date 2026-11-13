@@ -752,7 +752,7 @@
   | 1 | `sdk-contract.md` §4.1 M2 行 | `SM3withSM2` → **`SM2`（JWT 形态，`alg` 值 = 平台 `signing_keys.algorithm` 原样写入；SM2 唯一，不做协商降级，无开关）** |
   | 2 | `sdk-contract.md` §4.5 步② | `SM3withSM2` → `SM2` |
   | 3 | `sdk-contract.md` §7 向量行 `assertion-verify.json` | 「`alg` 非 `SM3withSM2`」→「`alg` 非 `SM2`」 |
-  | 4 | Java `Sm2.ALG` 常量、`Sm2AssertionVerifier` 报错/注释、`sdk/java/README.md` 能力行 | 断言语境下 `SM3withSM2` → `SM2`（Nova，**PR #132**；BC 的 JCA 查找名与对外 alg 标识两层拆开，见该 PR 风险栏） |
+  | 4 | Java `Sm2.ALG` 常量 + 断言语境的 javadoc/报错/README 能力行（**17 处逐条清单唯一出处 = `notes/sdk-alg-sm2-订正文案-2026-11-13.md` §一**，含 `Sm2` / `Sm2AssertionVerifier` / `AssertionVerifier` / `JwksClient` / `JwksSet` / `JwksKey` / `StartupReport` / `StartupChecker` / `AutoConfiguration` / `README`） | 断言语境下 `SM3withSM2` → `SM2`（Nova，**PR #132**；BC 的 JCA 查找名与对外 alg 标识两层拆开，见该 PR 风险栏。`README` 向量说明行 #132 漏改，由 **#134** 补齐） |
   | 5 | Go `SigningAlg`（#51 内） | 同上；并补 `ParseJWKS` 按用途过滤 + `KeyCount` 只数网关键（#51 已列待办） |
 
 - **判据面**：`acceptance-criteria.md` **零改动、账目零变化**——判据文件里 `alg`/`SM3withSM2` 只出现在对外令牌三条（`AC-LOGIN-01/06`、`AC-AUD-12`），断言侧判据不写 alg 字面值。
