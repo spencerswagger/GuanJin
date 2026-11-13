@@ -288,6 +288,23 @@ func TestSpecVectorsConfigMapping(t *testing.T) {
 	if !foundCM13 {
 		t.Fatalf("config-mapping.json 缺 CM-13（`clock-skew=0s` 正向用例，契约 v16 §8.8 E42 / G21⑥）")
 	}
+	// `accept` 的词表口径是「装载成功**且校验通过**」——所以再真跑一遍：0s 必须过 Validate。
+	// 只断言向量里的数字是不够的：实现若在装载期接受、校验期仍按"必须为正"拒，向量值照样是 0（假绿）。
+	cm13Cfg, err := LoadFromMap(map[string]string{
+		KeyPlatformBaseURL:  "https://p.example.com",
+		KeyClientID:         "orders",
+		KeyClientHMACSecret: "s",
+		KeyGatewayClockSkew: "0s",
+	})
+	if err != nil {
+		t.Fatalf("CM-13：LoadFromMap 失败：%v", err)
+	}
+	if got := cm13Cfg.Gateway.ClockSkew.Milliseconds(); got != 0 {
+		t.Errorf("CM-13：Go 装载后 clock-skew = %d ms，必须是 0（不得回落默认 %d）", got, DefaultClockSkew.Milliseconds())
+	}
+	if verr := cm13Cfg.Validate(EnvLocal); verr != nil {
+		t.Errorf("CM-13：Go `Validate` 不得把 clock-skew=0s 判非法（契约 v16 §8.8 E42）：%v", verr)
+	}
 
 	// 已定性的实现缺陷：Go 侧实际值被**钉死**（漂移即红），期望值按契约写。
 	pinned := map[string]string{}
