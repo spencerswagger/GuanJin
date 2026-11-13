@@ -218,8 +218,7 @@
     },
     {
       "vector_id": "AH-12",
-      "case": "rfc3986_encoding_pending_spec",
-      "pending_spec": true,
+      "case": "rfc3986_encoding",
       "method": "GET",
       "path": "/api/v1/agent/policies",
       "query_raw": "q=a b%2Bc/中\u0026n=~-._",
@@ -240,7 +239,29 @@
       "expected_body_sm3": "1ab21d8355cfa17f8e61194831e81a8f22bec8c728fefb747ed035eb5082aa2b",
       "expected_canonical": "GET\n/api/v1/agent/policies\nn=~-._\u0026q=a%20b%2Bc%2F%E4%B8%AD\n1ab21d8355cfa17f8e61194831e81a8f22bec8c728fefb747ed035eb5082aa2b\n1767225600\nbm9uY2UtdmVjdG9yLTAwMDE",
       "expected_signature": "G6JwlaRbdvb2jVUp64Y5qtdSAPbBrrPyHjGHnGJ189o=",
-      "note": "**PENDING（消费者跳过）**：契约 A2 字面是「取 ? 之后原始串 → 编码在比较之前」且 A1 明写「不做 URL 解码」⇒ raw→再编码（%2B→%252B）；本向量取先解码再编码。口径未定前不参与断言，已提请 Spec 补 A2 一句"
+      "note": "D1-A2 第④⑤步的唯一覆盖：空格→%20、+→%2B、/→%2F、中文按 UTF-8 大写 hex；断言只看 query_pairs，与 raw 串怎么解出 pairs 无关"
+    },
+    {
+      "vector_id": "AH-15",
+      "case": "rfc3986_raw_vs_decoded_pending_spec",
+      "pending_spec": true,
+      "method": "GET",
+      "path": "/api/v1/agent/policies",
+      "query_raw": "q=a%2Bb",
+      "query_pairs": [
+        [
+          "q",
+          "a+b"
+        ]
+      ],
+      "timestamp": "1767225600",
+      "nonce": "bm9uY2UtdmVjdG9yLTAwMDE",
+      "body_utf8": "",
+      "expected_sorted_query": "q=a%2Bb",
+      "expected_body_sm3": "1ab21d8355cfa17f8e61194831e81a8f22bec8c728fefb747ed035eb5082aa2b",
+      "expected_canonical": "GET\n/api/v1/agent/policies\nq=a%2Bb\n1ab21d8355cfa17f8e61194831e81a8f22bec8c728fefb747ed035eb5082aa2b\n1767225600\nbm9uY2UtdmVjdG9yLTAwMDE",
+      "expected_signature": "arDQt5ugIPZAFJ7Pwoi7UmK8OKql3hmzbiEVB4TmNE0=",
+      "note": "**PENDING（消费者跳过）**：契约 A2 字面「取 ? 之后原始串 → 编码在比较之前」+ A1「不做 URL 解码」⇒ raw→再编码（%2Bb→%252Bb）；本向量取先解码再编码（%2Bb→%2Bb）。两种口径结果不同，待 Spec 在 A2 补一句后二选一"
     },
     {
       "vector_id": "AH-13",
