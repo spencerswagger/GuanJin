@@ -365,7 +365,7 @@
 | 36 | `GUANJIN_AUDIT_NO_ISOLATION` | C* | 测试护栏：审计隔离旁路（`internal/audit`） |
 
 > **分组口径**：A 21 条（基线 §7.2 冻结）+ B 7 条（平台实现自用，含时钟偏移现名）+ C 8 条（构建·测试夹具）= **36 条**。
-> 与 `decisions.md` **D25**（平台侧 27 名：A 的 15 条 §7.2 + B 的 12 条代码在读）的关系：D25 是**平台侧口径**、本附录是**SDK 侧完整清单**，两者是包含关系（本表 ⊇ D25），差异两处已登记——①D25 记的 `GUANJIN_GATEWAY_CLOCK_SKEW` 已被 PR #121 改名，本表收**现名** `GUANJIN_GW_CLOCK_SKEW`；旧名**不得**列入保留清单（它是配置键 #10 的机械映射名，列入即静默吃掉该键的 env 来源——#51 评审 P1 纠正，D25 台账请 Ark 同步）；②`GUANJIN_MASTER_KEY_FILE`（§7.2/§7.3 部署示例）D25 未列，本表收（按"基线冻结即登记"）。
+> 与 `decisions.md` **D25**（平台侧 27 名：A 的 15 条 §7.2 + B 的 12 条代码在读）的关系：D25 是**平台侧口径**、本附录是**SDK 侧完整清单**，两者是包含关系（本表 ⊇ D25），差异两处已登记——①`GUANJIN_GATEWAY_CLOCK_SKEW` 已被 PR #121 改名为 `GUANJIN_GW_CLOCK_SKEW`，**D25 台账已同步收现名**（decisions.md D25 数据面行/差异段）；旧名**不得**列入保留清单（它是配置键 #10 的机械映射名，列入即静默吃掉该键的 env 来源——#51 评审 P1 纠正，机器守线 `TestReservedEnvNeverShadowsConfigKeyMappings`）；②`GUANJIN_MASTER_KEY_FILE`（§7.2/§7.3 部署示例）D25 未列，本表收（按"基线冻结即登记"）。
 
 > `C*` = **过渡条目**：测试夹具正在改名 `GJTEST_*`（单独 PR，与 SDK 修复解耦）。改名落地后这 6 条从清单删除——`GJTEST_*` 不带 `GUANJIN_` 前缀，SDK 本来就看不见。
 
@@ -786,4 +786,4 @@ M1 的 S9 **只交付 Java 8 两份产物**；Node / Go 随 M2+ 落地。但**�
 
 ---
 
-**校对快照（v11，供 Spec 抽查）**：`sdk-contract.md` / 行数 **789** 行（`wc -l`）/ md5 **`a98bf146998f3aa999a2cf4a29195703`**（md5 覆盖范围 = **正文全部，即第 1..785 行**，命令 `head -n 785 docs/sdk-contract.md | md5sum`——不含快照节自身与其上方分隔线，避免自引用；行数含快照节）。上一快照 = v10 790 行 / md5 `22ceb093e7454cfaeb2711070e721abe`（#51 首轮：附录 37 条 + D29 代码口径）。本版（#51 评审 P1 收口）：**附录 37 → 36 条**——删去 `GUANJIN_GATEWAY_CLOCK_SKEW`（#121 旧名；它是配置键 #10 的机械映射名，列入保留名会静默吃掉该键的 env 来源，评审实测 `=90s` 仍取默认 60s 且 err=nil）；保留现名 `GUANJIN_GW_CLOCK_SKEW`；新增守线 `保留清单 ∩ EnvName(29 键) = ∅`。SM2 三处订正仍来自 #131（v9），对外令牌侧 `SM3withSM2` 不动。**29 项键名/编号/默认值/必填性、22 条能力、判据一处未改；基线正文未动、无源码。**
+**校对快照（v12，供 Spec 抽查）**：`sdk-contract.md` / 行数 **789** 行（`wc -l`）/ md5 **`25aef4a3515e032f73d8ce0a74fd8bc1`**（md5 覆盖范围 = **正文全部，即第 1..785 行**，命令 `head -n 785 docs/sdk-contract.md | md5sum`——不含快照节自身与其上方分隔线，避免自引用；行数含快照节）。上一快照 = v11 789 行 / md5 `a98bf146998f3aa999a2cf4a29195703`（#51 评审 P1 收口：附录 37 → 36 条）。本版（D25 台账同步的连带订正，`decisions.md` D25）：§3.6 与 D25 的关系注 **①** 由「D25 记的旧名已被改名，台账请 Ark 同步」改为「**D25 台账已同步收现名** `GUANJIN_GW_CLOCK_SKEW`」，并补机器守线名 `TestReservedEnvNeverShadowsConfigKeyMappings`。**只改这一处交叉引用，附录 36 条、29 项键名/编号/默认值/必填性、22 条能力、判据一处未改；基线正文未动、无源码。**
