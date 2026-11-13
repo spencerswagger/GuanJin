@@ -265,11 +265,13 @@ func TestSpecVectorsConfigMapping(t *testing.T) {
 	// CM-13（`clock-skew=0s`）：通用 case 断言已覆盖值，这里再单点钉两条 ——
 	// ① 期望必须是 **0**；② 期望**必须不等于默认 60000**（回落默认 = 零容忍语义丢失，且向量会自证错误）。
 	foundCM13 := false
+	var cm13Input map[string]string
 	for _, c := range doc.Cases {
 		if c.VectorID != "CM-13" {
 			continue
 		}
 		foundCM13 = true
+		cm13Input = c.Input
 		raw, ok := c.Expect[KeyGatewayClockSkew]
 		if !ok {
 			t.Fatalf("CM-13 的 expect 里没有 %s", KeyGatewayClockSkew)
@@ -287,6 +289,31 @@ func TestSpecVectorsConfigMapping(t *testing.T) {
 	}
 	if !foundCM13 {
 		t.Fatalf("config-mapping.json 缺 CM-13（`clock-skew=0s` 正向用例，契约 v16 §8.8 E42 / G21⑥）")
+	}
+	// `accept` 的词表口径是「装载成功**且校验通过**」——所以再真跑一遍：0s 必须过 Validate。
+	// 只断言向量里的数字是不够的：实现若在装载期接受、校验期仍按"必须为正"拒，向量值照样是 0（假绿）。
+	//
+	// 这条要**合成输入**：CM-13 的向量 input 没有 `client.hmac-secret`（必填键由 Validate 拦，不在向量表里判），
+	// 直接拿 `c.Input` 去 Validate 会先炸在 hmac-secret 上、掩盖本条真实判定。代价是与向量输入脱钩 →
+	// 故先守住"向量里那格还是 0s"，否则本条测的就不是 CM-13。
+	if got := cm13Input[KeyGatewayClockSkew]; got != "0s" {
+		t.Fatalf("CM-13 的向量 input 里 %s = %q（应为 \"0s\"）—— 本条断言已与向量脱钩，先修向量", KeyGatewayClockSkew, got)
+	}
+	cm13Cfg, err := LoadFromMap(map[string]string{
+		KeyPlatformBaseURL:  "https://p.example.com",
+		KeyClientID:         "orders",
+		KeyClientHMACSecret: "s",
+		KeyGatewayClockSkew: cm13Input[KeyGatewayClockSkew],
+	})
+	if err != nil {
+		t.Fatalf("CM-13：LoadFromMap 失败：%v", err)
+	}
+	// 值必须是 0：用 Fatalf —— 回落默认 60000 时若继续往下判，Validate 反而会过，日志会读成"校验也没问题"。
+	if got := cm13Cfg.Gateway.ClockSkew.Milliseconds(); got != 0 {
+		t.Fatalf("CM-13：Go 装载后 clock-skew = %d ms，必须是 0（不得回落默认 %d）", got, DefaultClockSkew.Milliseconds())
+	}
+	if verr := cm13Cfg.Validate(EnvLocal); verr != nil {
+		t.Errorf("CM-13：Go `Validate` 不得把 clock-skew=0s 判非法（契约 v16 §8.8 E42）：%v", verr)
 	}
 
 	// 已定性的实现缺陷：Go 侧实际值被**钉死**（漂移即红），期望值按契约写。
