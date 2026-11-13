@@ -123,7 +123,7 @@ func (u *sdkLikeUpstream) verify(t *testing.T, token string) map[string]any {
 		return nil
 	}
 	pub := jwkPublic(t, u.keys, header.Kid)
-	claims, err := signing.VerifyJWT(pub, token)
+	claims, err := verifyGatewayAssertion(t, pub, token)
 	if err != nil {
 		t.Errorf("验签失败（平台签出来的断言必须能被上游 JWKS 验过）：%v", err)
 		return nil
