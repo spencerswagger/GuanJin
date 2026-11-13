@@ -222,10 +222,13 @@ public final class GuanjinConfigValidator {
                     "为空（默认 guanjin-gateway；改值 = 放宽信任域，需 ADR）");
         }
 
-        // #10 时钟偏移：必须为正；> 300s 告警（同时放大 exp 重放口子）
+        // #10 时钟偏移：**下界无**——`0s` 合法（= 零容忍：exp/iat 严格边界、不做偏斜补偿；
+        // 契约 v16 §8.8 E42，基线 :104 从没写"必须为正"，那是实现自造约束）。负值仍拒：
+        // 解析层出不来负数，但编程式赋值可以，且负偏斜会放宽 exp 判定 = 安全洞。
         Duration skew = cfg.getGateway().getClockSkew();
-        if (skew == null || skew.isNegative() || skew.isZero()) {
-            throw new GuanjinConfigException(GuanjinConfigKeys.GATEWAY_CLOCK_SKEW, "必须为正（默认 60s）");
+        if (skew == null || skew.isNegative()) {
+            throw new GuanjinConfigException(GuanjinConfigKeys.GATEWAY_CLOCK_SKEW,
+                    "不得为负（0s = 零容忍，合法；缺省才是默认 60s，两者不得混）");
         }
         if (skew.compareTo(CLOCK_SKEW_RISK) > 0) {
             warnings.add("键 \"" + GuanjinConfigKeys.GATEWAY_CLOCK_SKEW + "\"=" + skew
