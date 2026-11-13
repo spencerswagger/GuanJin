@@ -99,7 +99,7 @@ const (
 	DefaultConnectTimeout  = 2 * time.Second
 	DefaultReadTimeout     = 3 * time.Second
 	DefaultDefaultRole     = "user"
-	DefaultModelConf       = "model.conf"
+	DefaultModelConf       = "classpath:/guanjin/model.conf" // 契约 #17：resource 形态，三语言逐字节一致（M5 按 resource 口径解析）
 	DefaultPullInterval    = 30 * time.Second
 	DefaultRolePrefix      = "ROLE_"
 

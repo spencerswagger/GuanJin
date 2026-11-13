@@ -123,7 +123,7 @@ func canonical(c gj.Config) map[string]any {
 	return out
 }
 
-// 契约 §3.2 #17 的默认值（Java 与契约一致；Go SDK 现在给 "model.conf"，缺陷归 Nova）。
+// 契约 §3.2 #17 的默认值（resource 形态；三语言逐字节一致，Go 侧 2026-11-13 已对齐）。
 const contractModelConf = "classpath:/guanjin/model.conf"
 
 func genConfig() {
@@ -206,11 +206,14 @@ func genConfig() {
 		}, "list 无方括号（逗号分隔）与带方括号（CM-02）等价"),
 	}
 
-	// 向量期望一律按**契约**：默认值缺陷键（Go 给 "model.conf"，契约 #17 要求
-	// `classpath:/guanjin/model.conf`）只在"未显式配置"的用例里被覆盖成契约值，
-	// Go 侧的偏差由 sdk/go 的测试按 known_divergences 钉死（漂移即红）。
+	// 向量期望一律按**契约**。历史上 #17（Go 曾给 "model.conf"）靠 known_divergences 钉死；
+	// 2026-11-13 修好后改**生成期硬校验**：实现一旦漂移，生成向量时直接炸，不再静默覆盖。
 	for i := range cases {
 		if _, explicit := cases[i].Input[gj.KeyAuthzModelConf]; !explicit {
+			if got := cases[i].Expect[gj.KeyAuthzModelConf]; got != contractModelConf {
+				panic(fmt.Sprintf("%s: %s 默认值 = %v，契约 #17 要求 %q",
+					cases[i].VectorID, gj.KeyAuthzModelConf, got, contractModelConf))
+			}
 			cases[i].Expect[gj.KeyAuthzModelConf] = contractModelConf
 		}
 	}
@@ -222,11 +225,8 @@ func genConfig() {
 		"keys":         keyMetas,
 		"cases":        cases,
 		"known_divergences": map[string]any{
-			"note": "已定性的三语言不一致。第一类是**实现缺陷**（按契约判，Go 侧偏差钉死，漂移即红）；第二类是解析口径差异（向量不采用这些形态，须 Spec/Ark 收口）",
-			"defects": []map[string]string{
-				{"key": gj.KeyAuthzModelConf, "contract": contractModelConf, "go": "model.conf", "java": contractModelConf,
-					"owner": "Nova（Go SDK config.go DefaultModelConf）", "tracking": "2026-11-13 向量首跑发现；Go 侧断言已钉死，修好后本表与 Go 测试要同步改"},
-			},
+			"note":    "已定性的三语言不一致。第一类是**实现缺陷**：2026-11-13 `guanjin.authz.model-conf`（Go 曾给 \"model.conf\"）修好后**当前为空**；再出现时按旧法登记（期望按契约、把实现现值钉死，漂移即红）。第二类是解析口径差异（向量不采用这些形态，须 Spec/Ark 收口）",
+			"defects": []map[string]string{},
 			"parse_forms": []map[string]string{
 				{"form": "纯数字 duration（如 3000）", "go": "红：time.ParseDuration 要求单位", "java": "绿：按毫秒"},
 				{"form": "单位 d（如 1d）", "go": "红：Go duration 无 d 单位", "java": "绿：按天"},
