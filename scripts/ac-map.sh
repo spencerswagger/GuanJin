@@ -71,7 +71,9 @@ for cid, status in rows:
     hit_classes = sorted({cls(k) for k in KEYWORDS if k in status})
     # 只在**跨栏**时告警：`后置` 与 `DEFERRED` 是同一栏的两种写法，不该刷 WARN（会淹没真告警）
     if len(hit_classes) > 1:
-        print(f'# WARN 跨栏多关键词 {cid}：{hit_classes} → 取更保守的「{col}」栏（判据原文没写这条优先级，属归类裁量，需 Spec 认可）')
+        # 打 stderr：`--out` 出来的表第 1 行必须是表头，别让告警挤掉它（head -2 看不到计数）
+        print(f'# WARN 跨栏多关键词 {cid}：{hit_classes} → 取更保守的「{col}」栏'
+              f'（判据原文没写这条优先级，属归类裁量，需 Spec 认可）', file=sys.stderr)
 print('\t'.join(cols))
 print('\t'.join(str(len(v)) for v in b.values()))
 for k, v in b.items():
@@ -172,6 +174,21 @@ if [ "$self_test" -eq 1 ]; then
   else
     echo "[OK] 自检⑥：重复声明即红"; ok=$((ok+1))
   fi
+  # ⑦ WARN 行为：同栏别名（后置/DEFERRED）不出；跨栏（PASS-able + PENDING）要出（且打到 stderr）
+  printf '| AC-X-05 | e | 后置（DEFERRED）：本期不做判定 |\n' > "$t/alias.md"
+  if map_table "$t/alias.md" 2>&1 | grep -q 'WARN'; then
+    echo "[FAIL] 自检⑦a：同栏别名不该告警"; bad=$((bad+1))
+  else echo "[OK] 自检⑦a：同栏别名（后置/DEFERRED）不告警"; ok=$((ok+1)); fi
+  printf '| AC-X-06 | f | PASS-able 但 PENDING · CH-9 |\n' > "$t/cross.md"
+  if map_table "$t/cross.md" 2>&1 | grep -q '跨栏多关键词 AC-X-06'; then
+    echo "[OK] 自检⑦b：跨栏关键词会告警（stdout 不受污染）"; ok=$((ok+1))
+  else echo "[FAIL] 自检⑦b：跨栏关键词未告警"; bad=$((bad+1)); fi
+  # 注意：别用 `map_table … | head -1 | grep`（pipefail 下 head 提前关闭管道会让 python 收 SIGPIPE，
+  # 整条管道判非 0，断言会误红）。先整体取到变量再判断。
+  cross_out=$(map_table "$t/cross.md" 2>/dev/null)
+  if printf '%s' "$cross_out" | head -c 9 | grep -q '^PASS-able'; then
+    echo "[OK] 自检⑦c：告警走 stderr，表头仍是第 1 行"; ok=$((ok+1))
+  else echo "[FAIL] 自检⑦c：告警污染了表的第 1 行"; bad=$((bad+1)); fi
   echo "[OK] 自检 $ok 项通过（$bad 失败）"
   [ "$bad" -eq 0 ] || exit 1
   exit 0
