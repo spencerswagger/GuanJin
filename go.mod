@@ -6,7 +6,7 @@ require (
 	github.com/alicebob/miniredis/v2 v2.33.0
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.12.0
-	github.com/redis/go-redis/v9 v9.7.0
+	github.com/redis/go-redis/v9 v9.7.3
 	github.com/tjfoc/gmsm v1.4.1
 	gorm.io/driver/postgres v1.6.3
 	gorm.io/gorm v1.31.2

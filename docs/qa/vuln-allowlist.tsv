@@ -1,0 +1,14 @@
+# 依赖漏洞白名单（AC-ENG-07；逐条理由 + 到期日，由 scripts/vuln-gate.py 机器强制）
+#
+# 列（TAB 分隔，5 列）：id <TAB> ecosystem(Go|npm) <TAB> module <TAB> reason <TAB> expires(YYYY-MM-DD)
+#
+# 规则（违反即红）：
+#   1. 理由为空 / 到期日非法 / 列数不对 → 红（不允许"无理由豁免"）；
+#   2. 条目**到期即重新判红**（续期要改这一行并说明，diff 里看得见）；
+#   3. 条目**本次扫描不再命中** → 红（必须删行，白名单不许只增不减）；
+#   4. 不许整类 ignore（"忽略所有 devDependencies"这类写法不支持，只认 id + 生态 + 模块）。
+#
+# 当前条目 = 0 条（本轮把命中项全部真修掉了：go-redis v9.7.3、vue 3.5.45、vite 6.4.6）。
+# 新增条目必须写清「为什么现在不能修」+ 谁在什么期限内修。
+#
+# id	ecosystem	module	reason	expires
