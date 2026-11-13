@@ -1,0 +1,402 @@
+{
+  "spec": "docs/sdk-contract.md 附录 C（authz-decisions.json ≥12）＋ §2.1 GJ-CAP-12~18",
+  "generated_by": "Gate 2026-11-13：模型/策略取自 AuthzModel 声明形态（不内联硬编码），用 Java 真 jcasbin + classpath:/guanjin/model.conf 实跑",
+  "model": {
+    "roles": [
+      {
+        "name": "order_admin",
+        "permissions": [
+          {
+            "resource": "orders",
+            "actions": [
+              "read",
+              "write"
+            ]
+          }
+        ]
+      },
+      {
+        "name": "order_viewer",
+        "permissions": [
+          {
+            "resource": "orders",
+            "actions": [
+              "read"
+            ]
+          }
+        ]
+      },
+      {
+        "name": "auditor",
+        "permissions": [
+          {
+            "resource": "orders",
+            "actions": [
+              "read"
+            ]
+          }
+        ],
+        "clearance": 3
+      },
+      {
+        "name": "manager",
+        "permissions": [
+          {
+            "resource": "orders",
+            "actions": [
+              "read"
+            ]
+          }
+        ],
+        "clearance": 3
+      },
+      {
+        "name": "warehouse",
+        "permissions": [
+          {
+            "resource": "order-res",
+            "actions": [
+              "read"
+            ]
+          }
+        ]
+      }
+    ],
+    "default_role": {
+      "name": "user",
+      "permissions": [
+        {
+          "resource": "profile",
+          "actions": [
+            "read"
+          ]
+        }
+      ]
+    },
+    "resource_groups": {
+      "order-res": [
+        "orders",
+        "order_items"
+      ]
+    }
+  },
+  "encoding": "operation.enforce → enforce(...) 返回布尔；operation.require → require(...) 未命中抛 403 INSUFFICIENT_ROLE；checkRow → 主体自己行或 auditor 豁免；checkLabel → 主体密级 ≥ 客体密级；principal.roles 空数组 = 走 defaultRole 兜底",
+  "cases": [
+    {
+      "vector_id": "AZ-01",
+      "case": "rbac_allow",
+      "principal": {
+        "sub": "u-1",
+        "roles": [
+          "order_admin"
+        ]
+      },
+      "operation": {
+        "kind": "require",
+        "resource": "orders",
+        "action": "read"
+      },
+      "expect": {
+        "decision": "allow"
+      },
+      "note": "RBAC allow 走 require()：声明了 orders:read → 不抛（allow 路径也要被钉住）"
+    },
+    {
+      "vector_id": "AZ-02",
+      "case": "rbac_deny_undeclared_action",
+      "principal": {
+        "sub": "u-1",
+        "roles": [
+          "order_admin"
+        ]
+      },
+      "operation": {
+        "kind": "require",
+        "resource": "orders",
+        "action": "delete"
+      },
+      "expect": {
+        "decision": "deny",
+        "status": 403,
+        "code": "INSUFFICIENT_ROLE"
+      },
+      "note": "未声明的动作一律拒（不做「空即全部」推断）（走 require：未命中抛 403 INSUFFICIENT_ROLE）"
+    },
+    {
+      "vector_id": "AZ-03",
+      "case": "rbac_deny_undeclared_resource",
+      "principal": {
+        "sub": "u-1",
+        "roles": [
+          "order_admin"
+        ]
+      },
+      "operation": {
+        "kind": "require",
+        "resource": "profile",
+        "action": "read"
+      },
+      "expect": {
+        "decision": "deny",
+        "status": 403,
+        "code": "INSUFFICIENT_ROLE"
+      },
+      "note": "未声明的资源一律拒；defaultRole 只给「无角色」主体兜底，不给有角色的主体加权（走 require：未命中抛 403 INSUFFICIENT_ROLE）"
+    },
+    {
+      "vector_id": "AZ-04",
+      "case": "default_role_fallback_allow",
+      "principal": {
+        "sub": "u-9",
+        "roles": []
+      },
+      "operation": {
+        "kind": "enforce",
+        "resource": "profile",
+        "action": "read"
+      },
+      "expect": {
+        "decision": "allow"
+      },
+      "note": "defaultRole 兜底：profile:read"
+    },
+    {
+      "vector_id": "AZ-05",
+      "case": "default_role_minimal",
+      "principal": {
+        "sub": "u-9",
+        "roles": []
+      },
+      "operation": {
+        "kind": "require",
+        "resource": "orders",
+        "action": "read"
+      },
+      "expect": {
+        "decision": "deny",
+        "status": 403,
+        "code": "INSUFFICIENT_ROLE"
+      },
+      "note": "默认角色权限最小：不得「已登录即全部」（走 require：未命中抛 403 INSUFFICIENT_ROLE）"
+    },
+    {
+      "vector_id": "AZ-06",
+      "case": "check_row_owner_allow",
+      "principal": {
+        "sub": "u-1",
+        "roles": [
+          "order_viewer"
+        ]
+      },
+      "operation": {
+        "kind": "checkRow",
+        "owner_id": "u-1"
+      },
+      "expect": {
+        "decision": "allow"
+      },
+      "note": "行级：自己的行放行"
+    },
+    {
+      "vector_id": "AZ-07",
+      "case": "check_row_not_owner_deny",
+      "principal": {
+        "sub": "u-1",
+        "roles": [
+          "order_viewer"
+        ]
+      },
+      "operation": {
+        "kind": "checkRow",
+        "owner_id": "u-2"
+      },
+      "expect": {
+        "decision": "deny",
+        "status": 403,
+        "code": "INSUFFICIENT_ROLE"
+      },
+      "note": "行级：别人的行拒"
+    },
+    {
+      "vector_id": "AZ-08",
+      "case": "check_row_auditor_exempt",
+      "principal": {
+        "sub": "u-1",
+        "roles": [
+          "auditor"
+        ]
+      },
+      "operation": {
+        "kind": "checkRow",
+        "owner_id": "u-2"
+      },
+      "expect": {
+        "decision": "allow"
+      },
+      "note": "auditor 豁免（基线写死，不看 owner）"
+    },
+    {
+      "vector_id": "AZ-09",
+      "case": "check_label_equal",
+      "principal": {
+        "sub": "u-1",
+        "roles": [
+          "manager"
+        ]
+      },
+      "operation": {
+        "kind": "checkLabel",
+        "obj_level": 3
+      },
+      "expect": {
+        "decision": "allow"
+      },
+      "note": "密级 =（主体 3 ≥ 客体 3）"
+    },
+    {
+      "vector_id": "AZ-10",
+      "case": "check_label_greater",
+      "principal": {
+        "sub": "u-1",
+        "roles": [
+          "manager"
+        ]
+      },
+      "operation": {
+        "kind": "checkLabel",
+        "obj_level": 1
+      },
+      "expect": {
+        "decision": "allow"
+      },
+      "note": "密级 >（主体 3 ≥ 客体 1）"
+    },
+    {
+      "vector_id": "AZ-11",
+      "case": "check_label_insufficient",
+      "principal": {
+        "sub": "u-1",
+        "roles": [
+          "manager"
+        ]
+      },
+      "operation": {
+        "kind": "checkLabel",
+        "obj_level": 4
+      },
+      "expect": {
+        "decision": "deny",
+        "status": 403,
+        "code": "INSUFFICIENT_ROLE"
+      },
+      "note": "密级 <（主体 3 < 客体 4）→ 拒"
+    },
+    {
+      "vector_id": "AZ-12",
+      "case": "check_label_public_zero",
+      "principal": {
+        "sub": "u-1",
+        "roles": [
+          "order_viewer"
+        ]
+      },
+      "operation": {
+        "kind": "checkLabel",
+        "obj_level": 0
+      },
+      "expect": {
+        "decision": "allow"
+      },
+      "note": "公开数据（0 级）不占级：无密级角色也能过"
+    },
+    {
+      "vector_id": "AZ-13",
+      "case": "resource_group_member",
+      "principal": {
+        "sub": "u-1",
+        "roles": [
+          "warehouse"
+        ]
+      },
+      "operation": {
+        "kind": "enforce",
+        "resource": "order_items",
+        "action": "read"
+      },
+      "expect": {
+        "decision": "allow"
+      },
+      "note": "组策略：warehouse 只有 order-res 组权限，order_items 是组成员"
+    },
+    {
+      "vector_id": "AZ-14",
+      "case": "unauthenticated_deny",
+      "principal": null,
+      "operation": {
+        "kind": "require",
+        "resource": "orders",
+        "action": "read"
+      },
+      "expect": {
+        "decision": "deny",
+        "status": 401,
+        "code": "TOKEN_INVALID"
+      },
+      "note": "无主体（上下文未注入）：Java require() 抛 401 TOKEN_INVALID（不是 403——未认证与无权限分开）"
+    }
+  ],
+  "scope_cases": {
+    "status": "UNIMPLEMENTED",
+    "note": "契约附录 C 要求覆盖 `scope()` 受限/全量，但 **Java core 与 Go SDK 目前都没有 scope() 实现**（`grep -rn scope sdk/java/guanjin-core/src/main` 0 命中；Go `capabilities.go` 里 GJ-CAP-12~16 `Implemented:false`）。向量先落盘定性，等实现落地后由同一 runner 接，**当前不得记 PASS**。",
+    "cases": [
+      {
+        "vector_id": "AZ-S1",
+        "case": "scope_restricted_role",
+        "principal": {
+          "sub": "u-1",
+          "roles": [
+            "order_viewer"
+          ]
+        },
+        "expect": {
+          "filter": "owner_id = :me"
+        }
+      },
+      {
+        "vector_id": "AZ-S2",
+        "case": "scope_auditor_full",
+        "principal": {
+          "sub": "u-1",
+          "roles": [
+            "auditor"
+          ]
+        },
+        "expect": {
+          "filter": null
+        }
+      }
+    ]
+  },
+  "integrity_cases": {
+    "status": "UNIMPLEMENTED",
+    "note": "契约附录 C 单列「完整性校验失败 fail-closed」：Java Authz.init 无模型/策略 digest 校验、Go 侧 authz 未实现（internal/authz 只有 doc.go）→ 先落盘定性",
+    "cases": [
+      {
+        "vector_id": "AZ-S3",
+        "case": "scope_model_integrity_failure",
+        "principal": {
+          "sub": "u-1",
+          "roles": [
+            "order_admin"
+          ]
+        },
+        "expect": {
+          "decision": "deny",
+          "status": 403,
+          "code": "INSUFFICIENT_ROLE",
+          "note": "模型/策略完整性校验失败 → fail-closed，不加载可疑策略"
+        }
+      }
+    ]
+  }
+}

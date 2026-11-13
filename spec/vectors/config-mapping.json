@@ -1,0 +1,465 @@
+{
+  "cases": [
+    {
+      "vector_id": "CM-01",
+      "case": "defaults",
+      "input": {},
+      "expect": {
+        "guanjin.agent.pull.enabled": false,
+        "guanjin.agent.pull.interval": 30000,
+        "guanjin.agent.report.enabled": true,
+        "guanjin.agent.report.on-change": true,
+        "guanjin.agent.report.on-startup": true,
+        "guanjin.authz.default-role": "user",
+        "guanjin.authz.enabled": true,
+        "guanjin.authz.model-conf": "classpath:/guanjin/model.conf",
+        "guanjin.authz.replay-store": "redis",
+        "guanjin.client.hmac-secret": "",
+        "guanjin.client.id": "",
+        "guanjin.enabled": true,
+        "guanjin.gateway.assertion-header": "X-GuanJin-Assertion",
+        "guanjin.gateway.aud": "",
+        "guanjin.gateway.clock-skew": 60000,
+        "guanjin.gateway.issuer": "guanjin-gateway",
+        "guanjin.gateway.jwks-cache-ttl": 600000,
+        "guanjin.gateway.jwks-unknown-kid-force-refresh": true,
+        "guanjin.gateway.jwks-uri": "",
+        "guanjin.gateway.replay-window": 60000,
+        "guanjin.platform.base-url": "",
+        "guanjin.platform.connect-timeout": 2000,
+        "guanjin.platform.read-timeout": 3000,
+        "guanjin.public-paths": [],
+        "guanjin.public-paths-include-builtin": true,
+        "guanjin.security.authorities-resolver": "",
+        "guanjin.security.inject-security-context": true,
+        "guanjin.security.role-prefix": "ROLE_",
+        "guanjin.startup.print-public-paths": true
+      },
+      "note": "空输入 = 29 项默认值（必填项为空串时由 Validate 拦，不在本表判）"
+    },
+    {
+      "vector_id": "CM-02",
+      "case": "all_explicit",
+      "input": {
+        "guanjin.agent.pull.enabled": "true",
+        "guanjin.agent.pull.interval": "45s",
+        "guanjin.agent.report.enabled": "false",
+        "guanjin.agent.report.on-change": "true",
+        "guanjin.agent.report.on-startup": "false",
+        "guanjin.authz.default-role": "guest",
+        "guanjin.authz.enabled": "true",
+        "guanjin.authz.model-conf": "classpath:/guanjin/model.conf",
+        "guanjin.authz.replay-store": "memory",
+        "guanjin.client.hmac-secret": "s3cr3t-from-env",
+        "guanjin.client.id": "orders",
+        "guanjin.enabled": "true",
+        "guanjin.gateway.assertion-header": "X-Custom-Assertion",
+        "guanjin.gateway.aud": "orders-api",
+        "guanjin.gateway.clock-skew": "2m",
+        "guanjin.gateway.issuer": "gw-prod",
+        "guanjin.gateway.jwks-cache-ttl": "3m",
+        "guanjin.gateway.jwks-unknown-kid-force-refresh": "false",
+        "guanjin.gateway.jwks-uri": "http://127.0.0.1:18080/.well-known/jwks.json",
+        "guanjin.gateway.replay-window": "90s",
+        "guanjin.platform.base-url": "http://127.0.0.1:18080/",
+        "guanjin.platform.connect-timeout": "1500ms",
+        "guanjin.platform.read-timeout": "5s",
+        "guanjin.public-paths": "[ /health , /metrics , /public/** ]",
+        "guanjin.public-paths-include-builtin": "false",
+        "guanjin.security.authorities-resolver": "com.acme.Resolver",
+        "guanjin.security.inject-security-context": "true",
+        "guanjin.security.role-prefix": "AUTH_",
+        "guanjin.startup.print-public-paths": "false"
+      },
+      "expect": {
+        "guanjin.agent.pull.enabled": true,
+        "guanjin.agent.pull.interval": 45000,
+        "guanjin.agent.report.enabled": false,
+        "guanjin.agent.report.on-change": true,
+        "guanjin.agent.report.on-startup": false,
+        "guanjin.authz.default-role": "guest",
+        "guanjin.authz.enabled": true,
+        "guanjin.authz.model-conf": "classpath:/guanjin/model.conf",
+        "guanjin.authz.replay-store": "memory",
+        "guanjin.client.hmac-secret": "s3cr3t-from-env",
+        "guanjin.client.id": "orders",
+        "guanjin.enabled": true,
+        "guanjin.gateway.assertion-header": "X-Custom-Assertion",
+        "guanjin.gateway.aud": "orders-api",
+        "guanjin.gateway.clock-skew": 120000,
+        "guanjin.gateway.issuer": "gw-prod",
+        "guanjin.gateway.jwks-cache-ttl": 180000,
+        "guanjin.gateway.jwks-unknown-kid-force-refresh": false,
+        "guanjin.gateway.jwks-uri": "http://127.0.0.1:18080/.well-known/jwks.json",
+        "guanjin.gateway.replay-window": 90000,
+        "guanjin.platform.base-url": "http://127.0.0.1:18080",
+        "guanjin.platform.connect-timeout": 1500,
+        "guanjin.platform.read-timeout": 5000,
+        "guanjin.public-paths": [
+          "/health",
+          "/metrics",
+          "/public/**"
+        ],
+        "guanjin.public-paths-include-builtin": false,
+        "guanjin.security.authorities-resolver": "com.acme.Resolver",
+        "guanjin.security.inject-security-context": true,
+        "guanjin.security.role-prefix": "AUTH_",
+        "guanjin.startup.print-public-paths": false
+      },
+      "note": "29 项全部显式；base-url 尾斜杠被剥（契约 #2 无尾斜杠）"
+    },
+    {
+      "vector_id": "CM-03",
+      "case": "duration_forms",
+      "input": {
+        "guanjin.agent.pull.interval": "30s",
+        "guanjin.gateway.clock-skew": "1h",
+        "guanjin.gateway.replay-window": "90m",
+        "guanjin.platform.base-url": "http://127.0.0.1:18080",
+        "guanjin.platform.connect-timeout": "250ms"
+      },
+      "expect": {
+        "guanjin.agent.pull.enabled": false,
+        "guanjin.agent.pull.interval": 30000,
+        "guanjin.agent.report.enabled": true,
+        "guanjin.agent.report.on-change": true,
+        "guanjin.agent.report.on-startup": true,
+        "guanjin.authz.default-role": "user",
+        "guanjin.authz.enabled": true,
+        "guanjin.authz.model-conf": "classpath:/guanjin/model.conf",
+        "guanjin.authz.replay-store": "redis",
+        "guanjin.client.hmac-secret": "",
+        "guanjin.client.id": "",
+        "guanjin.enabled": true,
+        "guanjin.gateway.assertion-header": "X-GuanJin-Assertion",
+        "guanjin.gateway.aud": "",
+        "guanjin.gateway.clock-skew": 3600000,
+        "guanjin.gateway.issuer": "guanjin-gateway",
+        "guanjin.gateway.jwks-cache-ttl": 600000,
+        "guanjin.gateway.jwks-unknown-kid-force-refresh": true,
+        "guanjin.gateway.jwks-uri": "",
+        "guanjin.gateway.replay-window": 5400000,
+        "guanjin.platform.base-url": "http://127.0.0.1:18080",
+        "guanjin.platform.connect-timeout": 250,
+        "guanjin.platform.read-timeout": 3000,
+        "guanjin.public-paths": [],
+        "guanjin.public-paths-include-builtin": true,
+        "guanjin.security.authorities-resolver": "",
+        "guanjin.security.inject-security-context": true,
+        "guanjin.security.role-prefix": "ROLE_",
+        "guanjin.startup.print-public-paths": true
+      },
+      "expect_derived": {
+        "aud": "",
+        "jwks_uri": "http://127.0.0.1:18080/.well-known/jwks.json"
+      },
+      "note": "ms|s|m|h 四种单位（两侧都认的形态）"
+    },
+    {
+      "vector_id": "CM-04",
+      "case": "derivation",
+      "input": {
+        "guanjin.client.id": "orders",
+        "guanjin.platform.base-url": "http://127.0.0.1:18080"
+      },
+      "expect": {
+        "guanjin.agent.pull.enabled": false,
+        "guanjin.agent.pull.interval": 30000,
+        "guanjin.agent.report.enabled": true,
+        "guanjin.agent.report.on-change": true,
+        "guanjin.agent.report.on-startup": true,
+        "guanjin.authz.default-role": "user",
+        "guanjin.authz.enabled": true,
+        "guanjin.authz.model-conf": "classpath:/guanjin/model.conf",
+        "guanjin.authz.replay-store": "redis",
+        "guanjin.client.hmac-secret": "",
+        "guanjin.client.id": "orders",
+        "guanjin.enabled": true,
+        "guanjin.gateway.assertion-header": "X-GuanJin-Assertion",
+        "guanjin.gateway.aud": "",
+        "guanjin.gateway.clock-skew": 60000,
+        "guanjin.gateway.issuer": "guanjin-gateway",
+        "guanjin.gateway.jwks-cache-ttl": 600000,
+        "guanjin.gateway.jwks-unknown-kid-force-refresh": true,
+        "guanjin.gateway.jwks-uri": "",
+        "guanjin.gateway.replay-window": 60000,
+        "guanjin.platform.base-url": "http://127.0.0.1:18080",
+        "guanjin.platform.connect-timeout": 2000,
+        "guanjin.platform.read-timeout": 3000,
+        "guanjin.public-paths": [],
+        "guanjin.public-paths-include-builtin": true,
+        "guanjin.security.authorities-resolver": "",
+        "guanjin.security.inject-security-context": true,
+        "guanjin.security.role-prefix": "ROLE_",
+        "guanjin.startup.print-public-paths": true
+      },
+      "expect_derived": {
+        "aud": "orders",
+        "jwks_uri": "http://127.0.0.1:18080/.well-known/jwks.json"
+      },
+      "note": "#12 jwks-uri / #9 aud 未显式配置时派生（base-url + /.well-known/jwks.json；aud 跟随 client.id）"
+    },
+    {
+      "vector_id": "CM-05",
+      "case": "list_and_prefix",
+      "input": {
+        "guanjin.client.id": "orders",
+        "guanjin.platform.base-url": "http://127.0.0.1:18080",
+        "guanjin.public-paths": "/health,/metrics",
+        "guanjin.public-paths-include-builtin": "true",
+        "guanjin.security.role-prefix": "ROLE_"
+      },
+      "expect": {
+        "guanjin.agent.pull.enabled": false,
+        "guanjin.agent.pull.interval": 30000,
+        "guanjin.agent.report.enabled": true,
+        "guanjin.agent.report.on-change": true,
+        "guanjin.agent.report.on-startup": true,
+        "guanjin.authz.default-role": "user",
+        "guanjin.authz.enabled": true,
+        "guanjin.authz.model-conf": "classpath:/guanjin/model.conf",
+        "guanjin.authz.replay-store": "redis",
+        "guanjin.client.hmac-secret": "",
+        "guanjin.client.id": "orders",
+        "guanjin.enabled": true,
+        "guanjin.gateway.assertion-header": "X-GuanJin-Assertion",
+        "guanjin.gateway.aud": "",
+        "guanjin.gateway.clock-skew": 60000,
+        "guanjin.gateway.issuer": "guanjin-gateway",
+        "guanjin.gateway.jwks-cache-ttl": 600000,
+        "guanjin.gateway.jwks-unknown-kid-force-refresh": true,
+        "guanjin.gateway.jwks-uri": "",
+        "guanjin.gateway.replay-window": 60000,
+        "guanjin.platform.base-url": "http://127.0.0.1:18080",
+        "guanjin.platform.connect-timeout": 2000,
+        "guanjin.platform.read-timeout": 3000,
+        "guanjin.public-paths": [
+          "/health",
+          "/metrics"
+        ],
+        "guanjin.public-paths-include-builtin": true,
+        "guanjin.security.authorities-resolver": "",
+        "guanjin.security.inject-security-context": true,
+        "guanjin.security.role-prefix": "ROLE_",
+        "guanjin.startup.print-public-paths": true
+      },
+      "expect_derived": {
+        "aud": "orders",
+        "jwks_uri": "http://127.0.0.1:18080/.well-known/jwks.json"
+      },
+      "note": "list 无方括号（逗号分隔）与带方括号（CM-02）等价"
+    }
+  ],
+  "encoding": "duration 一律毫秒整数（duration_ms）；list 一律数组；bool 一律 true/false 字面量",
+  "generated_by": "Gate 2026-11-13：期望值由真实现 sdk/go/guanjin.LoadFromMap 产出",
+  "keys": [
+    {
+      "index": 1,
+      "key": "guanjin.enabled",
+      "kind": "bool",
+      "required": false
+    },
+    {
+      "index": 2,
+      "key": "guanjin.platform.base-url",
+      "kind": "string",
+      "required": true
+    },
+    {
+      "index": 3,
+      "key": "guanjin.platform.connect-timeout",
+      "kind": "duration_ms",
+      "required": false
+    },
+    {
+      "index": 4,
+      "key": "guanjin.platform.read-timeout",
+      "kind": "duration_ms",
+      "required": false
+    },
+    {
+      "index": 5,
+      "key": "guanjin.client.id",
+      "kind": "string",
+      "required": true
+    },
+    {
+      "index": 6,
+      "key": "guanjin.client.hmac-secret",
+      "kind": "string",
+      "required": true
+    },
+    {
+      "index": 7,
+      "key": "guanjin.gateway.assertion-header",
+      "kind": "string",
+      "required": false
+    },
+    {
+      "index": 8,
+      "key": "guanjin.gateway.issuer",
+      "kind": "string",
+      "required": false
+    },
+    {
+      "index": 9,
+      "key": "guanjin.gateway.aud",
+      "kind": "string",
+      "required": false
+    },
+    {
+      "index": 10,
+      "key": "guanjin.gateway.clock-skew",
+      "kind": "duration_ms",
+      "required": false
+    },
+    {
+      "index": 11,
+      "key": "guanjin.gateway.replay-window",
+      "kind": "duration_ms",
+      "required": false
+    },
+    {
+      "index": 12,
+      "key": "guanjin.gateway.jwks-uri",
+      "kind": "string",
+      "required": false
+    },
+    {
+      "index": 13,
+      "key": "guanjin.gateway.jwks-cache-ttl",
+      "kind": "duration_ms",
+      "required": false
+    },
+    {
+      "index": 14,
+      "key": "guanjin.gateway.jwks-unknown-kid-force-refresh",
+      "kind": "bool",
+      "required": false
+    },
+    {
+      "index": 15,
+      "key": "guanjin.authz.enabled",
+      "kind": "bool",
+      "required": false
+    },
+    {
+      "index": 16,
+      "key": "guanjin.authz.default-role",
+      "kind": "string",
+      "required": false
+    },
+    {
+      "index": 17,
+      "key": "guanjin.authz.model-conf",
+      "kind": "string",
+      "required": false
+    },
+    {
+      "index": 18,
+      "key": "guanjin.authz.replay-store",
+      "kind": "string",
+      "required": false
+    },
+    {
+      "index": 19,
+      "key": "guanjin.agent.report.enabled",
+      "kind": "bool",
+      "required": false
+    },
+    {
+      "index": 20,
+      "key": "guanjin.agent.report.on-startup",
+      "kind": "bool",
+      "required": false
+    },
+    {
+      "index": 21,
+      "key": "guanjin.agent.report.on-change",
+      "kind": "bool",
+      "required": false
+    },
+    {
+      "index": 22,
+      "key": "guanjin.agent.pull.enabled",
+      "kind": "bool",
+      "required": false
+    },
+    {
+      "index": 23,
+      "key": "guanjin.agent.pull.interval",
+      "kind": "duration_ms",
+      "required": false
+    },
+    {
+      "index": 24,
+      "key": "guanjin.public-paths",
+      "kind": "list",
+      "required": false
+    },
+    {
+      "index": 25,
+      "key": "guanjin.public-paths-include-builtin",
+      "kind": "bool",
+      "required": false
+    },
+    {
+      "index": 26,
+      "key": "guanjin.security.inject-security-context",
+      "kind": "bool",
+      "required": false
+    },
+    {
+      "index": 27,
+      "key": "guanjin.security.authorities-resolver",
+      "kind": "string",
+      "required": false
+    },
+    {
+      "index": 28,
+      "key": "guanjin.security.role-prefix",
+      "kind": "string",
+      "required": false
+    },
+    {
+      "index": 29,
+      "key": "guanjin.startup.print-public-paths",
+      "kind": "bool",
+      "required": false
+    }
+  ],
+  "known_divergences": {
+    "defects": [
+      {
+        "contract": "classpath:/guanjin/model.conf",
+        "go": "model.conf",
+        "java": "classpath:/guanjin/model.conf",
+        "key": "guanjin.authz.model-conf",
+        "owner": "Nova（Go SDK config.go DefaultModelConf）",
+        "tracking": "2026-11-13 向量首跑发现；Go 侧断言已钉死，修好后本表与 Go 测试要同步改"
+      }
+    ],
+    "note": "已定性的三语言不一致。第一类是**实现缺陷**（按契约判，Go 侧偏差钉死，漂移即红）；第二类是解析口径差异（向量不采用这些形态，须 Spec/Ark 收口）",
+    "parse_forms": [
+      {
+        "form": "纯数字 duration（如 3000）",
+        "go": "红：time.ParseDuration 要求单位",
+        "java": "绿：按毫秒"
+      },
+      {
+        "form": "单位 d（如 1d）",
+        "go": "红：Go duration 无 d 单位",
+        "java": "绿：按天"
+      }
+    ]
+  },
+  "removed_keys": {
+    "keys": [
+      "guanjin.mode",
+      "guanjin.direct.user-token-jwks-uri",
+      "guanjin.direct.user-token-issuer"
+    ],
+    "note": "契约 §3.3 REMOVED：出现即启动失败（AC-SDK-01）。Go/Java 判错文案不同，两个实现都必须抛错"
+  },
+  "spec": "docs/sdk-contract.md §3.2（29 项配置键）"
+}

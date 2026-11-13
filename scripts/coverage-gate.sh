@@ -147,6 +147,37 @@ PYEOF
   profile="$merged"
 fi
 
+# ---- 0.5) 剔除 `scripts/`：仓库工具（向量生成器等），不是产品代码 ----
+# 正常流程下是**空操作**：`go test ./...` 对没有测试文件的包不产块（实测 profile 里
+# `scripts/` 0 行）；只有单独为 `scripts/vecgen` 采 profile（89 块 / 225 语句 0%）时才会
+# 拉低总闸。口径：含 `/scripts/` 的块不进分母，顺手打印剔除量；只认 `/scripts/`，
+# 藏不起 internal/ sdk/ cmd/ 的语句。
+if ! python3 - "$profile" <<'PYEOF_INNER'
+import sys
+path = sys.argv[1]
+kept, dropped_stmts, dropped_blocks = [], 0, 0
+with open(path) as f:
+    for line in f:
+        line_r = line.rstrip("\n")
+        if not line_r or line_r.startswith("mode:"):
+            kept.append(line_r)
+            continue
+        if "/scripts/" in line_r.rsplit(" ", 2)[0]:
+            parts = line_r.rsplit(" ", 2)
+            dropped_stmts += int(parts[1])
+            dropped_blocks += 1
+            continue
+        kept.append(line_r)
+with open(path, "w") as f:
+    f.write("\n".join(kept) + "\n")
+if dropped_blocks:
+    print("[coverage] 已剔除 scripts/ 工具代码：%d 块 / %d 语句（不计入总闸）" % (dropped_blocks, dropped_stmts))
+PYEOF_INNER
+then
+  echo "[FAIL] 剔除 scripts/ 失败"
+  exit 1
+fi
+
 fail=0
 
 # ---- 1) 逐模块下限 ----

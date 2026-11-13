@@ -1,0 +1,217 @@
+{
+  "clock_skew_seconds": 60,
+  "generated_by": "Gate 2026-11-13：SM2 真签名（internal/crypto.SignSM2，与 signing.SignJWT 同形态）",
+  "jwks": {
+    "keys": [
+      {
+        "alg": "SM2",
+        "crv": "SM2",
+        "kid": "gw-2026-11",
+        "kty": "EC",
+        "use": "sig",
+        "x": "HTXdd77h7YKcfUxRtl21uG95ig2UyprgRtQ9JQMb_4I",
+        "y": "3H_RgQDRY0v6bttGnKQbwx08PBUlLhoY58KYWtAdgQE"
+      },
+      {
+        "alg": "SM3withSM2",
+        "crv": "SM2",
+        "kid": "oidc-2026-11",
+        "kty": "EC",
+        "use": "sig",
+        "x": "Du6Z3TOpx4zXyeJGpBRzZ6cf79_sS6rT8PaMVNXzHb0",
+        "y": "ZeB15NmVoear8vkpRv8YqES-DAqMHmCv_O4bCZQeqvU"
+      }
+    ]
+  },
+  "jwks_note": "JWKS 同时含 gateway（alg=SM2）与 oidc（alg=SM3withSM2）两把键；判别「拒的是 alg」靠 AV-14（网关 kid + alg=SM3withSM2 + 网关私钥真签），AV-12 只是 oidc 轨的补充面",
+  "oidc_track_note": "对外令牌（id_token/access_token）仍用 SM3withSM2 由平台签发/校验（signing 包），**不属本向量面**；本文件只覆盖网关内部断言，故不存在『oidc 令牌通过』向量",
+  "reference_now": "2026-01-01T00:00:00Z",
+  "reference_now_unix": 1767225600,
+  "spec": "docs/sdk-contract.md §4.4/§4.5 + decisions.md D29（网关断言 alg=SM2 唯一；对外令牌 SM3withSM2 是另一条轨）",
+  "vectors": [
+    {
+      "vector_id": "AV-01",
+      "case": "valid",
+      "token": "eyJhbGciOiJTTTIiLCJraWQiOiJndy0yMDI2LTExIiwidHlwIjoiSldUIn0.eyJhY3IiOiJBQUwyIiwiYW1yIjpbInB3ZCJdLCJhdWQiOiJvcmRlcnMiLCJjaWQiOiJvcmRlcnMiLCJleHAiOjE3NjcyMjU2NTAsImlhdCI6MTc2NzIyNTU5MCwiaXNzIjoiZ3Vhbmppbi1nYXRld2F5IiwianRpIjoiMTExMTExMTEtMjIyMi00MzMzLTg0NDQtNTU1NTU1NTU1NTU1Iiwicm9sZXMiOlsidXNlciJdLCJzdWIiOiJ1c2VyLTEiLCJ1bmFtZSI6ImFsaWNlIn0.zpeIG5TW2MkbJRKe6gFc0QCurNrdNzGTxOiGKgedAyMU76_0dpbRtwLf3z6zrLmB1bIt1-rzhBO0_-U4TXx3xg",
+      "jwks_mode": "available",
+      "expect": {
+        "code": "",
+        "decision": "allow",
+        "stage": "",
+        "status": 0
+      },
+      "note": "真 SM2 签名（与平台签发路径同形态），claim 全部在窗"
+    },
+    {
+      "vector_id": "AV-02",
+      "case": "tampered_payload",
+      "token": "eyJhbGciOiJTTTIiLCJraWQiOiJndy0yMDI2LTExIiwidHlwIjoiSldUIn0.eyJhY3IiOiJBQUwyIiwiYW1yIjpbInB3ZCJdLCJhdWQiOiJvcmRlcnMiLCJjaWQiOiJvcmRlcnMiLCJleHAiOjE3NjcyMjU2NTAsImlhdCI6MTc2NzIyNTU5MCwiaXNzIjoiZ3Vhbmppbi1nYXRld2F5IiwianRpIjoiMTExMTExMTEtMjIyMi00MzMzLTg0NDQtNTU1NTU1NTU1NTU1Iiwicm9sZXMiOlsidXNlciJdLCJzdWIiOiJhdHRhY2tlciIsInVuYW1lIjoiYWxpY2UifQ.zpeIG5TW2MkbJRKe6gFc0QCurNrdNzGTxOiGKgedAyMU76_0dpbRtwLf3z6zrLmB1bIt1-rzhBO0_-U4TXx3xg",
+      "jwks_mode": "available",
+      "expect": {
+        "code": "TOKEN_INVALID",
+        "decision": "reject",
+        "stage": "signature",
+        "status": 401
+      },
+      "note": "签名本身合法但 payload 被换 → 验签失败（不得进 claim 层）"
+    },
+    {
+      "vector_id": "AV-03",
+      "case": "exp_boundary_inclusive",
+      "token": "eyJhbGciOiJTTTIiLCJraWQiOiJndy0yMDI2LTExIiwidHlwIjoiSldUIn0.eyJhY3IiOiJBQUwyIiwiYW1yIjpbInB3ZCJdLCJhdWQiOiJvcmRlcnMiLCJjaWQiOiJvcmRlcnMiLCJleHAiOjE3NjcyMjU1NDAsImlhdCI6MTc2NzIyNTU5MCwiaXNzIjoiZ3Vhbmppbi1nYXRld2F5IiwianRpIjoiMTExMTExMTEtMjIyMi00MzMzLTg0NDQtNTU1NTU1NTU1NTU1Iiwicm9sZXMiOlsidXNlciJdLCJzdWIiOiJ1c2VyLTEiLCJ1bmFtZSI6ImFsaWNlIn0.IroLvp9UqYMyaKxv6bZr2gSUliqWIaZTpDwh-JRjOSlYRpa2Pm5oX1maVGayKiyGlSzb7vT6qF_tsIKT2y7PtA",
+      "jwks_mode": "available",
+      "expect": {
+        "code": "",
+        "decision": "allow",
+        "stage": "",
+        "status": 0
+      },
+      "note": "exp = now - skew：边界内放行（`exp + skew` 两侧各测）"
+    },
+    {
+      "vector_id": "AV-04",
+      "case": "exp_boundary_plus_one",
+      "token": "eyJhbGciOiJTTTIiLCJraWQiOiJndy0yMDI2LTExIiwidHlwIjoiSldUIn0.eyJhY3IiOiJBQUwyIiwiYW1yIjpbInB3ZCJdLCJhdWQiOiJvcmRlcnMiLCJjaWQiOiJvcmRlcnMiLCJleHAiOjE3NjcyMjU1MzksImlhdCI6MTc2NzIyNTU5MCwiaXNzIjoiZ3Vhbmppbi1nYXRld2F5IiwianRpIjoiMTExMTExMTEtMjIyMi00MzMzLTg0NDQtNTU1NTU1NTU1NTU1Iiwicm9sZXMiOlsidXNlciJdLCJzdWIiOiJ1c2VyLTEiLCJ1bmFtZSI6ImFsaWNlIn0.B4MJUoLiyptXuycOcZcRKZ455FZ9TXU0C0seyVdlhZWAsD7thDx3qr-xsEHMiSOPq5VFHK5UfbnzA8LZdt6vTw",
+      "jwks_mode": "available",
+      "expect": {
+        "code": "TOKEN_INVALID",
+        "decision": "reject",
+        "stage": "claims",
+        "status": 401
+      },
+      "note": "exp = now - skew - 1：超窗 1 秒即拒"
+    },
+    {
+      "vector_id": "AV-05",
+      "case": "iat_boundary_inclusive",
+      "token": "eyJhbGciOiJTTTIiLCJraWQiOiJndy0yMDI2LTExIiwidHlwIjoiSldUIn0.eyJhY3IiOiJBQUwyIiwiYW1yIjpbInB3ZCJdLCJhdWQiOiJvcmRlcnMiLCJjaWQiOiJvcmRlcnMiLCJleHAiOjE3NjcyMjU2NTAsImlhdCI6MTc2NzIyNTY2MCwiaXNzIjoiZ3Vhbmppbi1nYXRld2F5IiwianRpIjoiMTExMTExMTEtMjIyMi00MzMzLTg0NDQtNTU1NTU1NTU1NTU1Iiwicm9sZXMiOlsidXNlciJdLCJzdWIiOiJ1c2VyLTEiLCJ1bmFtZSI6ImFsaWNlIn0.3biCdqbIMO-9kiGenzmOf67tfZhCfXnUK2_KWDuMEz-tg33ryDj6RWbdBZbDIkZAuXZgUd5HuMJJLSOyAWRwyA",
+      "jwks_mode": "available",
+      "expect": {
+        "code": "",
+        "decision": "allow",
+        "stage": "",
+        "status": 0
+      },
+      "note": "iat = now + skew：未来侧边界内放行"
+    },
+    {
+      "vector_id": "AV-06",
+      "case": "iat_boundary_plus_one",
+      "token": "eyJhbGciOiJTTTIiLCJraWQiOiJndy0yMDI2LTExIiwidHlwIjoiSldUIn0.eyJhY3IiOiJBQUwyIiwiYW1yIjpbInB3ZCJdLCJhdWQiOiJvcmRlcnMiLCJjaWQiOiJvcmRlcnMiLCJleHAiOjE3NjcyMjU2NTAsImlhdCI6MTc2NzIyNTY2MSwiaXNzIjoiZ3Vhbmppbi1nYXRld2F5IiwianRpIjoiMTExMTExMTEtMjIyMi00MzMzLTg0NDQtNTU1NTU1NTU1NTU1Iiwicm9sZXMiOlsidXNlciJdLCJzdWIiOiJ1c2VyLTEiLCJ1bmFtZSI6ImFsaWNlIn0.TRpgNyrC70jEKOSSphje-FEnIIR2W9DE37sQ04FeppJ6tU8IoLPNNw7XPon7wtMr0ge1tqSNDfdRJkZVSkGseA",
+      "jwks_mode": "available",
+      "expect": {
+        "code": "TOKEN_INVALID",
+        "decision": "reject",
+        "stage": "claims",
+        "status": 401
+      },
+      "note": "iat = now + skew + 1：未来过远即拒"
+    },
+    {
+      "vector_id": "AV-07",
+      "case": "iss_mismatch",
+      "token": "eyJhbGciOiJTTTIiLCJraWQiOiJndy0yMDI2LTExIiwidHlwIjoiSldUIn0.eyJhY3IiOiJBQUwyIiwiYW1yIjpbInB3ZCJdLCJhdWQiOiJvcmRlcnMiLCJjaWQiOiJvcmRlcnMiLCJleHAiOjE3NjcyMjU2NTAsImlhdCI6MTc2NzIyNTU5MCwiaXNzIjoiZXZpbCIsImp0aSI6IjExMTExMTExLTIyMjItNDMzMy04NDQ0LTU1NTU1NTU1NTU1NSIsInJvbGVzIjpbInVzZXIiXSwic3ViIjoidXNlci0xIiwidW5hbWUiOiJhbGljZSJ9.9J4mW1ZiGMGWZGNDtDsup1vezTVCqGKbuuMa12Lim1UU4tAJEvb2EvuTInlkl9pheu0oEKJrYBD3YNyFJA_Jfg",
+      "jwks_mode": "available",
+      "expect": {
+        "code": "TOKEN_INVALID",
+        "decision": "reject",
+        "stage": "claims",
+        "status": 401
+      }
+    },
+    {
+      "vector_id": "AV-08",
+      "case": "aud_mismatch",
+      "token": "eyJhbGciOiJTTTIiLCJraWQiOiJndy0yMDI2LTExIiwidHlwIjoiSldUIn0.eyJhY3IiOiJBQUwyIiwiYW1yIjpbInB3ZCJdLCJhdWQiOiJvdGhlciIsImNpZCI6Im9yZGVycyIsImV4cCI6MTc2NzIyNTY1MCwiaWF0IjoxNzY3MjI1NTkwLCJpc3MiOiJndWFuamluLWdhdGV3YXkiLCJqdGkiOiIxMTExMTExMS0yMjIyLTQzMzMtODQ0NC01NTU1NTU1NTU1NTUiLCJyb2xlcyI6WyJ1c2VyIl0sInN1YiI6InVzZXItMSIsInVuYW1lIjoiYWxpY2UifQ.xM6hVR9gLkLCnBihTQYtnb1A7VsPCgX0VVSp33gYBYaiwwdi2eLsT-Lp7lDlinT-a0MNv9WlC9CrLuz1siF3cA",
+      "jwks_mode": "available",
+      "expect": {
+        "code": "TOKEN_INVALID",
+        "decision": "reject",
+        "stage": "claims",
+        "status": 401
+      }
+    },
+    {
+      "vector_id": "AV-09",
+      "case": "unknown_kid",
+      "token": "eyJhbGciOiJTTTIiLCJraWQiOiJndy1yb2d1ZSIsInR5cCI6IkpXVCJ9.eyJhY3IiOiJBQUwyIiwiYW1yIjpbInB3ZCJdLCJhdWQiOiJvcmRlcnMiLCJjaWQiOiJvcmRlcnMiLCJleHAiOjE3NjcyMjU2NTAsImlhdCI6MTc2NzIyNTU5MCwiaXNzIjoiZ3Vhbmppbi1nYXRld2F5IiwianRpIjoiMTExMTExMTEtMjIyMi00MzMzLTg0NDQtNTU1NTU1NTU1NTU1Iiwicm9sZXMiOlsidXNlciJdLCJzdWIiOiJ1c2VyLTEiLCJ1bmFtZSI6ImFsaWNlIn0.6SPq2dQ5LhPXKILSnbmOSH2sUgwxkw-m0dkgBpWbpAusftucvgr8_Vfq8XO3hGjgUSED53w6ivdsXazSWwxx4g",
+      "jwks_mode": "available",
+      "expect": {
+        "code": "TOKEN_INVALID",
+        "decision": "reject",
+        "stage": "jwks",
+        "status": 401
+      },
+      "note": "kid 不在 JWKS：强刷一次仍无 → 401（不是 503，JWKS 可达）"
+    },
+    {
+      "vector_id": "AV-10",
+      "case": "jwks_unavailable_no_cache",
+      "token": "eyJhbGciOiJTTTIiLCJraWQiOiJndy0yMDI2LTExIiwidHlwIjoiSldUIn0.eyJhY3IiOiJBQUwyIiwiYW1yIjpbInB3ZCJdLCJhdWQiOiJvcmRlcnMiLCJjaWQiOiJvcmRlcnMiLCJleHAiOjE3NjcyMjU2NTAsImlhdCI6MTc2NzIyNTU5MCwiaXNzIjoiZ3Vhbmppbi1nYXRld2F5IiwianRpIjoiMTExMTExMTEtMjIyMi00MzMzLTg0NDQtNTU1NTU1NTU1NTU1Iiwicm9sZXMiOlsidXNlciJdLCJzdWIiOiJ1c2VyLTEiLCJ1bmFtZSI6ImFsaWNlIn0.zpeIG5TW2MkbJRKe6gFc0QCurNrdNzGTxOiGKgedAyMU76_0dpbRtwLf3z6zrLmB1bIt1-rzhBO0_-U4TXx3xg",
+      "jwks_mode": "unavailable",
+      "expect": {
+        "code": "KEY_UNAVAILABLE",
+        "decision": "reject",
+        "stage": "jwks",
+        "status": 503
+      },
+      "note": "JWKS 不可达且无缓存 → 503 KEY_UNAVAILABLE（fail-closed，不得放行）"
+    },
+    {
+      "vector_id": "AV-11",
+      "case": "jti_replay",
+      "token": "eyJhbGciOiJTTTIiLCJraWQiOiJndy0yMDI2LTExIiwidHlwIjoiSldUIn0.eyJhY3IiOiJBQUwyIiwiYW1yIjpbInB3ZCJdLCJhdWQiOiJvcmRlcnMiLCJjaWQiOiJvcmRlcnMiLCJleHAiOjE3NjcyMjU2NTAsImlhdCI6MTc2NzIyNTU5MCwiaXNzIjoiZ3Vhbmppbi1nYXRld2F5IiwianRpIjoiMTExMTExMTEtMjIyMi00MzMzLTg0NDQtNTU1NTU1NTU1NTU1Iiwicm9sZXMiOlsidXNlciJdLCJzdWIiOiJ1c2VyLTEiLCJ1bmFtZSI6ImFsaWNlIn0.zpeIG5TW2MkbJRKe6gFc0QCurNrdNzGTxOiGKgedAyMU76_0dpbRtwLf3z6zrLmB1bIt1-rzhBO0_-U4TXx3xg",
+      "jwks_mode": "available",
+      "expect": {
+        "code": "TOKEN_INVALID",
+        "decision": "reject",
+        "stage": "replay",
+        "status": 401
+      },
+      "replay_times": 2,
+      "note": "同一 jti 第二次必拒（首次 allow）"
+    },
+    {
+      "vector_id": "AV-12",
+      "case": "alg_not_sm2_oidc_track",
+      "token": "eyJhbGciOiJTTTN3aXRoU00yIiwia2lkIjoib2lkYy0yMDI2LTExIiwidHlwIjoiSldUIn0.eyJhY3IiOiJBQUwyIiwiYW1yIjpbInB3ZCJdLCJhdWQiOiJvcmRlcnMiLCJjaWQiOiJvcmRlcnMiLCJleHAiOjE3NjcyMjU2NTAsImlhdCI6MTc2NzIyNTU5MCwiaXNzIjoiZ3Vhbmppbi1nYXRld2F5IiwianRpIjoiMTExMTExMTEtMjIyMi00MzMzLTg0NDQtNTU1NTU1NTU1NTU1Iiwicm9sZXMiOlsidXNlciJdLCJzdWIiOiJ1c2VyLTEiLCJ1bmFtZSI6ImFsaWNlIn0.7rfMBFi-1BsKf5X0JfAwSKJCX2bd8GF1WZnFovHnYeCUJU5TSo1SRGgtkC7rzuR7ITZ14n5eoOzhFL91ZFD18g",
+      "jwks_mode": "available",
+      "expect": {
+        "code": "TOKEN_INVALID",
+        "decision": "reject",
+        "reason_contains": "alg",
+        "stage": "alg",
+        "status": 401
+      },
+      "note": "oidc 轨（alg=SM3withSM2）的键签的断言必须拒；注意 SDK 的 ParseJWKS 本来就会滤掉 oidc 键，所以**这条不能单独证明「拒的是 alg」**——判别力由 AV-14 提供"
+    },
+    {
+      "vector_id": "AV-13",
+      "case": "alg_hs256_downgrade",
+      "token": "eyJhbGciOiJIUzI1NiIsImtpZCI6Imd3LTIwMjYtMTEiLCJ0eXAiOiJKV1QifQ.eyJhY3IiOiJBQUwyIiwiYW1yIjpbInB3ZCJdLCJhdWQiOiJvcmRlcnMiLCJjaWQiOiJvcmRlcnMiLCJleHAiOjE3NjcyMjU2NTAsImlhdCI6MTc2NzIyNTU5MCwiaXNzIjoiZ3Vhbmppbi1nYXRld2F5IiwianRpIjoiMTExMTExMTEtMjIyMi00MzMzLTg0NDQtNTU1NTU1NTU1NTU1Iiwicm9sZXMiOlsidXNlciJdLCJzdWIiOiJ1c2VyLTEiLCJ1bmFtZSI6ImFsaWNlIn0.ap0aCW1Ln8rX9INtefydg3hlogrMRcpZn05pj6YlruQ",
+      "jwks_mode": "available",
+      "expect": {
+        "code": "TOKEN_INVALID",
+        "decision": "reject",
+        "reason_contains": "alg",
+        "stage": "alg",
+        "status": 401
+      },
+      "note": "经典 alg 降级（HS256）也必须拒——不做算法协商；摘掉 alg 闸时本条会落到「签名必须 64 字节/验签失败」而不是「alg」，故 reason_contains 也能抓到"
+    },
+    {
+      "vector_id": "AV-14",
+      "case": "alg_sm3withsm2_gateway_key",
+      "token": "eyJhbGciOiJTTTN3aXRoU00yIiwia2lkIjoiZ3ctMjAyNi0xMSIsInR5cCI6IkpXVCJ9.eyJhY3IiOiJBQUwyIiwiYW1yIjpbInB3ZCJdLCJhdWQiOiJvcmRlcnMiLCJjaWQiOiJvcmRlcnMiLCJleHAiOjE3NjcyMjU2NTAsImlhdCI6MTc2NzIyNTU5MCwiaXNzIjoiZ3Vhbmppbi1nYXRld2F5IiwianRpIjoiMTExMTExMTEtMjIyMi00MzMzLTg0NDQtNTU1NTU1NTU1NTU1Iiwicm9sZXMiOlsidXNlciJdLCJzdWIiOiJ1c2VyLTEiLCJ1bmFtZSI6ImFsaWNlIn0.fjN6iBQ5fEbeJaKW7Hg9K1RMR-CPdhtE8yN7mrg80OYbphzK1VKkrwU1bPKgaslkG5HOikUDfaRhwOLWOiNSgA",
+      "jwks_mode": "available",
+      "expect": {
+        "code": "TOKEN_INVALID",
+        "decision": "reject",
+        "reason_contains": "alg",
+        "stage": "alg",
+        "status": 401
+      },
+      "note": "**D29 的判别性证据**：kid=gw-2026-11（JWKS 里确有这把 SM2 键）+ 头里 alg=SM3withSM2 + 用**网关私钥真签**（SM3withSM2 与 SM2 是同一段字节的签名，去掉 alg 闸这种断言会被接受）。摘掉 alg 闸 → 本条与 AV-13 必红"
+    }
+  ]
+}

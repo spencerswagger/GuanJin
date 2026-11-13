@@ -1,0 +1,300 @@
+{
+  "algorithm": "X-GuanJin-Signature = Base64(HMAC-SM3(K, canonical))；K = base64 解码后的 32 字节",
+  "generated_by": "Gate 2026-11-13：canonical 段用真实现 internal/agent（Canonical/SortedQuery），HMAC-SM3 用独立实现（gmsm）",
+  "query_pairs_note": "query_pairs = 请求行 query 按 \u0026 / 首个 = 切分后的键值对（本文件取**解码后**形态）；query_raw 只记录来源形态、不参与断言。契约 A2 未明写「解码」这一步 → AH-12 标 pending_spec=true 由消费者跳过，待 Spec 补一句后转正",
+  "secret_b64": "Z3Vhbmppbi1hZ2VudC1obWFjLXZlYy1zZWNyZXQtMzI=",
+  "spec": "docs/sdk-contract.md §4.3 / decisions.md D1（canonical 逐字 FROZEN）",
+  "vectors": [
+    {
+      "vector_id": "AH-01",
+      "case": "empty_query_empty_body",
+      "method": "GET",
+      "path": "/api/v1/agent/policies",
+      "query_raw": "",
+      "query_pairs": null,
+      "timestamp": "1767225600",
+      "nonce": "bm9uY2UtdmVjdG9yLTAwMDE",
+      "body_utf8": "",
+      "expected_sorted_query": "",
+      "expected_body_sm3": "1ab21d8355cfa17f8e61194831e81a8f22bec8c728fefb747ed035eb5082aa2b",
+      "expected_canonical": "GET\n/api/v1/agent/policies\n\n1ab21d8355cfa17f8e61194831e81a8f22bec8c728fefb747ed035eb5082aa2b\n1767225600\nbm9uY2UtdmVjdG9yLTAwMDE",
+      "expected_signature": "5bE6jgCINKLaek6roDXMycu1KMS6Z2OFKl1zQWjF/EQ=",
+      "note": "空 query + 空 body：两段都不得省略"
+    },
+    {
+      "vector_id": "AH-02",
+      "case": "single_query",
+      "method": "GET",
+      "path": "/api/v1/agent/policies",
+      "query_raw": "since=12",
+      "query_pairs": [
+        [
+          "since",
+          "12"
+        ]
+      ],
+      "timestamp": "1767225600",
+      "nonce": "bm9uY2UtdmVjdG9yLTAwMDE",
+      "body_utf8": "",
+      "expected_sorted_query": "since=12",
+      "expected_body_sm3": "1ab21d8355cfa17f8e61194831e81a8f22bec8c728fefb747ed035eb5082aa2b",
+      "expected_canonical": "GET\n/api/v1/agent/policies\nsince=12\n1ab21d8355cfa17f8e61194831e81a8f22bec8c728fefb747ed035eb5082aa2b\n1767225600\nbm9uY2UtdmVjdG9yLTAwMDE",
+      "expected_signature": "olA5ODz2j85LnpRyyjP3ZewWHTozZW75xGcvP6hJjYw="
+    },
+    {
+      "vector_id": "AH-03",
+      "case": "multi_query_out_of_order",
+      "method": "GET",
+      "path": "/api/v1/agent/policies",
+      "query_raw": "c=3\u0026a=1\u0026b=2",
+      "query_pairs": [
+        [
+          "c",
+          "3"
+        ],
+        [
+          "a",
+          "1"
+        ],
+        [
+          "b",
+          "2"
+        ]
+      ],
+      "timestamp": "1767225600",
+      "nonce": "bm9uY2UtdmVjdG9yLTAwMDE",
+      "body_utf8": "",
+      "expected_sorted_query": "a=1\u0026b=2\u0026c=3",
+      "expected_body_sm3": "1ab21d8355cfa17f8e61194831e81a8f22bec8c728fefb747ed035eb5082aa2b",
+      "expected_canonical": "GET\n/api/v1/agent/policies\na=1\u0026b=2\u0026c=3\n1ab21d8355cfa17f8e61194831e81a8f22bec8c728fefb747ed035eb5082aa2b\n1767225600\nbm9uY2UtdmVjdG9yLTAwMDE",
+      "expected_signature": "pit5EEDEK01W8AJbL/toLUh3TFmREYGvcia93qIiEDA=",
+      "note": "乱序 → 按编码后 name 字节序"
+    },
+    {
+      "vector_id": "AH-04",
+      "case": "duplicate_name_diff_value",
+      "method": "GET",
+      "path": "/api/v1/agent/policies",
+      "query_raw": "tag=b\u0026tag=a",
+      "query_pairs": [
+        [
+          "tag",
+          "b"
+        ],
+        [
+          "tag",
+          "a"
+        ]
+      ],
+      "timestamp": "1767225600",
+      "nonce": "bm9uY2UtdmVjdG9yLTAwMDE",
+      "body_utf8": "",
+      "expected_sorted_query": "tag=a\u0026tag=b",
+      "expected_body_sm3": "1ab21d8355cfa17f8e61194831e81a8f22bec8c728fefb747ed035eb5082aa2b",
+      "expected_canonical": "GET\n/api/v1/agent/policies\ntag=a\u0026tag=b\n1ab21d8355cfa17f8e61194831e81a8f22bec8c728fefb747ed035eb5082aa2b\n1767225600\nbm9uY2UtdmVjdG9yLTAwMDE",
+      "expected_signature": "P4hcN5IE0WTZtwtlF3YKEqFsmzocv0BEjOadqbTP3Ck=",
+      "note": "重复键保留，name 相同再比 value（两级排序）"
+    },
+    {
+      "vector_id": "AH-05",
+      "case": "duplicate_name_same_value",
+      "method": "GET",
+      "path": "/api/v1/agent/policies",
+      "query_raw": "x=1\u0026x=1",
+      "query_pairs": [
+        [
+          "x",
+          "1"
+        ],
+        [
+          "x",
+          "1"
+        ]
+      ],
+      "timestamp": "1767225600",
+      "nonce": "bm9uY2UtdmVjdG9yLTAwMDE",
+      "body_utf8": "",
+      "expected_sorted_query": "x=1\u0026x=1",
+      "expected_body_sm3": "1ab21d8355cfa17f8e61194831e81a8f22bec8c728fefb747ed035eb5082aa2b",
+      "expected_canonical": "GET\n/api/v1/agent/policies\nx=1\u0026x=1\n1ab21d8355cfa17f8e61194831e81a8f22bec8c728fefb747ed035eb5082aa2b\n1767225600\nbm9uY2UtdmVjdG9yLTAwMDE",
+      "expected_signature": "B12budapagB9lcHecarDfLPDXD3eYevEs+9nqiIA4TE=",
+      "note": "同名同值：两条都留，顺序无关"
+    },
+    {
+      "vector_id": "AH-06",
+      "case": "empty_query_after_question",
+      "method": "GET",
+      "path": "/api/v1/agent/policies",
+      "query_raw": "?",
+      "query_pairs": null,
+      "timestamp": "1767225600",
+      "nonce": "bm9uY2UtdmVjdG9yLTAwMDE",
+      "body_utf8": "",
+      "expected_sorted_query": "",
+      "expected_body_sm3": "1ab21d8355cfa17f8e61194831e81a8f22bec8c728fefb747ed035eb5082aa2b",
+      "expected_canonical": "GET\n/api/v1/agent/policies\n\n1ab21d8355cfa17f8e61194831e81a8f22bec8c728fefb747ed035eb5082aa2b\n1767225600\nbm9uY2UtdmVjdG9yLTAwMDE",
+      "expected_signature": "5bE6jgCINKLaek6roDXMycu1KMS6Z2OFKl1zQWjF/EQ=",
+      "note": "`?` 后为空 → 空串（不是 `?`）"
+    },
+    {
+      "vector_id": "AH-07",
+      "case": "post_empty_body",
+      "method": "POST",
+      "path": "/api/v1/agent/report",
+      "query_raw": "",
+      "query_pairs": null,
+      "timestamp": "1767225600",
+      "nonce": "bm9uY2UtdmVjdG9yLTAwMDE",
+      "body_utf8": "",
+      "expected_sorted_query": "",
+      "expected_body_sm3": "1ab21d8355cfa17f8e61194831e81a8f22bec8c728fefb747ed035eb5082aa2b",
+      "expected_canonical": "POST\n/api/v1/agent/report\n\n1ab21d8355cfa17f8e61194831e81a8f22bec8c728fefb747ed035eb5082aa2b\n1767225600\nbm9uY2UtdmVjdG9yLTAwMDE",
+      "expected_signature": "KbDY4vHEBIa801O4ARmcp4x+cCynDbEuRLNg0CDTuxY=",
+      "note": "空 body 也要 SM3(\"\") 段"
+    },
+    {
+      "vector_id": "AH-08",
+      "case": "utf8_body",
+      "method": "POST",
+      "path": "/api/v1/agent/report",
+      "query_raw": "",
+      "query_pairs": null,
+      "timestamp": "1767225600",
+      "nonce": "bm9uY2UtdmVjdG9yLTAwMDE",
+      "body_utf8": "{\"note\":\"国密 SM3 摘要\"}",
+      "expected_sorted_query": "",
+      "expected_body_sm3": "c90a28200b747c7c5755c7bb583b7b04cec6ba5c10b71d95e8a9f955c0fa059a",
+      "expected_canonical": "POST\n/api/v1/agent/report\n\nc90a28200b747c7c5755c7bb583b7b04cec6ba5c10b71d95e8a9f955c0fa059a\n1767225600\nbm9uY2UtdmVjdG9yLTAwMDE",
+      "expected_signature": "LGY9qBb9tyC5jagnbmyc0B6zKHDpzYbJDJGPA8WPAgs=",
+      "note": "body 按 UTF-8 字节取 SM3 hex"
+    },
+    {
+      "vector_id": "AH-09",
+      "case": "context_path_included",
+      "method": "POST",
+      "path": "/order/api/v1/agent/report",
+      "query_raw": "",
+      "query_pairs": null,
+      "timestamp": "1767225600",
+      "nonce": "bm9uY2UtdmVjdG9yLTAwMDE",
+      "body_utf8": "{\"version\":7}",
+      "expected_sorted_query": "",
+      "expected_body_sm3": "1e5897d272fae015b6c722be0484420cf650cfe93404ce79a09a28572f7de8af",
+      "expected_canonical": "POST\n/order/api/v1/agent/report\n\n1e5897d272fae015b6c722be0484420cf650cfe93404ce79a09a28572f7de8af\n1767225600\nbm9uY2UtdmVjdG9yLTAwMDE",
+      "expected_signature": "iJ2T/fEjJZLgz3KRvMMSc5lEOV4EYHXMnrGK0u3l1oo=",
+      "note": "D1-A1：PATH 含 context-path，不得剥前缀"
+    },
+    {
+      "vector_id": "AH-10",
+      "case": "path_no_trailing_slash",
+      "method": "GET",
+      "path": "/a",
+      "query_raw": "",
+      "query_pairs": null,
+      "timestamp": "1767225600",
+      "nonce": "bm9uY2UtdmVjdG9yLTAwMDE",
+      "body_utf8": "",
+      "expected_sorted_query": "",
+      "expected_body_sm3": "1ab21d8355cfa17f8e61194831e81a8f22bec8c728fefb747ed035eb5082aa2b",
+      "expected_canonical": "GET\n/a\n\n1ab21d8355cfa17f8e61194831e81a8f22bec8c728fefb747ed035eb5082aa2b\n1767225600\nbm9uY2UtdmVjdG9yLTAwMDE",
+      "expected_signature": "HKyYpsmTLZKcsu6uvoiymzOoYlntQAjRQrZRGV7HWec=",
+      "note": "`/a` 与 `/a/` 是不同 PATH（本条 = 不带斜杠）"
+    },
+    {
+      "vector_id": "AH-11",
+      "case": "path_trailing_slash",
+      "method": "GET",
+      "path": "/a/",
+      "query_raw": "",
+      "query_pairs": null,
+      "timestamp": "1767225600",
+      "nonce": "bm9uY2UtdmVjdG9yLTAwMDE",
+      "body_utf8": "",
+      "expected_sorted_query": "",
+      "expected_body_sm3": "1ab21d8355cfa17f8e61194831e81a8f22bec8c728fefb747ed035eb5082aa2b",
+      "expected_canonical": "GET\n/a/\n\n1ab21d8355cfa17f8e61194831e81a8f22bec8c728fefb747ed035eb5082aa2b\n1767225600\nbm9uY2UtdmVjdG9yLTAwMDE",
+      "expected_signature": "JkoPTS4tRgPIFgNT0T/Gz4yD/+uwmRmvjg8Oi57gi+M=",
+      "note": "`/a/` 必须与 `/a` 算出不同签名"
+    },
+    {
+      "vector_id": "AH-12",
+      "case": "rfc3986_encoding",
+      "method": "GET",
+      "path": "/api/v1/agent/policies",
+      "query_raw": "q=a b%2Bc/中\u0026n=~-._",
+      "query_pairs": [
+        [
+          "q",
+          "a b+c/中"
+        ],
+        [
+          "n",
+          "~-._"
+        ]
+      ],
+      "timestamp": "1767225600",
+      "nonce": "bm9uY2UtdmVjdG9yLTAwMDE",
+      "body_utf8": "",
+      "expected_sorted_query": "n=~-._\u0026q=a%20b%2Bc%2F%E4%B8%AD",
+      "expected_body_sm3": "1ab21d8355cfa17f8e61194831e81a8f22bec8c728fefb747ed035eb5082aa2b",
+      "expected_canonical": "GET\n/api/v1/agent/policies\nn=~-._\u0026q=a%20b%2Bc%2F%E4%B8%AD\n1ab21d8355cfa17f8e61194831e81a8f22bec8c728fefb747ed035eb5082aa2b\n1767225600\nbm9uY2UtdmVjdG9yLTAwMDE",
+      "expected_signature": "G6JwlaRbdvb2jVUp64Y5qtdSAPbBrrPyHjGHnGJ189o=",
+      "note": "D1-A2 第④⑤步的唯一覆盖：空格→%20、+→%2B、/→%2F、中文按 UTF-8 大写 hex；断言只看 query_pairs，与 raw 串怎么解出 pairs 无关"
+    },
+    {
+      "vector_id": "AH-15",
+      "case": "rfc3986_raw_vs_decoded_pending_spec",
+      "pending_spec": true,
+      "method": "GET",
+      "path": "/api/v1/agent/policies",
+      "query_raw": "q=a%2Bb",
+      "query_pairs": [
+        [
+          "q",
+          "a+b"
+        ]
+      ],
+      "timestamp": "1767225600",
+      "nonce": "bm9uY2UtdmVjdG9yLTAwMDE",
+      "body_utf8": "",
+      "expected_sorted_query": "q=a%2Bb",
+      "expected_body_sm3": "1ab21d8355cfa17f8e61194831e81a8f22bec8c728fefb747ed035eb5082aa2b",
+      "expected_canonical": "GET\n/api/v1/agent/policies\nq=a%2Bb\n1ab21d8355cfa17f8e61194831e81a8f22bec8c728fefb747ed035eb5082aa2b\n1767225600\nbm9uY2UtdmVjdG9yLTAwMDE",
+      "expected_signature": "arDQt5ugIPZAFJ7Pwoi7UmK8OKql3hmzbiEVB4TmNE0=",
+      "note": "**PENDING（消费者跳过）**：契约 A2 字面「取 ? 之后原始串 → 编码在比较之前」+ A1「不做 URL 解码」⇒ raw→再编码（%2Bb→%252Bb）；本向量取先解码再编码（%2Bb→%2Bb）。两种口径结果不同，待 Spec 在 A2 补一句后二选一"
+    },
+    {
+      "vector_id": "AH-13",
+      "case": "case_sensitive_byte_order",
+      "method": "GET",
+      "path": "/api/v1/agent/policies",
+      "query_raw": "B=2\u0026a=1\u0026A=3\u0026b=4",
+      "query_pairs": [
+        [
+          "B",
+          "2"
+        ],
+        [
+          "a",
+          "1"
+        ],
+        [
+          "A",
+          "3"
+        ],
+        [
+          "b",
+          "4"
+        ]
+      ],
+      "timestamp": "1767225600",
+      "nonce": "bm9uY2UtdmVjdG9yLTAwMDE",
+      "body_utf8": "",
+      "expected_sorted_query": "A=3\u0026B=2\u0026a=1\u0026b=4",
+      "expected_body_sm3": "1ab21d8355cfa17f8e61194831e81a8f22bec8c728fefb747ed035eb5082aa2b",
+      "expected_canonical": "GET\n/api/v1/agent/policies\nA=3\u0026B=2\u0026a=1\u0026b=4\n1ab21d8355cfa17f8e61194831e81a8f22bec8c728fefb747ed035eb5082aa2b\n1767225600\nbm9uY2UtdmVjdG9yLTAwMDE",
+      "expected_signature": "6v1vmyHrc70W/wClKxRvOwU3j+WyM/McVAnYYop3hsI=",
+      "note": "字节序比较（大写字母在小写之前），不做大小写折叠"
+    }
+  ]
+}
