@@ -71,9 +71,9 @@ final class GuanjinDurationBindingGuard implements BeanFactoryPostProcessor, Env
             if (property == null) {
                 continue;
             }
-            String canonical = requireDurationText(key, unwrap(property.getValue()));
             Object raw = unwrap(property.getValue());
-            if (canonical != null && !canonical.equals(raw)) {
+            String canonical = requireDurationText(key, raw);
+            if (canonical != null && !canonical.equals(String.valueOf(raw))) {
                 normalized.put(key, canonical);
             }
         }
@@ -81,7 +81,9 @@ final class GuanjinDurationBindingGuard implements BeanFactoryPostProcessor, Env
             // 契约 §3.2.1 显式允许「首尾空白」（trim 是写进契约的），但 Spring 的 Duration 转换器
             // **不做 trim**（" 2s " 会抛 ConversionFailedException，且文案不带 §3.2.1）。
             // 判过之后把 trim 版本以最高优先级塞回去，binder 拿到的就是规范文本——
-            // 否则同一条契约在 Java 主路径上做不到（Go 侧 strings.TrimSpace 本来就能过）。
+            // 否则同一条契约在 Java 主路径上做不到（Go 侧本来就会先 trim 再 ParseDuration）。
+            // trim 字符集 = 契约冻结的 4 个 ASCII 空白（GuanjinConfigValidator.trimAsciiWhitespace），
+            // 不是 String.trim()：后者会多剥 U+0000–U+001F，与 Go 侧口径分叉。
             environment.getPropertySources()
                     .addFirst(new MapPropertySource("guanjinDurationTrimmed", normalized));
         }
@@ -126,7 +128,7 @@ final class GuanjinDurationBindingGuard implements BeanFactoryPostProcessor, Env
             }
         }
         GuanjinConfigValidator.parseDuration(key, text);
-        return text.trim();
+        return GuanjinConfigValidator.trimAsciiWhitespace(text);
     }
 
     private static Object unwrap(Object value) {

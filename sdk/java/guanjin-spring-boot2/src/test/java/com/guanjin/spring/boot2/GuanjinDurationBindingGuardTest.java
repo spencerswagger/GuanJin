@@ -125,6 +125,46 @@ class GuanjinDurationBindingGuardTest {
         }
     }
 
+    @Test
+    void AC_SDK_11_nonAsciiWhitespaceIsNotTrimmed() {
+        // 契约 §3.2.1 冻结 trim 字符集 = 4 个 ASCII 空白；NBSP / 全角空格 / U+000B / U+000C / U+0000
+        // 一律不 trim → 落正则外即失败。**这同时钉住"不得用 String.trim()"**（它会剥 U+0000–U+001F）。
+        assertRejected("guanjin.platform.connect-timeout", "\u00A02s", "guanjin.platform.connect-timeout");
+        assertRejected("guanjin.platform.connect-timeout", "2s\u3000", "guanjin.platform.connect-timeout");
+        assertRejected("guanjin.gateway.clock-skew", "\u000B60s", "guanjin.gateway.clock-skew");
+        assertRejected("guanjin.gateway.clock-skew", "\u000C60s", "guanjin.gateway.clock-skew");
+        assertRejected("guanjin.agent.pull.interval", "\u000030s", "guanjin.agent.pull.interval");
+    }
+
+    @Test
+    void AC_SDK_11_fourAsciiWhitespaceAreTrimmedAndBound() {
+        Map<String, Object> props = baseProps();
+        props.put("guanjin.agent.pull.interval", "\t30s\r\n"); // 契约 CM-17 的形态
+        props.put("guanjin.platform.read-timeout", "\r\n 5s \t");
+        props.put("guanjin.authz.enabled", "false");
+
+        ConfigurableApplicationContext ctx = start(props);
+        try {
+            GuanjinProperties bound = ctx.getBean(GuanjinProperties.class);
+            assertEquals(java.time.Duration.ofSeconds(30), bound.getAgent().getPull().getInterval());
+            assertEquals(java.time.Duration.ofSeconds(5), bound.getPlatform().getReadTimeout());
+        } finally {
+            ctx.close();
+        }
+    }
+
+    @Test
+    void AC_SDK_11_upperBoundViolationFailsBeforeBinding() {
+        // 契约 §3.2.1「数值上界」= 可无损换算 int64 纳秒（≈292 年）：Java 的 Duration.ofHours 本身不溢出，
+        // 所以必须在解析层判死，否则 Java 收、Go 拒（CM-15 的形态）。
+        Map<String, Object> props = baseProps();
+        props.put("guanjin.platform.connect-timeout", "9999999999999h");
+        Throwable e = assertThrows(Throwable.class, () -> start(props), "超 int64 纳秒上界必须启动失败");
+        String msg = messages(e);
+        assertTrue(msg.contains("guanjin.platform.connect-timeout"), "错误必须报出键名：" + msg);
+        assertTrue(msg.contains("int64"), "错误应点明 int64 纳秒上界：" + msg);
+    }
+
     /** 该键的原始文本是非法形态 → 启动失败，错误里必须有键名与 §3.2.1 的合法形态。 */
     private void assertRejected(String key, String raw, String expectedKeyInMessage) {
         Map<String, Object> props = baseProps();
