@@ -39,9 +39,11 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 /**
  * `spec/vectors/*.json` 的**契约一致性**消费者（Java 侧）。
@@ -294,20 +296,52 @@ class SpecVectorsConformanceTest {
     }
 
     @Test
-    void configPendingCasesMatchContractSection321() throws Exception {
+    void configPendingCasesMustBeEmpty() throws Exception {
+        // pending_cases 是"契约已定、实现未跟上"的过渡桶，**必须为空**：还留着就说明有该转正的向量被拖着。
+        // 唯一用过它的 CM-13（clock-skew=0s）已在契约 v16 §8.8 E42 + Nova 放开零值后转进 cases（G21⑥）。
         JsonNode doc = vector("config-mapping.json");
         JsonNode pending = doc.get("pending_cases");
-        assertNotNull(pending, "config-mapping.json 缺 pending_cases（契约已定的正向欠账没了：CM-13 clock-skew=0s）");
-        assertTrue(pending.size() > 0, "pending_cases 为空");
-        for (JsonNode pc : pending) {
-            String key = pc.get("key").asText();
-            String got = javaBehavior(key, pc.get("value").asText());
-            String want = pc.get("current").get("java").asText();
-            String id = pc.get("vector_id").asText();
-            assertEquals(want, got, id + "(" + pc.get("case").asText() + ") 键=" + key
-                    + " 值=" + pc.get("value").asText() + "：Java 当前行为与向量钉的值不一致 —— 若已按契约改好，"
-                    + "请把这条**升级成正例**（进 cases，按 " + pc.get("expect_after_fix").asText() + " 断言），不要只改 current");
+        if (pending != null && pending.size() > 0) {
+            StringBuilder ids = new StringBuilder();
+            for (JsonNode pc : pending) {
+                if (ids.length() > 0) {
+                    ids.append(",");
+                }
+                ids.append(pc.get("vector_id").asText());
+            }
+            fail("config-mapping.json 的 pending_cases 必须为空，现在有 " + ids
+                    + " —— 契约已定的条目要**转进 cases**（按 expect_after_fix 断言），不要挂在过渡桶里");
         }
+    }
+
+    @Test
+    void configZeroClockSkewIsAcceptedAndNotDefault() throws Exception {
+        // CM-13（clock-skew=0s）：装载值必须是 0，且**不等于默认 60000**（回落默认 = 零容忍语义丢失）。
+        JsonNode doc = vector("config-mapping.json");
+        JsonNode cm13 = null;
+        for (JsonNode c : doc.get("cases")) {
+            if ("CM-13".equals(c.get("vector_id").asText())) {
+                cm13 = c;
+                break;
+            }
+        }
+        assertNotNull(cm13, "config-mapping.json 缺 CM-13（`clock-skew=0s` 正向用例，契约 v16 §8.8 E42 / G21⑥）");
+        JsonNode expect = cm13.get("expect").get("guanjin.gateway.clock-skew");
+        assertNotNull(expect, "CM-13 的 expect 里没有 guanjin.gateway.clock-skew");
+        assertEquals(0L, expect.asLong(), "CM-13：输入 \"0s\"，向量期望必须是 0 ms（契约 v16 §8.8 E42）");
+        assertNotEquals(60000L, expect.asLong(), "CM-13：向量期望等于默认值 60000 —— 说明把『回落默认』当成了契约期望");
+
+        // 真跑实现：accept 且值 = 0（零容忍，不得回落 60000）。
+        Map<String, String> in = new LinkedHashMap<String, String>();
+        in.put("guanjin.platform.base-url", "https://p.example.com");
+        in.put("guanjin.client.id", "orders");
+        in.put("guanjin.client.hmac-secret", "s");
+        in.put("guanjin.gateway.clock-skew", "0s");
+        GuanjinConfig cfg = GuanjinConfigLoader.fromMap(in);
+        assertEquals(0L, cfg.getGateway().getClockSkew().toMillis(),
+                "Java 装载 clock-skew=0s 后必须是 0 ms（零容忍），不得回落默认 60000");
+        java.util.List<String> errs = GuanjinConfigValidator.validate(cfg, GuanjinEnvironment.of("local"));
+        assertTrue(errs == null || errs.isEmpty(), "Java 校验器不得把 clock-skew=0s 判非法（v16 §8.8 E42）：" + errs);
     }
 
     @Test

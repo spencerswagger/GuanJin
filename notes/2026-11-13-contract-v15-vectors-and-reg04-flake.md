@@ -62,3 +62,22 @@ A 路径（盲索引查不到就 409）不写表，所以不被拖（这正是 A
 - `CM-13`/`CM-15`/`CM-16` 的 `current` 是**现状钉桩**，不是判定标准。Nova 按补口①③ 改完 → 消费者立刻红，
   提示改表（`CM-13` 要求升级进 `cases` 按 `expect_after_fix` 断言）。**别用 skip/pending 掩盖**。
 - `scope_cases` / `integrity_cases` 仍是 UNIMPLEMENTED，不得记 PASS。
+
+## 五、契约 v16 收尾（2026-11-13，G21⑤→⑥：`CM-13` 转正）
+
+- **`CM-13` 转正**（Nova #163 `0de749d` 放开 `clock-skew=0s` 之后，Gate 侧 G21⑥）：`pending_cases` 桶整个**删除**，
+  `CM-13` 进 `cases` 正向（`expect.gateway.clock-skew = 0`）。生成期硬校验：期望若不是 0、或恰等于默认 `60000`
+  → `go run ./scripts/vecgen` 直接 panic（防止把"回落默认"记成契约期望）。
+- 两侧消费者改成断言 **`pending_cases` 必须为空**（还留着 = 有该转正的向量被拖着）；并单点钉「`CM-13` 期望 = 0
+  且 ≠ 60000」。`accept` 的词表口径是「装载成功**且校验通过**」，所以两侧都真跑一遍实现：Go `LoadFromMap`+`Validate`、
+  Java `GuanjinConfigLoader.fromMap`+`GuanjinConfigValidator.validate`（只断言向量里的数字会漏掉"装载接受、校验仍拒"的假绿）。
+- **A/B（有牙，逐条留痕）**：①塞假 `pending_cases`（`CM-99`）→ Go/Java 同时红并点名；②把 `CM-13` 期望改成 `60000`
+  → Go 三条断言齐红（含"等于默认值"那条）；③vecgen 里摘掉 `clock-skew=0s` 输入（模拟回落默认）→ 生成期 panic；
+  ④Go `ClockSkew < 0` 改回 `<= 0` → `TestClockSkewZeroIsLegalZeroTolerance` + 向量消费者红；⑤Java 校验器把
+  `skew.isZero()` 加回 → `configZeroClockSkewIsAcceptedAndNotDefault` 抛 `GuanjinConfigException`。全部还原后双绿。
+- **复跑**：Go `sdk/go/guanjin`（含 `TestSpecVectors*`）+ `internal/agent` 全绿，`vet`/`gofmt` 干净；
+  Java `mvn test` = `guanjin-core` **89** + `guanjin-spring-boot2` **58** = **147 tests / 0 fail**；
+  `go run ./scripts/vecgen` 后 `config-mapping.json` 逐字节不变（`assertion-verify.json` 每次重签，已 checkout 掉）。
+- **留痕**：`docs/qa/gate-criteria.md` 的 `AC-SDK-11` 行仍写"唯一未落地项 = `CM-13`"、`docs/acceptance-criteria.md`
+  §15-G21 的 ⑤⑥ 仍标"待 Nova/待 Gate"、`docs/sdk-contract.md:821` 的冲突段仍是旧状态 —— 这三处属 Gate/Spec 文档，
+  **不在本分支改**（避免把 Gate 文档混进 SDK PR），由 Gate 在 main 上单独收口。

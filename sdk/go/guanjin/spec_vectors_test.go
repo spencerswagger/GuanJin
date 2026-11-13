@@ -252,15 +252,58 @@ func TestSpecVectorsConfigMapping(t *testing.T) {
 				rc.VectorID, rc.Case, rc.Key, rc.Value, got, want, got)
 		}
 	}
-	if len(doc.PendingCases) == 0 {
-		t.Fatalf("config-mapping.json 缺 pending_cases（契约已定的正向欠账没了：CM-13 clock-skew=0s）")
-	}
-	for _, pc := range doc.PendingCases {
-		got, want := goBehavior(pc.Key, pc.Value), pc.Current["go"]
-		if got != want {
-			t.Errorf("%s(%s) 键=%s 值=%q：Go 当前 %s，向量里钉的是 %s —— 若已按契约改好，请把这条**升级成正例**（进 cases，按 %q 断言），不要只改 current",
-				pc.VectorID, pc.Case, pc.Key, pc.Value, got, want, pc.ExpectAfterFix)
+	// `pending_cases` 是"契约已定、实现未跟上"的过渡桶：**必须为空**（还留着就说明有该转正的向量被拖着）。
+	// 唯一用过它的 CM-13（`clock-skew=0s`）已在契约 v16 §8.8 E42 + Nova 放开零值后转进 `cases`（G21⑥）。
+	if len(doc.PendingCases) != 0 {
+		ids := make([]string, 0, len(doc.PendingCases))
+		for _, pc := range doc.PendingCases {
+			ids = append(ids, pc.VectorID)
 		}
+		t.Errorf("config-mapping.json 的 pending_cases 必须为空，现在有 %s —— 契约已定的条目要**转进 cases**（按 expect_after_fix 断言），不要挂在过渡桶里", strings.Join(ids, ","))
+	}
+
+	// CM-13（`clock-skew=0s`）：通用 case 断言已覆盖值，这里再单点钉两条 ——
+	// ① 期望必须是 **0**；② 期望**必须不等于默认 60000**（回落默认 = 零容忍语义丢失，且向量会自证错误）。
+	foundCM13 := false
+	for _, c := range doc.Cases {
+		if c.VectorID != "CM-13" {
+			continue
+		}
+		foundCM13 = true
+		raw, ok := c.Expect[KeyGatewayClockSkew]
+		if !ok {
+			t.Fatalf("CM-13 的 expect 里没有 %s", KeyGatewayClockSkew)
+		}
+		num, ok := raw.(float64) // encoding/json 解出来是 float64
+		if !ok {
+			t.Fatalf("CM-13 的 %s 期望类型不是数字：%T", KeyGatewayClockSkew, raw)
+		}
+		if int64(num) != 0 {
+			t.Errorf("CM-13：输入 \"0s\"，向量期望 %v ms —— 契约 v16 §8.8 E42 要求 0", num)
+		}
+		if int64(num) == DefaultClockSkew.Milliseconds() {
+			t.Errorf("CM-13：向量期望等于默认值 %d ms —— 说明把『回落默认』当成了契约期望", DefaultClockSkew.Milliseconds())
+		}
+	}
+	if !foundCM13 {
+		t.Fatalf("config-mapping.json 缺 CM-13（`clock-skew=0s` 正向用例，契约 v16 §8.8 E42 / G21⑥）")
+	}
+	// `accept` 的词表口径是「装载成功**且校验通过**」——所以再真跑一遍：0s 必须过 Validate。
+	// 只断言向量里的数字是不够的：实现若在装载期接受、校验期仍按"必须为正"拒，向量值照样是 0（假绿）。
+	cm13Cfg, err := LoadFromMap(map[string]string{
+		KeyPlatformBaseURL:  "https://p.example.com",
+		KeyClientID:         "orders",
+		KeyClientHMACSecret: "s",
+		KeyGatewayClockSkew: "0s",
+	})
+	if err != nil {
+		t.Fatalf("CM-13：LoadFromMap 失败：%v", err)
+	}
+	if got := cm13Cfg.Gateway.ClockSkew.Milliseconds(); got != 0 {
+		t.Errorf("CM-13：Go 装载后 clock-skew = %d ms，必须是 0（不得回落默认 %d）", got, DefaultClockSkew.Milliseconds())
+	}
+	if verr := cm13Cfg.Validate(EnvLocal); verr != nil {
+		t.Errorf("CM-13：Go `Validate` 不得把 clock-skew=0s 判非法（契约 v16 §8.8 E42）：%v", verr)
 	}
 
 	// 已定性的实现缺陷：Go 侧实际值被**钉死**（漂移即红），期望值按契约写。

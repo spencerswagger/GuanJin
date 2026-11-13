@@ -337,6 +337,51 @@
         "jwks_uri": "http://127.0.0.1:18080/.well-known/jwks.json"
       },
       "note": "补口③（Gate 补强）：trim 后 45s ≠ 默认 30s → 值 = 45000ms。一侧若『没真解析、直接回落默认』，本条必红；CM-17 单独排不掉这种回落"
+    },
+    {
+      "vector_id": "CM-13",
+      "case": "duration_accept_zero_clock_skew",
+      "input": {
+        "guanjin.client.id": "orders",
+        "guanjin.gateway.clock-skew": "0s",
+        "guanjin.platform.base-url": "http://127.0.0.1:18080"
+      },
+      "expect": {
+        "guanjin.agent.pull.enabled": false,
+        "guanjin.agent.pull.interval": 30000,
+        "guanjin.agent.report.enabled": true,
+        "guanjin.agent.report.on-change": true,
+        "guanjin.agent.report.on-startup": true,
+        "guanjin.authz.default-role": "user",
+        "guanjin.authz.enabled": true,
+        "guanjin.authz.model-conf": "classpath:/guanjin/model.conf",
+        "guanjin.authz.replay-store": "redis",
+        "guanjin.client.hmac-secret": "",
+        "guanjin.client.id": "orders",
+        "guanjin.enabled": true,
+        "guanjin.gateway.assertion-header": "X-GuanJin-Assertion",
+        "guanjin.gateway.aud": "",
+        "guanjin.gateway.clock-skew": 0,
+        "guanjin.gateway.issuer": "guanjin-gateway",
+        "guanjin.gateway.jwks-cache-ttl": 600000,
+        "guanjin.gateway.jwks-unknown-kid-force-refresh": true,
+        "guanjin.gateway.jwks-uri": "",
+        "guanjin.gateway.replay-window": 60000,
+        "guanjin.platform.base-url": "http://127.0.0.1:18080",
+        "guanjin.platform.connect-timeout": 2000,
+        "guanjin.platform.read-timeout": 3000,
+        "guanjin.public-paths": [],
+        "guanjin.public-paths-include-builtin": true,
+        "guanjin.security.authorities-resolver": "",
+        "guanjin.security.inject-security-context": true,
+        "guanjin.security.role-prefix": "ROLE_",
+        "guanjin.startup.print-public-paths": true
+      },
+      "expect_derived": {
+        "aud": "orders",
+        "jwks_uri": "http://127.0.0.1:18080/.well-known/jwks.json"
+      },
+      "note": "契约 v16 §8.8 E42 / §3.2.1 补口①：`0s` 合法 = 零容忍，内部值 **0 ms**，**≠ 默认 60000**（回落默认即红）。对照 `CM-14`：`replay-window=0s` 是**安全约束**失败，不是解析失败"
     }
   ],
   "encoding": "duration 一律毫秒整数（duration_ms）；list 一律数组；bool 一律 true/false 字面量",
@@ -528,21 +573,6 @@
     },
     "note": "口径（写死，别两种说法并存）：**已修就删表、未修才登记**。①首选**生成期硬校验** —— 实现一漂移，`go run ./scripts/vecgen` 直接 panic（例：#17 的默认值，见上方校验循环），不留任何\"静默覆盖期望\"的口子；②只有\"生成期判不死、又必须先把契约值当期望\"的偏差才进 `defects`，写法固定为「期望按契约 + 把实现现值钉死」，漂移即红；③**修好后必须删掉该条**（不保留\"已修历史\"，历史在 git 里）。当前 `defects` 为空：`guanjin.authz.model-conf`（Go 曾给 \"model.conf\"）已于 2026-11-13 修好并删表。duration 口径差异已由契约 §3.2.1 裁决（收紧 Java），落到 `duration_rule` + `reject_cases`，不再是\"差异\""
   },
-  "pending_cases": [
-    {
-      "case": "duration_accept_zero_clock_skew",
-      "contract": "补口①：`0s` 过正则、按零值如实生效；`gateway.clock-skew = 0s` **合法**（= 零容忍），且 ≠ 默认 60000",
-      "current": {
-        "go": "reject@validate",
-        "java": "reject@load"
-      },
-      "expect_after_fix": "accept，内部值 0（毫秒）",
-      "key": "guanjin.gateway.clock-skew",
-      "owner": "Nova：Go `Config.Validate` 与 Java 校验器目前都把 0 判成『必须为正』，需按补口①放开零值（只 clock-skew；replay-window 仍由安全约束拦，见 CM-14）",
-      "value": "0s",
-      "vector_id": "CM-13"
-    }
-  ],
   "reject_cases": [
     {
       "case": "duration_reject_plain_number",
