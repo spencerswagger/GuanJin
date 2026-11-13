@@ -248,6 +248,95 @@
         "jwks_uri": "http://127.0.0.1:18080/.well-known/jwks.json"
       },
       "note": "list 无方括号（逗号分隔）与带方括号（CM-02）等价"
+    },
+    {
+      "vector_id": "CM-17",
+      "case": "duration_trim_ascii_whitespace",
+      "input": {
+        "guanjin.agent.pull.interval": "\t30s\r\n",
+        "guanjin.gateway.clock-skew": " 60s ",
+        "guanjin.platform.base-url": "http://127.0.0.1:18080"
+      },
+      "expect": {
+        "guanjin.agent.pull.enabled": false,
+        "guanjin.agent.pull.interval": 30000,
+        "guanjin.agent.report.enabled": true,
+        "guanjin.agent.report.on-change": true,
+        "guanjin.agent.report.on-startup": true,
+        "guanjin.authz.default-role": "user",
+        "guanjin.authz.enabled": true,
+        "guanjin.authz.model-conf": "classpath:/guanjin/model.conf",
+        "guanjin.authz.replay-store": "redis",
+        "guanjin.client.hmac-secret": "",
+        "guanjin.client.id": "",
+        "guanjin.enabled": true,
+        "guanjin.gateway.assertion-header": "X-GuanJin-Assertion",
+        "guanjin.gateway.aud": "",
+        "guanjin.gateway.clock-skew": 60000,
+        "guanjin.gateway.issuer": "guanjin-gateway",
+        "guanjin.gateway.jwks-cache-ttl": 600000,
+        "guanjin.gateway.jwks-unknown-kid-force-refresh": true,
+        "guanjin.gateway.jwks-uri": "",
+        "guanjin.gateway.replay-window": 60000,
+        "guanjin.platform.base-url": "http://127.0.0.1:18080",
+        "guanjin.platform.connect-timeout": 2000,
+        "guanjin.platform.read-timeout": 3000,
+        "guanjin.public-paths": [],
+        "guanjin.public-paths-include-builtin": true,
+        "guanjin.security.authorities-resolver": "",
+        "guanjin.security.inject-security-context": true,
+        "guanjin.security.role-prefix": "ROLE_",
+        "guanjin.startup.print-public-paths": true
+      },
+      "expect_derived": {
+        "aud": "",
+        "jwks_uri": "http://127.0.0.1:18080/.well-known/jwks.json"
+      },
+      "note": "补口③：\t/\r/\n/空格 属冻结的 4 字符 trim 集，剥后合法（#23 = 30000ms、#10 = 60000ms）。**但 30s 恰是 #23 的默认值**，本条只证『接受』，不能单独证明『没回落默认』——那一点由 CM-17B 覆盖"
+    },
+    {
+      "vector_id": "CM-17B",
+      "case": "duration_trim_not_default_value",
+      "input": {
+        "guanjin.agent.pull.interval": "\t45s\r\n",
+        "guanjin.platform.base-url": "http://127.0.0.1:18080"
+      },
+      "expect": {
+        "guanjin.agent.pull.enabled": false,
+        "guanjin.agent.pull.interval": 45000,
+        "guanjin.agent.report.enabled": true,
+        "guanjin.agent.report.on-change": true,
+        "guanjin.agent.report.on-startup": true,
+        "guanjin.authz.default-role": "user",
+        "guanjin.authz.enabled": true,
+        "guanjin.authz.model-conf": "classpath:/guanjin/model.conf",
+        "guanjin.authz.replay-store": "redis",
+        "guanjin.client.hmac-secret": "",
+        "guanjin.client.id": "",
+        "guanjin.enabled": true,
+        "guanjin.gateway.assertion-header": "X-GuanJin-Assertion",
+        "guanjin.gateway.aud": "",
+        "guanjin.gateway.clock-skew": 60000,
+        "guanjin.gateway.issuer": "guanjin-gateway",
+        "guanjin.gateway.jwks-cache-ttl": 600000,
+        "guanjin.gateway.jwks-unknown-kid-force-refresh": true,
+        "guanjin.gateway.jwks-uri": "",
+        "guanjin.gateway.replay-window": 60000,
+        "guanjin.platform.base-url": "http://127.0.0.1:18080",
+        "guanjin.platform.connect-timeout": 2000,
+        "guanjin.platform.read-timeout": 3000,
+        "guanjin.public-paths": [],
+        "guanjin.public-paths-include-builtin": true,
+        "guanjin.security.authorities-resolver": "",
+        "guanjin.security.inject-security-context": true,
+        "guanjin.security.role-prefix": "ROLE_",
+        "guanjin.startup.print-public-paths": true
+      },
+      "expect_derived": {
+        "aud": "",
+        "jwks_uri": "http://127.0.0.1:18080/.well-known/jwks.json"
+      },
+      "note": "补口③（Gate 补强）：trim 后 45s ≠ 默认 30s → 值 = 45000ms。一侧若『没真解析、直接回落默认』，本条必红；CM-17 单独排不掉这种回落"
     }
   ],
   "encoding": "duration 一律毫秒整数（duration_ms）；list 一律数组；bool 一律 true/false 字面量",
@@ -439,12 +528,27 @@
     },
     "note": "口径（写死，别两种说法并存）：**已修就删表、未修才登记**。①首选**生成期硬校验** —— 实现一漂移，`go run ./scripts/vecgen` 直接 panic（例：#17 的默认值，见上方校验循环），不留任何\"静默覆盖期望\"的口子；②只有\"生成期判不死、又必须先把契约值当期望\"的偏差才进 `defects`，写法固定为「期望按契约 + 把实现现值钉死」，漂移即红；③**修好后必须删掉该条**（不保留\"已修历史\"，历史在 git 里）。当前 `defects` 为空：`guanjin.authz.model-conf`（Go 曾给 \"model.conf\"）已于 2026-11-13 修好并删表。duration 口径差异已由契约 §3.2.1 裁决（收紧 Java），落到 `duration_rule` + `reject_cases`，不再是\"差异\""
   },
+  "pending_cases": [
+    {
+      "case": "duration_accept_zero_clock_skew",
+      "contract": "补口①：`0s` 过正则、按零值如实生效；`gateway.clock-skew = 0s` **合法**（= 零容忍），且 ≠ 默认 60000",
+      "current": {
+        "go": "reject@validate",
+        "java": "reject@load"
+      },
+      "expect_after_fix": "accept，内部值 0（毫秒）",
+      "key": "guanjin.gateway.clock-skew",
+      "owner": "Nova：Go `Config.Validate` 与 Java 校验器目前都把 0 判成『必须为正』，需按补口①放开零值（只 clock-skew；replay-window 仍由安全约束拦，见 CM-14）",
+      "value": "0s",
+      "vector_id": "CM-13"
+    }
+  ],
   "reject_cases": [
     {
       "case": "duration_reject_plain_number",
       "current": {
-        "go": "reject",
-        "java": "reject"
+        "go": "reject@load",
+        "java": "reject@load"
       },
       "key": "guanjin.gateway.clock-skew",
       "reason": "§3.2.1 必须失败①：纯数字（隐式毫秒单位）",
@@ -454,8 +558,8 @@
     {
       "case": "duration_reject_unit_d",
       "current": {
-        "go": "reject",
-        "java": "reject"
+        "go": "reject@load",
+        "java": "reject@load"
       },
       "key": "guanjin.gateway.clock-skew",
       "reason": "§3.2.1 必须失败②：单位 `d`（不在闭合集 ms|s|m|h）",
@@ -465,8 +569,8 @@
     {
       "case": "duration_reject_combined",
       "current": {
-        "go": "reject",
-        "java": "reject"
+        "go": "reject@load",
+        "java": "reject@load"
       },
       "key": "guanjin.gateway.clock-skew",
       "reason": "§3.2.1 必须失败⑤：组合形态",
@@ -476,8 +580,8 @@
     {
       "case": "duration_reject_fraction",
       "current": {
-        "go": "reject",
-        "java": "reject"
+        "go": "reject@load",
+        "java": "reject@load"
       },
       "key": "guanjin.platform.read-timeout",
       "reason": "§3.2.1 必须失败④：小数",
@@ -487,8 +591,8 @@
     {
       "case": "duration_reject_iso8601",
       "current": {
-        "go": "reject",
-        "java": "reject"
+        "go": "reject@load",
+        "java": "reject@load"
       },
       "key": "guanjin.platform.connect-timeout",
       "reason": "§3.2.1 必须失败⑥：ISO-8601",
@@ -498,8 +602,8 @@
     {
       "case": "duration_reject_signed",
       "current": {
-        "go": "reject",
-        "java": "reject"
+        "go": "reject@load",
+        "java": "reject@load"
       },
       "key": "guanjin.agent.pull.interval",
       "reason": "§3.2.1 必须失败⑦：带符号",
@@ -509,13 +613,46 @@
     {
       "case": "duration_reject_upper_unit",
       "current": {
-        "go": "reject",
-        "java": "reject"
+        "go": "reject@load",
+        "java": "reject@load"
       },
       "key": "guanjin.gateway.jwks-cache-ttl",
       "reason": "§3.2.1 单位闭合集判据：大写单位不认（`1S`/`10M` 非法）",
       "value": "1S",
       "vector_id": "CM-12"
+    },
+    {
+      "case": "duration_reject_zero_replay_window_by_safety_rule",
+      "current": {
+        "go": "reject@validate",
+        "java": "reject@load"
+      },
+      "key": "guanjin.gateway.replay-window",
+      "reason": "补口①：`0s` **解析合法**，但 `gateway.replay-window` 必须 ≥ 令牌 `exp`（60s）→ 启动失败。这条**不是解析失败**，文案要能与 §3.2.1 的解析失败区分（Go『必须 ≥ 1m0s』/ Java『必须 ≥ 60s』）",
+      "value": "0s",
+      "vector_id": "CM-14"
+    },
+    {
+      "case": "duration_reject_over_int64_nanos",
+      "current": {
+        "go": "reject@load",
+        "java": "accept"
+      },
+      "key": "guanjin.platform.connect-timeout",
+      "reason": "补口③：超上界（必须能无损换算成 int64 纳秒，≈292 年）→ 启动失败报键名；**不许**截断或退化成 0",
+      "value": "9999999999999h",
+      "vector_id": "CM-15"
+    },
+    {
+      "case": "duration_reject_nbsp_not_trimmed",
+      "current": {
+        "go": "accept",
+        "java": "reject@load"
+      },
+      "key": "guanjin.gateway.clock-skew",
+      "reason": "补口③：NBSP（U+00A0）**不在** 4 字符 trim 集内 → 落正则外即失败。用语言默认 trim（Go `strings.TrimSpace` / Java `String.trim()`）会误放行",
+      "value": " 2s",
+      "vector_id": "CM-16"
     }
   ],
   "removed_keys": {
