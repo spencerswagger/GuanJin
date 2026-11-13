@@ -79,9 +79,13 @@ python3 scripts/vuln-snapshot-refresh.py --osv http://<内网镜像>   # 内网�
 `docs/qa/vuln-allowlist.tsv`，5 列 TAB 分隔：`id / ecosystem / module / reason / expires`。
 
 **当前 33 条，全部是 Maven（`sdk/java`）**，到期日统一 **2026-12-13**（登记日 2026-11-13，30 天）：
-`sdk/java` 首次经 CycloneDX BOM 入闸（#136 / merge `2df9879`，D23③②）一次性暴露的**真实命中**——
-**不是**放宽阈值或整类豁免换来的绿；分族与责任人见 §5 末（同 major 小跳 24 条 / 跨 major 9 条），
-CRITICAL 5 / HIGH 28。到期由 `scripts/vuln-gate.py` **自动重新判红**，逾期未升级则 `AC-ENG-07` 降级。
+`sdk/java` 首次经 CycloneDX BOM 入闸（#136 / merge `2df9879`，D23③②）一次性暴露的**阻断级真实命中**
+（同一日志另有 **34 条 LOW 级"仅提示"**，不进本文件）——**不是**放宽阈值或整类豁免换来的绿；
+CRITICAL **5** / HIGH **28**。分族与责任人见 §5 末（**A 12 / B 11 / C 10**，2026-11-13 修正，旧账 24/9 作废）。
+到期由 `scripts/vuln-gate.py` **自动重新判红**，逾期未升级则 `AC-ENG-07` 降级。
+
+> **汇总行怎么读**：`[OK] … 白名单 N` 里的 **N = 本次被放行的命中条数（`len(allowed)`）**，不是"文件里有几行"。
+> 本地不传 `--java-bom` 时 Maven 生态不判 → 该 N 必为 **0**（33 条一行都没参与），**不能**当作"白名单已清空"的证据。
 
 **Go / npm 侧 0 条**：`#127`（D23①②）已把这两生态的命中项**全部真修掉**，清单留作口径先例：
 
@@ -104,7 +108,7 @@ CRITICAL 5 / HIGH 28。到期由 `scripts/vuln-gate.py` **自动重新判红**�
 | `web/package-lock.json` | **覆盖**（107 个包，逐包 `文件:行号`） |
 | `sdk/java` | **覆盖**（D23③②，2026-11-13 起）：CI `vuln` job 消费 `sdk` job 产出的 **CycloneDX 1.5 聚合 BOM** artifact（`--java-bom`），51 个第三方组件（`com.guanjin:*` 自有模块排除，两端规则逐字一致）；**不解析 pom**（要外网、实测 429），BOM 每次构建重生成、artifact 锚定本次 run（`bom-commit.txt` 逐字节核对，缺失或不符 = 红）。**覆盖边界：只含 compile/runtime 作用域组件**——cyclonedx 插件 `includeTestScope` 默认 false（pom 未打开），test 依赖（junit-jupiter、spring-boot-starter-test 及其传递链）**不入闸**（它们不进发布物；要覆盖 test 面属新判据，须另行立项）。本地**不传** `--java-bom` 时该生态不进判定，但**显式打** `[UNCOVERED] sdk/java：未提供 --java-bom …`（不许静默跳过）；`make gates` 的本地口径即此，且此时 **33 条 Maven 白名单条目完全不参与判定（汇总行 `白名单 0`）** |
 | `go.mod` 里的**本地路径** `replace` | **不覆盖**，每次运行显式打 `[UNCOVERED] go.mod:<行号> …` |
-| **Go 标准库** | **不覆盖**（快照只收 `go.mod` 的第三方坐标、引擎不读 `go` 指令；`grep -c stdlib docs/qa/vuln-advisories.tsv` = 0）→ D23① 的 10 条 stdlib 公告（修复只在 go1.26.x）在本闸**不产生输出**，**"阻断 0" ≠ "Go 面全绿"**。**D28⑤ 已于 2026-11-13 走「升 Go」路径收口**（`go.mod` = `1.26.10`，#133 `6cff27c`；CI `go-version-file: go.mod` 实跑 `go version go1.26.10`）——那 10 条公告**不再适用**，所以 stdlib 白名单条目 = 0 是"没有需要豁免的公告"，不是"扫过且干净"。**结构性边界不因收口消失**：扫描面仍不含 stdlib，**未来新增的 stdlib 公告本闸不会发现**，也没有白名单能承载它（D23① 禁止）；这条边界须在 `AC-ENG-07` 账目里单列，不得记成"Go 面永久无债" |
+| **Go 标准库** | **不覆盖**（快照只收 `go.mod` 的第三方坐标、引擎不读 `go` 指令；`grep -c stdlib docs/qa/vuln-advisories.tsv` = 0）→ D23① 的 10 条 stdlib 公告（修复只在 go1.26.x）在本闸**不产生输出**，**"阻断 0" ≠ "Go 面全绿"**。**D28⑤ 已于 2026-11-13 走「升 Go」路径收口**（`go.mod` = `1.26.10`，#133 `6cff27c`；CI `go-version-file: go.mod` **精确**装 `1.26.10`，实跑 `go version go1.26.10`）——那 10 条公告**不再适用**，所以 stdlib 白名单条目 = 0 是"没有需要豁免的公告"，**不是**"扫过且干净"。**结构性边界不因收口消失**：①扫描面仍不含 stdlib，**未来新增的 stdlib 公告本闸不会发现**；②`go.mod` 钉的是**精确补丁版**（`1.26.10`），`setup-go` 只装这一个版本、**不会自动跟后续 1.26.x 补丁**，跟上要靠人改 `go.mod`（这本身是条维护红线，不是门禁能力）；③也没有白名单能承载 stdlib（D23① 禁止）。这条边界须在 `AC-ENG-07` 账目里单列，不得记成"Go 面永久无债" |
 
 **`AC-ENG-07` 的 PASS 口径（D23③② 落地后）** = **三生态**（`go.mod` + `web/package-lock.json` + `sdk/java` 的 CycloneDX BOM）
 依赖坐标无未白名单的阻断级漏洞 **且** CI `vuln` job 的 SBOM artifact 存在、锚定本次 commit。
@@ -125,12 +129,22 @@ CI 全生态运行查全集指纹（口径没有变松）。
 **Maven 白名单现状（33 条，到期 2026-12-13，30 天）**：`sdk/java` 首次入闸一次性暴露的真实命中
 （bcprov 1.78.1、netty 4.1.101.Final、jackson 2.13.5、spring 5.3.31/2.7.18 系、snakeyaml 1.30、logback 1.2.12、commons-io 2.11.0），
 **CRITICAL 5 条**（bcprov ×2：GHSA-9pwp-9qqc-pr26/GHSA-574f-3g2m-x479；spring-web GHSA-4wrc-f8pq-fpqp；
-spring-webmvc GHSA-pc63-qcmh-9cmg；netty-handler GHSA-c4c3-7fpv-j4q5）。这些是**权宜账**，理由按族区分：
-分族口径 = **fix 版本与组件是否同 major 线**（按快照该公告对该模块的上界机械判定，不是按模块名拍脑袋）：
-**同 major 线小跳、可立刻修**（bcprov→1.80.2+、logback→1.2.13+、commons-io→2.14+、jackson→2.15/2.18.x、
-netty→4.1.137+、spring 5.3.x/5.7.x/2.7.x 内的补丁——多为一行 `<properties>` 版本覆盖，归 Nova 出升级 PR）；
-**跨 major 升级、需契约同步**（如 spring-web→6.0 需 Boot 3 线、snakeyaml→2.x，归 Nova+Spec）。
-到期即重判红；升级落地后"不再命中必须删行"的收紧规则不变。
+spring-webmvc GHSA-pc63-qcmh-9cmg；netty-handler GHSA-c4c3-7fpv-j4q5）。这些是**权宜账**，必须能回答"到底谁能修、怎么修"。
+
+**分族口径（2026-11-13 修正，可复算）**：对每条公告取该模块在快照里的**全部受影响区间**，
+到 Maven Central `maven-metadata.xml` 找「**已发布**且**不在任一区间**」的**最小**版本作目标，
+用本仓 `vuln-gate.py` 的 `vparse/vcmp/vmatch` 判（口径与引擎一致），再与现装版本的 major/minor 比：
+
+| 族 | 条数 | 判据 | 谁修 |
+|---|---:|---|---|
+| **A** 同 minor 线补丁已发布 | **12** | 目标与现装同 `major.minor`（如 spring-web 5.3.31→**5.3.34**、logback 1.2.12→**1.2.13**、netty 4.1.101.Final→**4.1.137.Final**、spring-security-core 5.7.11→**5.7.12**） | **Nova**：一行 `<properties>` 版本覆盖 + 回归 |
+| **B** 同 major 内需升 minor | **11** | 目标同 major、跨 minor（jackson 2.13.5→**2.15.0/2.18.8/2.18.11**、bcprov 1.78.1→**1.80.2/1.85**、commons-io 2.11.0→**2.14.0**、snakeyaml 1.30→**1.31**） | **Nova**：升 minor + 回归（Jackson 跨 5 个 minor，需跑 SDK 全测） |
+| **C** 同 major 内无干净版本（须跨 major） | **10** | 该模块在现 major 内**没有任何已发布版本**能清掉本公告全部区间 → 目标落在更高 major（spring-web/webmvc/spring-expression/spring-core→**6.x**、spring-security-crypto→**6.3.8**、snakeyaml→**2.0**、spring-boot 2.7.18→**3.0.0**） | **Nova+Spec**：需 Boot 3 / 契约同步，排期并评估 SDK 兼容 |
+
+> **旧账 24/9 作废（记错，纠正）**：那版按"fix 上界与组件同 major"粗判，**没核该版本是否真的发布过**。
+> 典型反例：`spring-security-crypto` 5.7 线要求 5.7.16，而 5.7 线止于 **5.7.14**、5.8 线止于 **5.8.16**（<5.8.18），
+> 真正干净的只有 **6.3.8** → 属 C 族，不是"小跳"。每条的具体目标版本已写进白名单 `reason` 列，`grep '→'` 可看。
+> 到期即重判红；升级落地后"不再命中必须删行"的收紧规则不变。
 
 ## 6. 与「国密/算法扫描门禁」的边界（不重叠）
 
