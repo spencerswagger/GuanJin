@@ -2,7 +2,8 @@
 
 来源：`docs/sdk-contract.md` 附录 C（§2.4 与附录 C 把本目录定为**唯一**向量位置）。
 四份文件都是**数据**；每份都有真实的消费者测试（跑真实现，不是回读期望值）。
-生成器在 `scripts/vecgen/`（`go run ./scripts/vecgen`）。三份**生成**的 JSON 不要手改；`authz-decisions.json` 是**手写**的（jcasbin 策略与判定没有生成器）。
+生成器在 `scripts/vecgen/`（`go run ./scripts/vecgen`）。三份**生成**的 JSON **只由生成器产、不要手改**；`authz-decisions.json` 是**手写**的（jcasbin 策略与判定没有生成器）。
+**提交纪律（2026-11-13 定）**：`agent-hmac.json` 与 `assertion-verify.json` 每次生成都会**新造 SM2 密钥并重签全部令牌**，故其内容天然是随机的 —— 两次生成之间「剥掉 `jwks` / `token` / `signature` 后逐字段相同」即视为**同一份向量**（实测 #162→#164 即如此）。所以：**只改了别的向量时，不要把这两个文件带进 PR**（`git checkout -- spec/vectors/agent-hmac.json spec/vectors/assertion-verify.json`），否则每 PR 都多几百行无语义 diff、并和并行 PR 抢同一文件的冲突面。随机重签本身**无害**（消费者用文件内自带公钥验签，跑得通即自洽）。
 
 | 文件 | 条目 | 覆盖 | 消费者（真实现） |
 |---|:--:|---|---|
