@@ -663,8 +663,12 @@ func (c Config) Validate(env Env) error {
 				ErrConfig, KeyAuthzReplayStore)
 		}
 	}
-	if c.Gateway.ClockSkew <= 0 {
-		return fmt.Errorf("%w: 键 %q 必须为正（默认 60s）", ErrConfig, KeyGatewayClockSkew)
+	// 契约 v16 §8.8 E42：`clock-skew = 0s` **合法**（= 零容忍：exp/iat 按严格边界判、不做偏斜补偿），
+	// 下界「必须为正」是实现自造约束（基线 :104 只写"时钟偏移容忍"，没有任何正值要求）。
+	// 负值仍拒：解析层出不来负数（正则无符号），但编程式赋值可以，且负偏斜会放宽 exp 判定 = 安全洞。
+	if c.Gateway.ClockSkew < 0 {
+		return fmt.Errorf("%w: 键 %q 不得为负（0s = 零容忍，合法；缺省才是 %s，两者不得混）",
+			ErrConfig, KeyGatewayClockSkew, DefaultClockSkew)
 	}
 	if c.Gateway.ReplayWindow < DefaultReplayWindow {
 		return fmt.Errorf("%w: 键 %q 必须 ≥ %s（令牌 exp；小于它会漏检重放）",

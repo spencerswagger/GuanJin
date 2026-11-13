@@ -54,6 +54,33 @@ class ClaimValidatorTest {
                         "guanjin-gateway", "orders"), cfg, NOW)).getCode());
     }
 
+    /**
+     * 契约 v16 §8.8 E42：`clock-skew=0s` = **零容忍**——exp/iat 按严格边界判、不做偏斜补偿。
+     * 边界：exp == now 仍有效、exp = now-1s 即过期；iat == now 有效、iat = now+1s 即未生效。
+     */
+    @Test
+    void AC_SDK_05_zeroClockSkewMeansStrictBoundaries() {
+        GuanjinConfig zero = TestConfigs.minimal();
+        zero.getGateway().setClockSkew(Duration.ZERO);
+
+        ClaimValidator.validate(assertion(NOW, NOW, "guanjin-gateway", "orders"), zero, NOW);
+        assertEquals(ErrorCodes.TOKEN_INVALID, assertThrows(GuanjinSdkException.class,
+                () -> ClaimValidator.validate(assertion(NOW.minusSeconds(1), NOW.minusSeconds(1),
+                        "guanjin-gateway", "orders"), zero, NOW)).getCode());
+
+        ClaimValidator.validate(assertion(NOW, NOW.plusSeconds(60), "guanjin-gateway", "orders"), zero, NOW);
+        assertEquals(ErrorCodes.TOKEN_INVALID, assertThrows(GuanjinSdkException.class,
+                () -> ClaimValidator.validate(assertion(NOW.plusSeconds(1), NOW.plusSeconds(60),
+                        "guanjin-gateway", "orders"), zero, NOW)).getCode());
+
+        // 反证：默认 60s 下同样两条都不成立，证明上面是 skew=0 的效果
+        GuanjinConfig dflt = TestConfigs.minimal(); // skew = 60s
+        ClaimValidator.validate(assertion(NOW.minusSeconds(1), NOW.minusSeconds(1),
+                "guanjin-gateway", "orders"), dflt, NOW);
+        ClaimValidator.validate(assertion(NOW.plusSeconds(1), NOW.plusSeconds(60),
+                "guanjin-gateway", "orders"), dflt, NOW);
+    }
+
     @Test
     void AC_SDK_06_issAndAudMismatchFails() {
         GuanjinConfig cfg = TestConfigs.minimal();
