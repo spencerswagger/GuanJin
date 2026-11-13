@@ -23,7 +23,7 @@ import java.util.List;
  *       {@code DEPENDENCY_UNAVAILABLE}/{@code SERVICE_DEGRADED}）；</li>
  *   <li>拉取失败**但有缓存** → 沿用缓存继续**真实验签**（公钥公开，这不是降级）；</li>
  *   <li>刷过之后仍无该 {@code kid} → 401 {@code TOKEN_INVALID}（断言声称的键不在平台 JWKS 里）；</li>
- *   <li>{@code alg} 不是 {@code SM3withSM2} 的键**不参与**断言验签（与用户令牌密钥分离）。</li>
+ *   <li>{@code alg} 不是 {@code SM2} 的键**不参与**断言验签（D29 双轨：与对外令牌密钥分离）。</li>
  * </ul>
  */
 public final class JwksClient {

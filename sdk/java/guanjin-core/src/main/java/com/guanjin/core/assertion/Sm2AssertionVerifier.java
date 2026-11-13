@@ -17,10 +17,10 @@ import java.util.List;
 
 /**
  * 断言验签的生产实现（契约 GJ-CAP-01 {@code AssertionVerifier.verify(raw)}）：
- * **SM2 真验签**（{@code SM3withSM2}）+ {@code kid} 选键 + {@code alg} 不协商。
+ * **SM2 真验签**（{@code alg=SM2}，D29：平台 keygen 写死）+ {@code kid} 选键 + {@code alg} 不协商。
  *
  * <p>失败一律 401 {@code TOKEN_INVALID}（契约 §4.4：不区分"过期"与"伪造"）：
- * 结构坏、{@code alg} 不是 {@code SM3withSM2}、缺 {@code kid}、未知 {@code kid}、
+ * 结构坏、{@code alg} 不是 {@code SM2}、缺 {@code kid}、未知 {@code kid}、
  * 公钥不在曲线上、签名不匹配 —— 全部拒，**没有放行分支**。
  *
  * <p>取公钥失败（JWKS 不可得且无缓存）仍按 503 {@code KEY_UNAVAILABLE} 抛，
@@ -54,7 +54,7 @@ public final class Sm2AssertionVerifier implements AssertionVerifier {
         JsonNode header = readJson(parts[0], "header");
         String alg = text(header, "alg");
         if (!Sm2.ALG.equals(alg)) {
-            // 防算法降级：只认 SM3withSM2，不协商、不猜
+            // 防算法降级：只认 SM2（D29），不协商、不猜
             throw GuanjinSdkException.tokenInvalid("断言 alg 不是 " + Sm2.ALG + "（得到 " + alg + "），拒绝算法降级");
         }
         String kid = text(header, "kid");
@@ -74,7 +74,7 @@ public final class Sm2AssertionVerifier implements AssertionVerifier {
         byte[] signingInput = (parts[0] + "." + parts[1]).getBytes(UTF8);
         byte[] signature = decodeSignature(parts[2]);
         if (!Sm2.verify(publicKey, signingInput, signature)) {
-            throw GuanjinSdkException.tokenInvalid("断言验签失败（SM3withSM2 不匹配）");
+            throw GuanjinSdkException.tokenInvalid("断言验签失败（SM2 不匹配）");
         }
 
         JsonNode claims = readJson(parts[1], "payload");
