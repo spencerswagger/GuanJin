@@ -294,34 +294,53 @@ jobs:
     # AC-ENG-07：依赖漏洞门禁（**零网络**）。判据原文「govulncheck / trivy 必须真跑，发现 HIGH/CRITICAL 判红」；
     # 本 job 用「离线快照 + 本地判定」实现同一判据（口径与理由见 ci.yml 顶部与 docs/qa/vuln-scan.md）：
     #   - 数据：docs/qa/vuln-advisories.tsv（OSV 快照，PR 里可评审；`generated_at` 过期即红）
-    #   - 判定：scripts/vuln-gate.py（纯 python3 标准库；Go 命中即红、npm HIGH/CRITICAL 红）
-    #   - 本 job **不装任何工具、不访问外网**（python3 是 runner 镜像自带）
+    #   - 判定：scripts/vuln-gate.py（纯 python3 标准库；Go 命中即红、npm/Maven HIGH/CRITICAL 红）
+    #   - **三生态齐判（D23③②，2026-11-13 起）**：sdk/java 不再 [UNCOVERED]——本 job 消费
+    #     `sdk` job 产出的 CycloneDX 聚合 BOM artifact（`needs: sdk` 保证同 run 内可用；
+    #     artifact 锚定本次 commit，缺失或不符 = 未验证 = 红）。**artifact 缺失本步必红**。
+    #   - 本 job **不装任何工具、不访问外网**（python3 是 runner 镜像自带；artifact 拉取是 Actions 内部通道）
     # 刻意**不用** actions/setup-go：本 job 不需要 Go 工具链，也就不需要下载工具链。
+    needs: sdk
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: python3 版本（证据行：引擎只依赖标准库）
-        run: python3 -VV
-      - name: 依赖漏洞门禁（fail-closed；日志即合入证据）
-        # 断言不是"脚本退出 0"就够：必须看到**扫描统计行**（证明真扫了 N 个坐标）
-        # 与 **sdk/java 未覆盖显式标注**（D23③：不许静默跳过）。
+      - name: 下载 sdk job 的 SBOM artifact（本次 run 内产出；找不到 = sdk job 没传 = 红）
+        uses: actions/download-artifact@v4
+        with:
+          name: sdk-java-bom
+          path: sbom-artifact
+      - name: artifact 锚定本次 commit（D23③②：早于本次 commit 的 SBOM = 未验证 = 红）
         run: |
           set -euo pipefail
-          ./scripts/check-vuln.sh | tee vuln-gate.log
-          # 分生态非零：只判"扫描 N 个坐标"会被"某生态 0 个坐标"蒙过去（Go 18/npm 0 也算扫描过）。
-          grep -qE '^\[OK\] 依赖漏洞门禁通过：扫描 [0-9]+ 个依赖坐标（Go [1-9][0-9]* / npm [1-9][0-9]*）' vuln-gate.log \
-            || { echo "[FAIL] 两个生态必须都扫到坐标，否则该生态等于没扫 = 红"; cat vuln-gate.log; exit 1; }
-          grep -q '^\[UNCOVERED\] sdk/java' vuln-gate.log \
-            || { echo "[FAIL] 缺 sdk/java 未覆盖的显式标注（D23③）= 红"; exit 1; }
+          bom=sbom-artifact/bom.json
+          [ -f "$bom" ] || { echo "[FAIL] SBOM artifact 缺失（sdk job 未产出/未上传）= 未验证 = 红"; exit 1; }
+          anchored="$(cat sbom-artifact/bom-commit.txt)"
+          echo "bom_commit=$anchored this_commit=$GITHUB_SHA"
+          [ "$anchored" = "$GITHUB_SHA" ] || { echo "[FAIL] SBOM 不是本次 commit 产出（$anchored ≠ $GITHUB_SHA）= 未验证 = 红"; exit 1; }
+      - name: python3 版本（证据行：引擎只依赖标准库）
+        run: python3 -VV
+      - name: 依赖漏洞门禁（fail-closed；日志即合入证据；三生态 Go+npm+Maven）
+        # 断言不是"脚本退出 0"就够：必须看到**扫描统计行**（证明三个生态都真扫了坐标），
+        # 且**不得出现任何 [UNCOVERED] 行**（三生态齐判后，未覆盖 = 红，D23③②）。
+        run: |
+          set -euo pipefail
+          ./scripts/check-vuln.sh --java-bom sbom-artifact/bom.json | tee vuln-gate.log
+          grep -qE '^\[OK\] 依赖漏洞门禁通过：扫描 [0-9]+ 个依赖坐标（Go [1-9][0-9]* / npm [1-9][0-9]* / Maven [1-9][0-9]*）' vuln-gate.log \
+            || { echo "[FAIL] 三个生态必须都扫到坐标，否则该生态等于没扫 = 红"; cat vuln-gate.log; exit 1; }
+          if grep -q '^\[UNCOVERED\]' vuln-gate.log; then
+            echo "[FAIL] 出现 [UNCOVERED] 行 → 有生态未纳入判定（D23③②：sdk/java 必须经 SBOM 覆盖）= 红"
+            grep '^\[UNCOVERED\]' vuln-gate.log; exit 1
+          fi
       - name: 正控/负控（临时夹具注入已知漏洞依赖 → 必须判红并点名 文件:行号）
-        # 脚本存在 ≠ 门禁存在：24 项自检覆盖"判红/点位/版本敏感/白名单五态/快照七态/坐标漂移/解析失败"。
+        # 脚本存在 ≠ 门禁存在：35 项自检覆盖"判红/点位/版本敏感/白名单五态/快照七态/坐标漂移/解析失败"，
+        # 以及 Maven/BOM 七态（命中红/修复版绿/无 BOM 显式 UNCOVERED/缺失红/坏 JSON 红/0 组件红/白名单作用域）。
         run: |
           set -euo pipefail
           ./scripts/check-vuln.sh --self-test | tee vuln-selftest.log
-          # 自洽校验：逐项 OK 行数必须等于汇总行声明的项数，且**恰为 24 项**（防"把用例删掉让自己变绿"；
+          # 自洽校验：逐项 OK 行数必须等于汇总行声明的项数，且**恰为 35 项**（防"把用例删掉让自己变绿"；
           # 上限取下界：加用例要同步改这个数字，比"能静默删掉三项"划算）。
           ok_n=$(grep -c '^  \[OK\] self-test/' vuln-selftest.log || true)
-          [ "$ok_n" -eq 24 ] || { echo "[FAIL] 自检跑了 $ok_n 项，应为 24 项：用例被删或加用例没同步改了红线 = 红"; exit 1; }
+          [ "$ok_n" -eq 35 ] || { echo "[FAIL] 自检跑了 $ok_n 项，应为 35 项：用例被删或加用例没同步改了红线 = 红"; exit 1; }
           grep -qE "^\[OK\] 漏洞门禁自检 ${ok_n} 项全过" vuln-selftest.log \
             || { echo "[FAIL] 汇总行声明的项数（${ok_n} 项的 OK 行）对不上 = 红"; exit 1; }
 
@@ -373,6 +392,39 @@ jobs:
           [ "$it" -gt 0 ] || { echo "[FAIL] 没有集成用例报告 → 视为未验证 = 红"; exit 1; }
       - name: Java 8 机械门禁（core 依赖树 / 14 条禁用 API / class 版本）
         run: ./scripts/check-sdk-java8.sh
+      - name: 生成 SBOM（D23②：显式 goal，**不绑 phase** → 默认构建零变化；复用本步已热的 ~/.m2）
+        # cyclonedx-maven-plugin 2.8.0 的 goal 标 @RequiresOnline：生成要联网（Maven Central 拉插件），
+        # 这正是 sdk job —— `mvn verify` 刚拉完依赖，仓库已热。生成的是 CycloneDX 1.5 **聚合** BOM。
+        if: matrix.java == '8'
+        run: |
+          set -euo pipefail
+          mvn -B -q -f sdk/java/pom.xml cyclonedx:makeAggregateBom
+          bom=sdk/java/target/bom.json
+          [ -f "$bom" ] || { echo "[FAIL] cyclonedx:makeAggregateBom 未产出 $bom"; exit 1; }
+          # 结构断言：specVersion 1.x + 第三方组件 ≥ 1（自有模块 com.guanjin:* 由消费端排除，这里也先验）
+          python3 - "$bom" <<'PYEOF'
+          import json, sys
+          d = json.load(open(sys.argv[1]))
+          spec = d.get("specVersion", "")
+          assert spec.startswith("1."), "specVersion 非 1.x: %r" % spec
+          own = ((d.get("metadata") or {}).get("component") or {}).get("group") or ""
+          comps = d.get("components") or []
+          third = [c for c in comps if (c.get("group") or "") != own]
+          print("spec=%s components=%d third_party=%d" % (spec, len(comps), len(third)))
+          assert len(third) > 0, "BOM 里 0 个第三方组件 → 扫描面为空"
+          PYEOF
+          # commit 锚（D23③②）：artifact 缺失或**早于本次 commit** = 未验证 = 红；vuln job 逐字节核对。
+          echo "$GITHUB_SHA" > sdk/java/target/bom-commit.txt
+      - name: 上传 SBOM artifact（vuln job 消费；只 '8' 这条腿传，避免 matrix 同名冲突）
+        if: matrix.java == '8'
+        uses: actions/upload-artifact@v4
+        with:
+          name: sdk-java-bom
+          path: |
+            sdk/java/target/bom.json
+            sdk/java/target/bom-commit.txt
+          if-no-files-found: error
+          retention-days: 7
 
   web:
     runs-on: ubuntu-latest

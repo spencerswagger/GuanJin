@@ -1,6 +1,6 @@
 # 依赖漏洞白名单（AC-ENG-07；逐条理由 + 到期日，由 scripts/vuln-gate.py 机器强制）
 #
-# 列（TAB 分隔，5 列）：id <TAB> ecosystem(Go|npm) <TAB> module <TAB> reason <TAB> expires(YYYY-MM-DD)
+# 列（TAB 分隔，5 列）：id <TAB> ecosystem(Go|npm|Maven) <TAB> module <TAB> reason <TAB> expires(YYYY-MM-DD)
 #
 # 规则（违反即红）：
 #   1. 理由为空 / 到期日非法 / 列数不对 → 红（不允许"无理由豁免"）；
@@ -12,3 +12,36 @@
 # 新增条目必须写清「为什么现在不能修」+ 谁在什么期限内修。
 #
 # id	ecosystem	module	reason	expires
+GHSA-2wrp-6fg6-hmc5	Maven	org.springframework:spring-web	HIGH[>=0.0.0,<5.3.34] D23② 接线期权宜：修复=升级依赖（归 Nova 排期），30 天到期即重判红	2026-12-13
+GHSA-3chg-m5w7-qfv5	Maven	org.springframework:spring-webmvc	HIGH[>=0.0.0,<=5.3.39] D23② 接线期权宜：修复=升级依赖（归 Nova 排期），30 天到期即重判红	2026-12-13
+GHSA-3mc7-4q67-w48m	Maven	org.yaml:snakeyaml	HIGH[>=0.0.0,<1.31] D23② 接线期权宜：修复=升级依赖（归 Nova 排期），30 天到期即重判红	2026-12-13
+GHSA-3qp7-7mw8-wx86	Maven	io.netty:netty-handler	HIGH[>=0.0.0,<4.1.135.Final] D23② 接线期权宜：修复=升级依赖（归 Nova 排期），30 天到期即重判红	2026-12-13
+GHSA-4g8c-wm8x-jfhw	Maven	io.netty:netty-handler	HIGH[>=4.1.91.Final,<4.1.118.Final] D23② 接线期权宜：修复=升级依赖（归 Nova 排期），30 天到期即重判红	2026-12-13
+GHSA-4wrc-f8pq-fpqp	Maven	org.springframework:spring-web	CRITICAL[>=0.0.0,<6.0.0] D23② 接线期权宜：修复=升级依赖（归 Nova 排期），30 天到期即重判红	2026-12-13
+GHSA-558v-64gr-wgg4	Maven	io.netty:netty-codec	HIGH[>=0.0.0,<4.1.136.Final] D23② 接线期权宜：修复=升级依赖（归 Nova 排期），30 天到期即重判红	2026-12-13
+GHSA-574f-3g2m-x479	Maven	org.bouncycastle:bcprov-jdk18on	CRITICAL[>=1.59,<1.80.2] D23② 接线期权宜：修复=升级依赖（归 Nova 排期），30 天到期即重判红	2026-12-13
+GHSA-775g-4xr8-78h8	Maven	org.springframework:spring-expression	HIGH[>=0.0.0,<=5.3.39] D23② 接线期权宜：修复=升级依赖（归 Nova 排期），30 天到期即重判红	2026-12-13
+GHSA-78wr-2p64-hpwj	Maven	commons-io:commons-io	HIGH[>=2.0,<2.14.0] D23② 接线期权宜：修复=升级依赖（归 Nova 排期），30 天到期即重判红	2026-12-13
+GHSA-7hhh-6rmp-j9qf	Maven	com.fasterxml.jackson.core:jackson-core	HIGH[>=2.8.0,<2.18.11] D23② 接线期权宜：修复=升级依赖（归 Nova 排期），30 天到期即重判红	2026-12-13
+GHSA-9pwp-9qqc-pr26	Maven	org.bouncycastle:bcprov-jdk18on	CRITICAL[>=0.0.0,<1.85] D23② 接线期权宜：修复=升级依赖（归 Nova 排期），30 天到期即重判红	2026-12-13
+GHSA-c4c3-7fpv-j4q5	Maven	io.netty:netty-handler	CRITICAL[>=0.0.0,<4.1.137.Final] D23② 接线期权宜：修复=升级依赖（归 Nova 排期），30 天到期即重判红	2026-12-13
+GHSA-ccgv-vj62-xf9h	Maven	org.springframework:spring-web	HIGH[>=5.3.0,<5.3.32] D23② 接线期权宜：修复=升级依赖（归 Nova 排期），30 天到期即重判红	2026-12-13
+GHSA-cxp5-3px4-pw24	Maven	com.fasterxml.jackson.core:jackson-databind	HIGH[>=2.5.0,<2.18.11] D23② 接线期权宜：修复=升级依赖（归 Nova 排期），30 天到期即重判红	2026-12-13
+GHSA-f3jh-qvm4-mg39	Maven	org.springframework.security:spring-security-core	HIGH[>=0.0.0,<5.7.12] D23② 接线期权宜：修复=升级依赖（归 Nova 排期），30 天到期即重判红	2026-12-13
+GHSA-g5vr-rgqm-vf78	Maven	org.springframework:spring-webmvc	HIGH[>=0.0.0,<=5.3.40] D23② 接线期权宜：修复=升级依赖（归 Nova 排期），30 天到期即重判红	2026-12-13
+GHSA-gm62-rw4g-vrc4	Maven	ch.qos.logback:logback-core	HIGH[>=1.2.12,<1.2.13] D23② 接线期权宜：修复=升级依赖（归 Nova 排期），30 天到期即重判红	2026-12-13
+GHSA-h46c-h94j-95f3	Maven	com.fasterxml.jackson.core:jackson-core	HIGH[>=0.0.0,<2.15.0] D23② 接线期权宜：修复=升级依赖（归 Nova 排期），30 天到期即重判红	2026-12-13
+GHSA-hgjh-9rj2-g67j	Maven	org.springframework:spring-web	HIGH[>=0.0.0,<5.3.33] D23② 接线期权宜：修复=升级依赖（归 Nova 排期），30 天到期即重判红	2026-12-13
+GHSA-j3rv-43j4-c7qm	Maven	com.fasterxml.jackson.core:jackson-databind	HIGH[>=2.10.0,<2.18.8] D23② 接线期权宜：修复=升级依赖（归 Nova 排期），30 天到期即重判红	2026-12-13
+GHSA-jmp9-x22r-554x	Maven	org.springframework:spring-core	HIGH[>=5.3.0,<=5.3.44] D23② 接线期权宜：修复=升级依赖（归 Nova 排期），30 天到期即重判红	2026-12-13
+GHSA-mg83-c7gq-rv5c	Maven	org.springframework.security:spring-security-crypto	HIGH[>=0.0.0,<5.7.16] D23② 接线期权宜：修复=升级依赖（归 Nova 排期），30 天到期即重判红	2026-12-13
+GHSA-mj4r-2hfc-f8p6	Maven	io.netty:netty-codec	HIGH[>=0.0.0,<4.1.133.Final] D23② 接线期权宜：修复=升级依赖（归 Nova 排期），30 天到期即重判红	2026-12-13
+GHSA-mjmj-j48q-9wg2	Maven	org.yaml:snakeyaml	HIGH[>=0.0.0,<2.0] D23② 接线期权宜：修复=升级依赖（归 Nova 排期），30 天到期即重判红	2026-12-13
+GHSA-p93r-85wp-75v3	Maven	org.bouncycastle:bcprov-jdk18on	HIGH[>=1.71,<1.80.2] D23② 接线期权宜：修复=升级依赖（归 Nova 排期），30 天到期即重判红	2026-12-13
+GHSA-pc63-qcmh-9cmg	Maven	org.springframework:spring-webmvc	CRITICAL[>=5.3.0,<=5.3.49] D23② 接线期权宜：修复=升级依赖（归 Nova 排期），30 天到期即重判红	2026-12-13
+GHSA-r7wm-3cxj-wff9	Maven	com.fasterxml.jackson.core:jackson-core	HIGH[>=0.0.0,<2.18.8] D23② 接线期权宜：修复=升级依赖（归 Nova 排期），30 天到期即重判红	2026-12-13
+GHSA-rc42-6c7j-7h5r	Maven	org.springframework.boot:spring-boot	HIGH[>=0.0.0,<=2.7.24.2] D23② 接线期权宜：修复=升级依赖（归 Nova 排期），30 天到期即重判红	2026-12-13
+GHSA-vmq6-5m68-f53m	Maven	ch.qos.logback:logback-classic	HIGH[>=0.0.0,<1.2.13] D23② 接线期权宜：修复=升级依赖（归 Nova 排期），30 天到期即重判红	2026-12-13
+GHSA-vmq6-5m68-f53m	Maven	ch.qos.logback:logback-core	HIGH[>=0.0.0,<1.2.13] D23② 接线期权宜：修复=升级依赖（归 Nova 排期），30 天到期即重判红	2026-12-13
+GHSA-wv8q-qhhj-9h54	Maven	com.fasterxml.jackson.core:jackson-databind	HIGH[>=2.0.0,<2.18.11] D23② 接线期权宜：修复=升级依赖（归 Nova 排期），30 天到期即重判红	2026-12-13
+GHSA-wwpq-f5c3-7hvx	Maven	org.springframework.boot:spring-boot	HIGH[>=0.0.0,<=2.7.32] D23② 接线期权宜：修复=升级依赖（归 Nova 排期），30 天到期即重判红	2026-12-13

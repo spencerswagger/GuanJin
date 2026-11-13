@@ -5,12 +5,18 @@
 所以"漏洞数据"不能每次 CI 现拉，只能是一份**入库、可评审、带生成日期**的快照。
 本脚本是那份快照的**唯一生产者**：有网的机器跑它 → 产出 `docs/qa/vuln-advisories.tsv` 的 diff → 走 PR 评审。
 
-数据源：OSV（`https://api.osv.dev`）。生态只覆盖两条（与判据口径一致，sdk/java 见 D23③ 未覆盖）：
-  - `Go`  ：坐标来自根 `go.mod`（含 indirect）
-  - `npm` ：坐标来自 `web/package-lock.json`（平铺所有 `node_modules/*`，同名多版本逐条）
+数据源：OSV（`https://api.osv.dev`）。生态覆盖三条：
+  - `Go`    ：坐标来自根 `go.mod`（含 indirect）
+  - `npm`   ：坐标来自 `web/package-lock.json`（平铺所有 `node_modules/*`，同名多版本逐条）
+  - `Maven` ：坐标来自 **CycloneDX 1.5 聚合 BOM**（D23③ 第二段：`sdk` job 用 cyclonedx-maven-plugin
+    生成 `sdk/java/target/bom.json`）。**不解析 pom**（要外网、实测 429）——refresh 与门禁消费的是
+    同一份 BOM，坐标集天然同源；组件 `group:artifact@version` 逐条查。
+    自有模块（`group == metadata.component.group`，即 guanjin-core / guanjin-spring-boot2）排除，
+    规则与 `scripts/vuln-gate.py::read_java_bom` 逐字一致（两指纹才对得上）。
 
 用法（在有网的开发机 / 宿主机上）：
-    python3 scripts/vuln-snapshot-refresh.py            # 写 docs/qa/vuln-advisories.tsv
+    python3 scripts/vuln-snapshot-refresh.py            # 写 docs/qa/vuln-advisories.tsv（Go + npm）
+    python3 scripts/vuln-snapshot-refresh.py --java-bom sdk/java/target/bom.json   # 三生态
     python3 scripts/vuln-snapshot-refresh.py --stdout    # 只打不写（评审时对比用）
     python3 scripts/vuln-snapshot-refresh.py --osv http://127.0.0.1:8080  # 内网镜像
 
@@ -81,6 +87,35 @@ def collect_go(root):
     return sorted(set(out))
 
 
+def collect_maven(java_bom):
+    """读 CycloneDX 1.x 聚合 BOM 的 components，返回 [(name, version)]，name = `group:artifact`。
+
+    自有模块排除规则与 scripts/vuln-gate.py::read_java_bom 逐字一致：
+    `group == metadata.component.group` 的是本仓模块（guanjin-core / guanjin-spring-boot2），
+    不是第三方依赖。文件缺失 / 非法 JSON / specVersion 非 1.x / 组件缺 name-version →
+    抛异常（refresh 端 fail-closed：BOM 坏了不许产出半份快照）。
+    """
+    with open(java_bom, encoding="utf-8") as fh:
+        data = json.load(fh)
+    if not isinstance(data, dict) or not str(data.get("specVersion", "")).startswith("1."):
+        raise ValueError("%s：specVersion 非 1.x，只消费 CycloneDX 1.x" % java_bom)
+    own_group = ((data.get("metadata") or {}).get("component") or {}).get("group") or ""
+    comps = data.get("components") or []
+    out = []
+    for comp in comps:
+        if not isinstance(comp, dict):
+            raise ValueError("%s：components 里有非对象成员（BOM 坏了，先修生成端）" % java_bom)
+        group = (comp.get("group") or "").strip()
+        name = (comp.get("name") or "").strip()
+        ver = (comp.get("version") or "").strip()
+        if group and group == own_group:
+            continue  # 本仓自有模块：门禁端同样排除
+        if not name or not ver:
+            raise ValueError("%s：组件缺 name/version（group=%r name=%r）" % (java_bom, group, name))
+        out.append((("%s:%s" % (group, name)) if group else name, ver))
+    return out
+
+
 def collect_npm(root):
     """读 web/package-lock.json 的 packages 段，返回 [(包名, 版本)]。"""
     path = os.path.join(root, "web", "package-lock.json")
@@ -126,7 +161,10 @@ def query_batch(base, pairs):
 
 
 # ---------------- 区间转换 ----------------
-CMP_RE = re.compile(r"^(v?\d+(?:\.\d+)*)(?:[-+][0-9A-Za-z.\-+]+)?$")
+# 尾缀允许 `[-+X]` 之外再接受**点号尾缀**（Maven 形态：5.2.24.RELEASE / 4.1.135.Final / 5.3.39.SEC03），
+# D23③ 第二段起 Maven 生态入快照。这里只做"形态放行"，语义归一化在门禁端 vparse：
+# .RELEASE/.Final/.GA 剥掉、.SEC<n>/.SP<n> 剥掉后 patch+n、其余按预发布（两端口径逐字一致，见 vuln-gate.py）。
+CMP_RE = re.compile(r"^(v?\d+(?:\.\d+)*)(?:[-+.][0-9A-Za-z.\-+]+)?$")
 
 
 def _norm(v):
@@ -256,10 +294,16 @@ def render(rows, coords, base, dropped=0):
         "#",
         "# generated_at: " + today,
         "# coords_sha256: " + coords_fingerprint(coords),
+        # 分生态指纹（与全集同算法）：本地不传 --java-bom 时只判 Go+npm，按生态核对覆盖（vuln-gate.py evaluate）。
+        "# coords_sha256_go: " + coords_fingerprint(sorted(c for c in coords if c[0] == "Go")),
+        "# coords_sha256_npm: " + coords_fingerprint(sorted(c for c in coords if c[0] == "npm")),
+        "# coords_sha256_maven: " + coords_fingerprint(sorted(c for c in coords if c[0] == "Maven")),
         "# dropped: %d" % dropped,
-        "# source: %s/v1/query（Go + npm 两条生态，坐标取自 go.mod / web/package-lock.json）" % base,
-        "# coordinates: Go %d 个模块 + npm %d 个包 = %d 个坐标（**坐标指纹以 coords_sha256 为准**）"
-        % (len([c for c in coords if c[0] == "Go"]), len([c for c in coords if c[0] == "npm"]), len(coords)),
+        "# source: %s/v1/query（Go + npm + Maven 三条生态；坐标取自 go.mod / web/package-lock.json"
+        " / CycloneDX bom.json --java-bom）" % base,
+        "# coordinates: Go %d 个模块 + npm %d 个包 + Maven %d 个组件 = %d 个坐标（**坐标指纹以 coords_sha256 为准**）"
+        % (len([c for c in coords if c[0] == "Go"]), len([c for c in coords if c[0] == "npm"]),
+           len([c for c in coords if c[0] == "Maven"]), len(coords)),
         "# entries: %d 行（%d 个公告）" % (len(rows), len({(r["id"], r["module"]) for r in rows})),
         "#",
         "# id\tecosystem\tmodule\taffected\tseverity\taliases\tsummary",
@@ -274,17 +318,27 @@ def main(argv):
     ap = argparse.ArgumentParser(description="生成离线漏洞快照（需要外网）")
     ap.add_argument("--root", default=ROOT_DEFAULT)
     ap.add_argument("--osv", default=os.environ.get("OSV_BASE", OSV_DEFAULT))
+    ap.add_argument("--java-bom", default=None,
+                    help="CycloneDX 1.x 聚合 BOM（sdk/java/target/bom.json）；给了才扫 Maven 生态")
     ap.add_argument("--out", default=None)
     ap.add_argument("--stdout", action="store_true")
     args = ap.parse_args(argv)
 
     go_coords = [("Go", m) for m, _ in collect_go(args.root)]
     npm_coords = [("npm", n) for n, _ in collect_npm(args.root)]
-    coords = set(go_coords) | set(npm_coords)
+    mvn_coords = []
+    if args.java_bom:
+        mvn_coords = [("Maven", n) for n, _ in collect_maven(args.java_bom)]
+        if not mvn_coords:
+            print("[FAIL] --java-bom 里 0 个第三方坐标（全是自有模块或 components 为空）→ 没坐标可判，拒绝产出",
+                  file=sys.stderr)
+            return 1
+    coords = set(go_coords) | set(npm_coords) | set(mvn_coords)
     if not coords:
         print("[FAIL] 没收集到任何依赖坐标（go.mod / package-lock.json 都读不到？）", file=sys.stderr)
         return 1
-    print("[INFO] 坐标：Go %d + npm %d = %d" % (len(go_coords), len(npm_coords), len(coords)), file=sys.stderr)
+    print("[INFO] 坐标：Go %d + npm %d + Maven %d = %d" % (len(go_coords), len(npm_coords),
+                                                          len(mvn_coords), len(coords)), file=sys.stderr)
     rows, dropped = build_rows(args.osv, coords)
     for d in sorted(set(dropped)):
         print("[FAIL] " + d, file=sys.stderr)

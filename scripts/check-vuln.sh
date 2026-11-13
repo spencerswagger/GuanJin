@@ -19,7 +19,7 @@
 #
 # 用法：
 #   ./scripts/check-vuln.sh              # 判本仓（CI / make gates 用法）
-#   ./scripts/check-vuln.sh --self-test  # 正控/负控 24 项（离线，临时目录注入，不动工作树）
+#   ./scripts/check-vuln.sh --self-test  # 正控/负控 35 项（离线，临时目录注入，不动工作树）
 #   ./scripts/check-vuln.sh --help       # 其余参数（--root / --snapshot / --max-age-days）透传给引擎
 set -euo pipefail
 
@@ -33,9 +33,10 @@ echo "== 依赖漏洞门禁（AC-ENG-07；离线快照，零网络）=="
 echo "  引擎：scripts/vuln-gate.py（python3 $(python3 -c 'import sys;print("%d.%d"%sys.version_info[:2])'))"
 echo "  数据：docs/qa/vuln-advisories.tsv（generated_at 见文件头；过期即红）"
 
-# D23③ 第一段（立即可做）：`sdk/java` 未纳入扫描必须**显式打一行**，不许静默跳过。
-# 第二段（2026-12-10 前）改离线 SBOM（Nova 产 → Gate 判），见 docs/decisions.md D23③。
-echo "[UNCOVERED] sdk/java：pom 解析需外网（实测 429），本闸不覆盖——见 decisions.md D23③"
+# D23③ 第一段：`sdk/java` 未纳入扫描必须**显式打一行**，不许静默跳过。
+#   该行现在由判定引擎 `vuln-gate.py` 输出（触发条件：**未传 `--java-bom`**——本地跑引擎时）；
+#   D23③ 第二段（2026-11-13 落地）：CI 的 `vuln` job 消费 `sdk` job 上传的 CycloneDX bom.json
+#   （`--java-bom <artifact 路径>`），三生态齐判，此行不再出现；CI 断言「缺 Maven 覆盖 = 红」。
 
 if [ "${1:-}" = "--self-test" ]; then
   echo "== 正控/负控：临时夹具注入已知漏洞依赖 → 必须判红并点名 文件:行号 =="
