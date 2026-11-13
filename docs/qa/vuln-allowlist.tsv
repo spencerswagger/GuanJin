@@ -12,36 +12,36 @@
 # 新增条目必须写清「为什么现在不能修」+ 谁在什么期限内修。
 #
 # id	ecosystem	module	reason	expires
-GHSA-2wrp-6fg6-hmc5	Maven	org.springframework:spring-web	HIGH[spring-web] 跨线升级需契约同步（Nova+Spec 排期）	2026-12-13
-GHSA-3chg-m5w7-qfv5	Maven	org.springframework:spring-webmvc	HIGH[spring-webmvc] 跨线升级需契约同步（Nova+Spec 排期）	2026-12-13
-GHSA-3mc7-4q67-w48m	Maven	org.yaml:snakeyaml	HIGH[snakeyaml] 跨线升级需契约同步（Nova+Spec 排期）	2026-12-13
-GHSA-3qp7-7mw8-wx86	Maven	io.netty:netty-handler	HIGH[netty-handler] 同线小跳可立刻修（Nova 出升级 PR）	2026-12-13
-GHSA-4g8c-wm8x-jfhw	Maven	io.netty:netty-handler	HIGH[netty-handler] 同线小跳可立刻修（Nova 出升级 PR）	2026-12-13
-GHSA-4wrc-f8pq-fpqp	Maven	org.springframework:spring-web	CRITICAL[spring-web] 跨线升级需契约同步（Nova+Spec 排期）	2026-12-13
-GHSA-558v-64gr-wgg4	Maven	io.netty:netty-codec	HIGH[netty-codec] 同线小跳可立刻修（Nova 出升级 PR）	2026-12-13
-GHSA-574f-3g2m-x479	Maven	org.bouncycastle:bcprov-jdk18on	CRITICAL[bcprov-jdk18on] 同线小跳可立刻修（Nova 出升级 PR）	2026-12-13
-GHSA-775g-4xr8-78h8	Maven	org.springframework:spring-expression	HIGH[spring-expression] 跨线升级需契约同步（Nova+Spec 排期）	2026-12-13
-GHSA-78wr-2p64-hpwj	Maven	commons-io:commons-io	HIGH[commons-io] 同线小跳可立刻修（Nova 出升级 PR）	2026-12-13
-GHSA-7hhh-6rmp-j9qf	Maven	com.fasterxml.jackson.core:jackson-core	HIGH[jackson-core] 同线小跳可立刻修（Nova 出升级 PR）	2026-12-13
-GHSA-9pwp-9qqc-pr26	Maven	org.bouncycastle:bcprov-jdk18on	CRITICAL[bcprov-jdk18on] 同线小跳可立刻修（Nova 出升级 PR）	2026-12-13
-GHSA-c4c3-7fpv-j4q5	Maven	io.netty:netty-handler	CRITICAL[netty-handler] 同线小跳可立刻修（Nova 出升级 PR）	2026-12-13
-GHSA-ccgv-vj62-xf9h	Maven	org.springframework:spring-web	HIGH[spring-web] 跨线升级需契约同步（Nova+Spec 排期）	2026-12-13
-GHSA-cxp5-3px4-pw24	Maven	com.fasterxml.jackson.core:jackson-databind	HIGH[jackson-databind] 同线小跳可立刻修（Nova 出升级 PR）	2026-12-13
-GHSA-f3jh-qvm4-mg39	Maven	org.springframework.security:spring-security-core	HIGH[spring-security-core] 跨线升级需契约同步（Nova+Spec 排期）	2026-12-13
-GHSA-g5vr-rgqm-vf78	Maven	org.springframework:spring-webmvc	HIGH[spring-webmvc] 跨线升级需契约同步（Nova+Spec 排期）	2026-12-13
-GHSA-gm62-rw4g-vrc4	Maven	ch.qos.logback:logback-core	HIGH[logback-core] 同线小跳可立刻修（Nova 出升级 PR）	2026-12-13
-GHSA-h46c-h94j-95f3	Maven	com.fasterxml.jackson.core:jackson-core	HIGH[jackson-core] 同线小跳可立刻修（Nova 出升级 PR）	2026-12-13
-GHSA-hgjh-9rj2-g67j	Maven	org.springframework:spring-web	HIGH[spring-web] 跨线升级需契约同步（Nova+Spec 排期）	2026-12-13
-GHSA-j3rv-43j4-c7qm	Maven	com.fasterxml.jackson.core:jackson-databind	HIGH[jackson-databind] 同线小跳可立刻修（Nova 出升级 PR）	2026-12-13
-GHSA-jmp9-x22r-554x	Maven	org.springframework:spring-core	HIGH[spring-core] 跨线升级需契约同步（Nova+Spec 排期）	2026-12-13
-GHSA-mg83-c7gq-rv5c	Maven	org.springframework.security:spring-security-crypto	HIGH[spring-security-crypto] 跨线升级需契约同步（Nova+Spec 排期）	2026-12-13
-GHSA-mj4r-2hfc-f8p6	Maven	io.netty:netty-codec	HIGH[netty-codec] 同线小跳可立刻修（Nova 出升级 PR）	2026-12-13
-GHSA-mjmj-j48q-9wg2	Maven	org.yaml:snakeyaml	HIGH[snakeyaml] 跨线升级需契约同步（Nova+Spec 排期）	2026-12-13
-GHSA-p93r-85wp-75v3	Maven	org.bouncycastle:bcprov-jdk18on	HIGH[bcprov-jdk18on] 同线小跳可立刻修（Nova 出升级 PR）	2026-12-13
-GHSA-pc63-qcmh-9cmg	Maven	org.springframework:spring-webmvc	CRITICAL[spring-webmvc] 跨线升级需契约同步（Nova+Spec 排期）	2026-12-13
-GHSA-r7wm-3cxj-wff9	Maven	com.fasterxml.jackson.core:jackson-core	HIGH[jackson-core] 同线小跳可立刻修（Nova 出升级 PR）	2026-12-13
-GHSA-rc42-6c7j-7h5r	Maven	org.springframework.boot:spring-boot	HIGH[spring-boot] 跨线升级需契约同步（Nova+Spec 排期）	2026-12-13
-GHSA-vmq6-5m68-f53m	Maven	ch.qos.logback:logback-classic	HIGH[logback-classic] 同线小跳可立刻修（Nova 出升级 PR）	2026-12-13
-GHSA-vmq6-5m68-f53m	Maven	ch.qos.logback:logback-core	HIGH[logback-core] 同线小跳可立刻修（Nova 出升级 PR）	2026-12-13
-GHSA-wv8q-qhhj-9h54	Maven	com.fasterxml.jackson.core:jackson-databind	HIGH[jackson-databind] 同线小跳可立刻修（Nova 出升级 PR）	2026-12-13
-GHSA-wwpq-f5c3-7hvx	Maven	org.springframework.boot:spring-boot	HIGH[spring-boot] 跨线升级需契约同步（Nova+Spec 排期）	2026-12-13
+GHSA-2wrp-6fg6-hmc5	Maven	org.springframework:spring-web	HIGH[spring-web] 同 major 线小跳可立刻修（fix 与组件同 major，Nova 出升级 PR）	2026-12-13
+GHSA-3chg-m5w7-qfv5	Maven	org.springframework:spring-webmvc	HIGH[spring-webmvc] 跨 major 升级需契约同步（fix 在更新 major 线，Nova+Spec 排期）	2026-12-13
+GHSA-3mc7-4q67-w48m	Maven	org.yaml:snakeyaml	HIGH[snakeyaml] 同 major 线小跳可立刻修（fix 与组件同 major，Nova 出升级 PR）	2026-12-13
+GHSA-3qp7-7mw8-wx86	Maven	io.netty:netty-handler	HIGH[netty-handler] 同 major 线小跳可立刻修（fix 与组件同 major，Nova 出升级 PR）	2026-12-13
+GHSA-4g8c-wm8x-jfhw	Maven	io.netty:netty-handler	HIGH[netty-handler] 同 major 线小跳可立刻修（fix 与组件同 major，Nova 出升级 PR）	2026-12-13
+GHSA-4wrc-f8pq-fpqp	Maven	org.springframework:spring-web	CRITICAL[spring-web] 跨 major 升级需契约同步（fix 在更新 major 线，Nova+Spec 排期）	2026-12-13
+GHSA-558v-64gr-wgg4	Maven	io.netty:netty-codec	HIGH[netty-codec] 同 major 线小跳可立刻修（fix 与组件同 major，Nova 出升级 PR）	2026-12-13
+GHSA-574f-3g2m-x479	Maven	org.bouncycastle:bcprov-jdk18on	CRITICAL[bcprov-jdk18on] 同 major 线小跳可立刻修（fix 与组件同 major，Nova 出升级 PR）	2026-12-13
+GHSA-775g-4xr8-78h8	Maven	org.springframework:spring-expression	HIGH[spring-expression] 跨 major 升级需契约同步（fix 在更新 major 线，Nova+Spec 排期）	2026-12-13
+GHSA-78wr-2p64-hpwj	Maven	commons-io:commons-io	HIGH[commons-io] 同 major 线小跳可立刻修（fix 与组件同 major，Nova 出升级 PR）	2026-12-13
+GHSA-7hhh-6rmp-j9qf	Maven	com.fasterxml.jackson.core:jackson-core	HIGH[jackson-core] 同 major 线小跳可立刻修（fix 与组件同 major，Nova 出升级 PR）	2026-12-13
+GHSA-9pwp-9qqc-pr26	Maven	org.bouncycastle:bcprov-jdk18on	CRITICAL[bcprov-jdk18on] 同 major 线小跳可立刻修（fix 与组件同 major，Nova 出升级 PR）	2026-12-13
+GHSA-c4c3-7fpv-j4q5	Maven	io.netty:netty-handler	CRITICAL[netty-handler] 同 major 线小跳可立刻修（fix 与组件同 major，Nova 出升级 PR）	2026-12-13
+GHSA-ccgv-vj62-xf9h	Maven	org.springframework:spring-web	HIGH[spring-web] 同 major 线小跳可立刻修（fix 与组件同 major，Nova 出升级 PR）	2026-12-13
+GHSA-cxp5-3px4-pw24	Maven	com.fasterxml.jackson.core:jackson-databind	HIGH[jackson-databind] 同 major 线小跳可立刻修（fix 与组件同 major，Nova 出升级 PR）	2026-12-13
+GHSA-f3jh-qvm4-mg39	Maven	org.springframework.security:spring-security-core	HIGH[spring-security-core] 同 major 线小跳可立刻修（fix 与组件同 major，Nova 出升级 PR）	2026-12-13
+GHSA-g5vr-rgqm-vf78	Maven	org.springframework:spring-webmvc	HIGH[spring-webmvc] 跨 major 升级需契约同步（fix 在更新 major 线，Nova+Spec 排期）	2026-12-13
+GHSA-gm62-rw4g-vrc4	Maven	ch.qos.logback:logback-core	HIGH[logback-core] 同 major 线小跳可立刻修（fix 与组件同 major，Nova 出升级 PR）	2026-12-13
+GHSA-h46c-h94j-95f3	Maven	com.fasterxml.jackson.core:jackson-core	HIGH[jackson-core] 同 major 线小跳可立刻修（fix 与组件同 major，Nova 出升级 PR）	2026-12-13
+GHSA-hgjh-9rj2-g67j	Maven	org.springframework:spring-web	HIGH[spring-web] 同 major 线小跳可立刻修（fix 与组件同 major，Nova 出升级 PR）	2026-12-13
+GHSA-j3rv-43j4-c7qm	Maven	com.fasterxml.jackson.core:jackson-databind	HIGH[jackson-databind] 同 major 线小跳可立刻修（fix 与组件同 major，Nova 出升级 PR）	2026-12-13
+GHSA-jmp9-x22r-554x	Maven	org.springframework:spring-core	HIGH[spring-core] 跨 major 升级需契约同步（fix 在更新 major 线，Nova+Spec 排期）	2026-12-13
+GHSA-mg83-c7gq-rv5c	Maven	org.springframework.security:spring-security-crypto	HIGH[spring-security-crypto] 同 major 线小跳可立刻修（fix 与组件同 major，Nova 出升级 PR）	2026-12-13
+GHSA-mj4r-2hfc-f8p6	Maven	io.netty:netty-codec	HIGH[netty-codec] 同 major 线小跳可立刻修（fix 与组件同 major，Nova 出升级 PR）	2026-12-13
+GHSA-mjmj-j48q-9wg2	Maven	org.yaml:snakeyaml	HIGH[snakeyaml] 跨 major 升级需契约同步（fix 在更新 major 线，Nova+Spec 排期）	2026-12-13
+GHSA-p93r-85wp-75v3	Maven	org.bouncycastle:bcprov-jdk18on	HIGH[bcprov-jdk18on] 同 major 线小跳可立刻修（fix 与组件同 major，Nova 出升级 PR）	2026-12-13
+GHSA-pc63-qcmh-9cmg	Maven	org.springframework:spring-webmvc	CRITICAL[spring-webmvc] 跨 major 升级需契约同步（fix 在更新 major 线，Nova+Spec 排期）	2026-12-13
+GHSA-r7wm-3cxj-wff9	Maven	com.fasterxml.jackson.core:jackson-core	HIGH[jackson-core] 同 major 线小跳可立刻修（fix 与组件同 major，Nova 出升级 PR）	2026-12-13
+GHSA-rc42-6c7j-7h5r	Maven	org.springframework.boot:spring-boot	HIGH[spring-boot] 跨 major 升级需契约同步（fix 在更新 major 线，Nova+Spec 排期）	2026-12-13
+GHSA-vmq6-5m68-f53m	Maven	ch.qos.logback:logback-classic	HIGH[logback-classic] 同 major 线小跳可立刻修（fix 与组件同 major，Nova 出升级 PR）	2026-12-13
+GHSA-vmq6-5m68-f53m	Maven	ch.qos.logback:logback-core	HIGH[logback-core] 同 major 线小跳可立刻修（fix 与组件同 major，Nova 出升级 PR）	2026-12-13
+GHSA-wv8q-qhhj-9h54	Maven	com.fasterxml.jackson.core:jackson-databind	HIGH[jackson-databind] 同 major 线小跳可立刻修（fix 与组件同 major，Nova 出升级 PR）	2026-12-13
+GHSA-wwpq-f5c3-7hvx	Maven	org.springframework.boot:spring-boot	HIGH[spring-boot] 跨 major 升级需契约同步（fix 在更新 major 线，Nova+Spec 排期）	2026-12-13

@@ -982,13 +982,16 @@ def self_test(out=sys.stdout):
     check("maven/无 BOM 时 Maven 白名单不判不再命中", 0, c34,
           want_text=["[UNCOVERED] sdk/java", "[OK]"], forbid_text=["不再命中"])
 
-    # ㉟ Maven 发布后补丁 .SR<n>（Spring Service Release）：2.5.7.SR5 ∈ [SR0, SR023) → 红（Owl 评审点名的漏报路径）
+    # ㉟ Maven 发布后补丁 .SR<n>（Spring Service Release）——**归因敏感**的区间设计：
+    # >=2.5.7,<2.5.7.SR10 的下界是纯发布版。若 SR 不进"发布后补丁类"而被当预发布，
+    # 2.5.7.SR5 < 2.5.7（pre<release）→ 判不命中 = 漏报；进了补丁类（SR5 ⇒ 2.5.7.5）→ 命中 = 红。
+    # （数值感知预发布比较救不了这条：跨了发布版边界。）
     def c35(tmp):
         _fixture(tmp, [("golang.org/x/text", "v0.41.0")])
         bom = _bom(tmp, OWN + [("org.springframework", "spring-core", "2.5.7.SR5")])
-        row = ("GHSA-wv88-pf73-x22p\tMaven\torg.springframework:spring-core\t>=2.5.7.SR0,<2.5.7.SR023\tHIGH\t-\tSR range\n")
+        row = ("GHSA-wv88-pf73-x22p\tMaven\torg.springframework:spring-core\t>=2.5.7,<2.5.7.SR10\tHIGH\t-\tSR range\n")
         return run(tmp, _snapshot(tmp, gen, SNAP_BASE + row, java_bom=bom), _allow(tmp), java_bom=bom)
-    check("maven/SR 发布后补丁区间命中 → 红", 1, c35,
+    check("maven/SR 发布后补丁跨发布边界命中 → 红", 1, c35,
           want_text=["[FAIL] bom.json:3 org.springframework:spring-core@2.5.7.SR5", "GHSA-wv88-pf73-x22p"])
 
     # ㊱ 预发布序号数值感知（RC10 > RC2，不按字典序）：RC5 ∈ [RC2, RC10) → 红
