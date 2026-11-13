@@ -650,14 +650,17 @@
   | 来源 | 名字 | 数量 |
   |---|---|---|
   | 代码在读（控制面 `internal/config`） | `GUANJIN_DB_DSN`、`GUANJIN_MASTER_KEY`、`GUANJIN_HTTP_ADDR`、`GUANJIN_ISSUER`、`GUANJIN_REDIS_ADDR`、`GUANJIN_REDIS_PASSWORD`、`GUANJIN_TRACE_HEADER` | 7 |
-  | 代码在读（数据面 `cmd/guanjingw`） | `GUANJIN_GATEWAY_CLOCK_SKEW`、`GUANJIN_GATEWAY_DIAL_TIMEOUT`、`GUANJIN_GATEWAY_ROUTES`、`GUANJIN_GATEWAY_UPSTREAM_TIMEOUT` | 4 |
+  | 代码在读（数据面 `cmd/guanjingw`） | `GUANJIN_GW_CLOCK_SKEW`（**2026-11-11 #121 现名**，旧名 `GUANJIN_GATEWAY_CLOCK_SKEW` 已不再被平台读，见下方例外②）、`GUANJIN_GATEWAY_DIAL_TIMEOUT`、`GUANJIN_GATEWAY_ROUTES`、`GUANJIN_GATEWAY_UPSTREAM_TIMEOUT` | 4 |
   | 代码在读（SLO 通知钩子） | `GUANJIN_SLO_NOTIFY_PATH` | 1 |
-  | 基线 `技术栈 §7.2` 冻结但**本仓尚未读** | `GUANJIN_ENV`、`GUANJIN_LOG_LEVEL`、`GUANJIN_LOG_FORMAT`、`GUANJIN_GATEWAY_ADDR`、`GUANJIN_PUBLIC_BASE_URL`、`GUANJIN_DATABASE_URL`、`GUANJIN_DB_MAX_OPEN_CONNS`、`GUANJIN_DB_MAX_IDLE_CONNS`、`GUANJIN_DB_CONN_MAX_LIFETIME`、`GUANJIN_REDIS_URL`、`GUANJIN_REDIS_TIMEOUT`、`GUANJIN_BOOTSTRAP_ADMIN_USERNAME`、`GUANJIN_BOOTSTRAP_ADMIN_PASSWORD`、`GUANJIN_METRICS_ADDR`、`GUANJIN_OTEL_ENDPOINT` | 15 |
+  | 基线 `技术栈 §7.2` 冻结、**平台不读**（`GUANJIN_ENV` 有 SDK 侧豁免读取，见下方例外①） | `GUANJIN_ENV`、`GUANJIN_LOG_LEVEL`、`GUANJIN_LOG_FORMAT`、`GUANJIN_GATEWAY_ADDR`、`GUANJIN_PUBLIC_BASE_URL`、`GUANJIN_DATABASE_URL`、`GUANJIN_DB_MAX_OPEN_CONNS`、`GUANJIN_DB_MAX_IDLE_CONNS`、`GUANJIN_DB_CONN_MAX_LIFETIME`、`GUANJIN_REDIS_URL`、`GUANJIN_REDIS_TIMEOUT`、`GUANJIN_BOOTSTRAP_ADMIN_USERNAME`、`GUANJIN_BOOTSTRAP_ADMIN_PASSWORD`、`GUANJIN_METRICS_ADDR`、`GUANJIN_OTEL_ENDPOINT` | 15 |
   | **合计（去重后）** | — | **27** |
   （测试/CI 开关**不在**本表：它们要整族改名，见 **D26**。）
 - **例外不得当配置通道**：SDK **读取**保留名单里的任何键即违约（一旦读了，"非配置"变成"隐性配置项"，绕开 29 项冻结）。**Gate 可断言**：设 `GUANJIN_DB_DSN=…` / `GUANJIN_GATEWAY_ROUTES=…` → SDK 行为不变、不报错；设 `GUANJIN_JWKS_URI`（拼错）→ **启动失败且报键名**。
+- **两个已核对的例外（不是违规，勿再按"读了即违约"处理；均已对 main `1adcf7c` 实读核过）**：
+  - ① **`GUANJIN_ENV`**：**平台不读**；SDK 会读它（`EnvFromEnv()`，`sdk/go/guanjin/config.go:212`）作**运行时环境标识**，**不映射 29 项键、不参与默认值**，仅用于 `local|test` 门控（`enabled`/`authz.enabled` 置 false、`replay-store=memory` 的放宽）。属**豁免读取**，不构成隐性配置通道。本表原写"本仓尚未读"对 SDK 侧不准，已改口径（计数不变）。
+  - ② **`GUANJIN_GATEWAY_CLOCK_SKEW`**（#121 旧名）：**不得进入任何保留清单**——它就是 SDK 配置键 #10 `guanjin.gateway.clock-skew` 的**机械映射名**（按 §1.1：去 `guanjin.` 前缀、`.`/`-`→`_`、全大写），必须可读为配置；列入保留清单会**静默吃掉该键的 env 来源**（#51 评审 P1 实测：`=90s` 仍取默认 60s 且 `err=nil`，无任何报错）。**已由机器守线而不只是纪律**：`sdk/go/guanjin/runtime_test.go:249` `TestReservedEnvNeverShadowsConfigKeyMappings` 断言「保留清单 ∩ `EnvName(29 键)` = ∅」，并附功能断言「`GUANJIN_GATEWAY_CLOCK_SKEW=90s` 必须作为 #10 生效」。平台侧现名为 `GUANJIN_GW_CLOCK_SKEW`（本表数据面行）。
 - **清单维护纪律**：平台新增一个 `GUANJIN_*` env **必须**同时在本表加一行（同一 PR），否则下一次 SDK 升级会把它误杀。**清单是契约附录**，随 `sdk-contract.md` 一起落盘（不由代码注释单独维护）。
-- **已登记差异（不是本条要解决的，但必须留痕）**：基线 §7.2 冻结的是 `GUANJIN_DATABASE_URL` / `GUANJIN_REDIS_URL`，**代码读的是** `GUANJIN_DB_DSN` / `GUANJIN_REDIS_ADDR` + `GUANJIN_REDIS_PASSWORD`；另有 `GUANJIN_TRACE_HEADER` / `GUANJIN_GATEWAY_ROUTES` / `GUANJIN_GATEWAY_CLOCK_SKEW` / `GUANJIN_SLO_NOTIFY_PATH` **不在 §7.2**。两边都进保留表（`DATABASE_URL`/`REDIS_URL` 与 `DB_DSN`/`REDIS_ADDR` 各占一行），**以代码为准先用、差异待 Spec 定一次（改名或补基线）**，本条不擅自改名。
+- **已登记差异（不是本条要解决的，但必须留痕）**：基线 §7.2 冻结的是 `GUANJIN_DATABASE_URL` / `GUANJIN_REDIS_URL`，**代码读的是** `GUANJIN_DB_DSN` / `GUANJIN_REDIS_ADDR` + `GUANJIN_REDIS_PASSWORD`；另有 `GUANJIN_TRACE_HEADER` / `GUANJIN_GATEWAY_ROUTES` / `GUANJIN_GW_CLOCK_SKEW`（**现名**，2026-11-11 #121 改名）/ `GUANJIN_SLO_NOTIFY_PATH` **不在 §7.2**（§7.2 那 20 条里**既无现名也无旧名**，已实读核对）。两边都进保留表（`DATABASE_URL`/`REDIS_URL` 与 `DB_DSN`/`REDIS_ADDR` 各占一行），**以代码为准先用、差异待 Spec 定一次（改名或补基线）**，本条不擅自改名。
 - **发布说明（必须有这一行）**：这类收紧是**重启即挂**，用户升级后才能发现——发布说明里逐字写：「**升级后启动失败（进程非 0 退出）：报错含该键名，并说明"该键不属于 SDK 配置命名空间"，同时列出 29 项可用键**」。落盘位置 = `sdk-contract.md §3.6` 的升级提示（Nova 落）+ SDK 交付物发布说明；**本条不改那个文件**。
 - **是否契约变更**：`GUANJIN_X_DSN` 这类键**从来不是 29 项之一**；旧实现里 `HasSuffix("_DSN")` 之类的放行是**实现比基线宽**，本次收紧属**回归 §3.6 原文** → **不进 CH**（按 P8③ 判据：它不让业务方多出任何合法配置方式）。
 - **是否动基线正文**：**不动**（`sdk-contract.md` 是机制文档、由 Nova 补附录；`技术栈 §7.2` 一字不改，差异按上条登记）。
