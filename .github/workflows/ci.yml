@@ -62,6 +62,19 @@ jobs:
           # AC-AUD-12⑤：全仓算法扫描（SHA 系/RSA 零使用，唯一白名单 PKCE S256）。
           # --self-test 会在临时树里注入五类违规，每一次都必须被点名检出（脚本存在 ≠ 门禁存在）。
           ./scripts/check-guomi-algorithms.sh --self-test
+      - name: AC 映射表（AC-ENG-05：六栏并列 + 与 §2 账目逐栏对账）
+        # 判据原文要求「CI 产出 AC-ID → 六栏映射表」；此前没有任何步骤产出它，账目只能靠人同步。
+        # 这里同时验脚本自身（--self-test 四项：归类优先级、NOT-APPLICABLE→N/A、不可归类必红、声明值解析）。
+        run: |
+          ./scripts/ac-map.sh --self-test
+          ./scripts/ac-map.sh --out ac-map.tsv
+          head -2 ac-map.tsv
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ac-map
+          path: ac-map.tsv
+          if-no-files-found: warn
 
   race:
     # 独立的竞态检测 job：-race 需要 cgo，故这里显式 CGO_ENABLED=1；

@@ -103,6 +103,8 @@ gates: ## 工程红线门禁（禁 AutoMigrate / 禁废弃错误码 / 数据面�
 	@# AC-ENG-07：依赖漏洞门禁（离线快照，零网络）。命中未白名单的阻断级漏洞 / 快照过期 → 红。
 	@# 全量正控（37 项注入）在 CI 的 `vuln` job 跑；这里跑一次真实判定，本地就不必等 CI 才知道。
 	@./scripts/check-vuln.sh
+	@# AC-ENG-05：判据台账 → 六栏映射表，并与 §2 账目逐栏对账（新增判据没进表 = 红）。
+	@./scripts/ac-map.sh
 	@# 审计并发/探针敏感性用例**必须**在 CI 里真的跑：它们需要稳定链尾，故单列串行
 	@# （`-p 1`）；漏跑等于把 AC-AUD-04 的判据藏起来。
 	@$(MAKE) --no-print-directory test-audit-serial
