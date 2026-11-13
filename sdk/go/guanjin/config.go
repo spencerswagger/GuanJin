@@ -125,18 +125,64 @@ var durationPattern = regexp.MustCompile(DurationPattern)
 // 而 Java/Node 按 §3.2.1 只认 `<非负整数><单位>`（单位 ms|s|m|h）——同一份配置三语言必须
 // 同接受/同拒绝（§4.1 M7）。非法形态**一律失败并报出键名**，**不得回落默认值**。
 func parseDurationStrict(key, raw string) (time.Duration, error) {
-	v := strings.TrimSpace(raw)
+	v := trimDurationWhitespace(raw)
 	if !durationPattern.MatchString(v) {
 		return 0, fmt.Errorf("%w: 键 %q 取不到时长（契约 §3.2.1：唯一合法形态 = trim 后 %s"+
 			"，单位只 ms|s|m|h、小写、非负整数；纯数字 3000 / d / ns / us / 小数 1.5s / 组合 1h30m / "+
 			"ISO-8601 PT60S / 带符号 +60s / 空串 / 内部空白 60 s 一律拒绝），得到 %q",
 			ErrConfig, key, DurationPattern, raw)
 	}
+	if err := checkDurationUpperBound(key, raw, v); err != nil {
+		return 0, err
+	}
 	d, err := time.ParseDuration(v)
 	if err != nil {
 		return 0, fmt.Errorf("%w: 键 %q 的时长 %q 换算失败: %v", ErrConfig, key, raw, err)
 	}
 	return d, nil
+}
+
+// trimDurationWhitespace 剥契约 §3.2.1 **冻结**的首尾空白字符集：只 4 个 ASCII 空白
+// （空格 U+0020 / \t U+0009 / \n U+000A / \r U+000D），逐个剥、顺序无关。
+//
+// **不得改用 strings.TrimSpace**：它会多剥 NBSP(U+00A0)/全角空格(U+3000)/U+000B 等 Unicode 空白，
+// 而 Java（禁 String.trim 的 U+0000–U+001F）与 Node 的默认 trim 字符集又各不相同 ——
+// 用语言默认实现必然出现「同一份配置某语言收、某语言拒」（撞 §4.1 M7）。
+func trimDurationWhitespace(raw string) string {
+	return strings.Trim(raw, " \t\n\r")
+}
+
+// checkDurationUpperBound 契约 §3.2.1「数值上界」：必须能**无损**换算成 int64 纳秒
+// （= time.Duration 的表示范围，≈292 年，三语言取交集）。超出或 n 本身超 int64 → 失败报键名；
+// **不许截断到最大值、也不许退化成 0**（那是隐性逻辑）。
+//
+// 为什么显式判而不是只靠 time.ParseDuration：它的错误不带键名、也不区分「上界溢出」与「语法非法」，
+// 而契约要求错误信息必须含键名。换算本身仍交给 time.ParseDuration（与契约落点表一致）。
+func checkDurationUpperBound(key, raw, v string) error {
+	const maxInt64 = int64(^uint64(0) >> 1)
+	// 先 "ms" 再单字母单位（"ms" 也以 "s" 结尾，顺序不能反）
+	var number string
+	var unitNanos int64
+	switch {
+	case strings.HasSuffix(v, "ms"):
+		number, unitNanos = strings.TrimSuffix(v, "ms"), 1000000
+	case strings.HasSuffix(v, "s"):
+		number, unitNanos = strings.TrimSuffix(v, "s"), 1000000000
+	case strings.HasSuffix(v, "m"):
+		number, unitNanos = strings.TrimSuffix(v, "m"), 60000000000
+	default: // "h"（正则已限定单位闭合集）
+		number, unitNanos = strings.TrimSuffix(v, "h"), 3600000000000
+	}
+	n, err := strconv.ParseUint(number, 10, 64)
+	if err != nil {
+		return fmt.Errorf("%w: 键 %q 的时长数值本身超出 int64 范围（契约 §3.2.1 上界 = 可无损换算成 "+
+			"int64 纳秒），得到 %q", ErrConfig, key, raw)
+	}
+	if n > uint64(maxInt64/unitNanos) {
+		return fmt.Errorf("%w: 键 %q 的时长超出可无损换算的 int64 纳秒上界（%d ns ≈ 292 年）"+
+			"——三语言取交集，不许截断或退化成 0（契约 §3.2.1），得到 %q", ErrConfig, key, maxInt64, raw)
+	}
+	return nil
 }
 
 // setDuration 按 §3.2.1 解析并写入字段，同时保留原文——让 Validate() 能对"同一批判定"再跑一遍

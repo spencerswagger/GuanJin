@@ -97,6 +97,56 @@ class GuanjinDurationStrictTest {
     }
 
     @Test
+    void AC_SDK_11_trimSetIsFrozenToFourAsciiWhitespace() {
+        // 契约 §3.2.1「首尾空白」：只 4 个 ASCII 空白（U+0020 / \t / \n / \r），逐个剥、顺序无关；
+        // 其它空白一律不 trim → 落正则外即失败。**不得**用 String.trim()（会多剥 U+0000–U+001F）。
+        assertEquals(Duration.ofSeconds(30), GuanjinConfigValidator.parseDuration(k(), "\t30s\r\n"));
+        assertEquals(Duration.ofSeconds(2), GuanjinConfigValidator.parseDuration(k(), "\r\n 2s \t"));
+        assertEquals(Duration.ofMinutes(10), GuanjinConfigValidator.parseDuration(k(), " 10m "));
+        assertEquals(Duration.ofHours(1), GuanjinConfigValidator.parseDuration(k(), "\t\t1h\n\n"));
+
+        Map<String, String> illegal = new LinkedHashMap<String, String>();
+        illegal.put("NBSP 前缀 U+00A0", "\u00A02s");
+        illegal.put("NBSP 后缀 U+00A0", "2s\u00A0");
+        illegal.put("全角空格 U+3000", "\u30002s");
+        illegal.put("全角空格后缀 U+3000", "2s\u3000");
+        illegal.put("U+2000 前缀", "\u20002s");
+        illegal.put("U+2003 后缀", "2s\u2003");
+        illegal.put("U+000B 垂直制表", "\u000B30s");
+        illegal.put("U+000C 换页", "\u000C30s");
+        illegal.put("U+0000 NUL 前缀", "\u000030s");
+        illegal.put("NUL 夹在中间", "3\u00000s");
+        for (Map.Entry<String, String> e : illegal.entrySet()) {
+            GuanjinConfigException ex = assertThrows(GuanjinConfigException.class,
+                    () -> GuanjinConfigValidator.parseDuration(k(), e.getValue()),
+                    e.getKey() + " 不属于 4 个 ASCII 空白，不得 trim，必须失败");
+            assertEquals(k(), ex.getKey(), "错误必须报键名");
+        }
+    }
+
+    @Test
+    void AC_SDK_11_upperBoundIsLosslessInt64Nanos() {
+        // 契约 §3.2.1「数值上界」：必须能无损换算成 int64 纳秒（≈292 年，取三语言交集）；
+        // 越界 → 启动失败报键名，**不许截断到最大值、不许退化成 0**。
+        String key = "guanjin.gateway.jwks-cache-ttl";
+        assertEquals(Duration.ofNanos(Long.MAX_VALUE / 3_600_000_000_000L * 3_600_000_000_000L),
+                GuanjinConfigValidator.parseDuration(key, "2562047h"));
+        assertEquals(Duration.ofSeconds(9223372036L), GuanjinConfigValidator.parseDuration(key, "9223372036s"));
+        assertEquals(Duration.ofMillis(9223372036854L), GuanjinConfigValidator.parseDuration(key, "9223372036854ms"));
+        assertEquals(Duration.ofMinutes(153722867L), GuanjinConfigValidator.parseDuration(key, "153722867m"));
+
+        String[] illegal = {"2562048h", "153722868m", "9223372037s", "9223372036855ms",
+                "9999999999999h", "99999999999999999999s"};
+        for (String raw : illegal) {
+            GuanjinConfigException ex = assertThrows(GuanjinConfigException.class,
+                    () -> GuanjinConfigValidator.parseDuration(key, raw),
+                    raw + " 超出 int64 纳秒上界，必须失败（不许截断/退化）");
+            assertEquals(key, ex.getKey(), "错误必须报键名");
+            assertTrue(ex.getMessage().contains("int64"), "文案应点明 int64 纳秒上界：" + ex.getMessage());
+        }
+    }
+
+    @Test
     void AC_SDK_11_loaderRejectsIllegalTextAndNeverFallsBackToDefault() {
         Map<String, String> in = new LinkedHashMap<String, String>();
         in.put("guanjin.platform.base-url", "https://gj.example.com");

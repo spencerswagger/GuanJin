@@ -157,3 +157,109 @@ func TestAC_SDK_11_DurationFromEnvironIsStrict(t *testing.T) {
 		t.Fatalf("错误信息必须含键名，实得 %q", err.Error())
 	}
 }
+
+// 契约 §3.2.1「首尾空白」：字符集冻结为 4 个 ASCII 空白（U+0020/\t U+0009/\n U+000A/\r U+000D），
+// **其它空白一律不 trim**（NBSP、全角空格、U+2000–200A、U+000B/U+000C、U+0000）→ 落正则外即失败。
+// 这条同时钉住「不得用 strings.TrimSpace」——它会把 NBSP/全角当空白，与 Java/Node 分叉。
+func TestAC_SDK_11_DurationTrimSetIsFrozenAsciiWhitespace(t *testing.T) {
+	legal := []struct {
+		raw  string
+		want time.Duration
+	}{
+		{"\t30s\r\n", 30 * time.Second},
+		{"\r\n 2s \t", 2 * time.Second},
+		{" 10m ", 10 * time.Minute},
+		{"\t\t1h\n\n", time.Hour},
+	}
+	for _, tc := range legal {
+		_, err := LoadFromMap(map[string]string{KeyAgentPullInterval: tc.raw})
+		if err != nil {
+			t.Fatalf("4 个 ASCII 空白必须允许 trim，%q 不该失败：%v", tc.raw, err)
+		}
+		cfg, err := LoadFromMap(map[string]string{KeyAgentPullInterval: tc.raw})
+		if err != nil {
+			t.Fatalf("二次装载失败：%v", err)
+		}
+		if cfg.Agent.Pull.Interval != tc.want {
+			t.Fatalf("%q 应换算成 %v，实得 %v", tc.raw, tc.want, cfg.Agent.Pull.Interval)
+		}
+	}
+
+	illegal := []struct {
+		name string
+		raw  string
+	}{
+		{"NBSP 前缀 U+00A0", "\u00A02s"},
+		{"NBSP 后缀 U+00A0", "2s\u00A0"},
+		{"全角空格 U+3000", "\u30002s"},
+		{"全角空格后缀", "2s\u3000"},
+		{"U+2000 前缀", "\u20002s"},
+		{"U+2003 后缀", "2s\u2003"},
+		{"U+000B 垂直制表", "\u000B30s"},
+		{"U+000C 换页", "\u000C30s"},
+		{"U+0000 NUL", "\u000030s"},
+		{"NUL 夹在中间", "3\u00000s"},
+	}
+	for _, tc := range illegal {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := LoadFromMap(map[string]string{KeyAgentPullInterval: tc.raw})
+			if err == nil {
+				t.Fatalf("%q 不属于 4 个 ASCII 空白，不得 trim，必须失败（契约 §3.2.1）", tc.raw)
+			}
+			if !errors.Is(err, ErrConfig) || !strings.Contains(err.Error(), KeyAgentPullInterval) {
+				t.Fatalf("错误应为 ErrConfig 且含键名，实得 %v", err)
+			}
+		})
+	}
+}
+
+// 契约 §3.2.1「数值上界」：必须能**无损**换算成 int64 纳秒（= time.Duration 范围，≈292 年）；
+// 超出（或 n 本身超 int64）→ 失败报键名，**不许截断到最大值、不许退化成 0**。
+func TestAC_SDK_11_DurationUpperBoundIsInt64Nanos(t *testing.T) {
+	legal := []struct {
+		raw  string
+		want time.Duration
+	}{
+		{"2562047h", 2562047 * time.Hour},                     // int64 ns 上限内的最大整小时
+		{"153722867m", 153722867 * time.Minute},               // 同上，单位换成分
+		{"9223372036s", 9223372036 * time.Second},             // 同上，换成秒
+		{"9223372036854ms", 9223372036854 * time.Millisecond}, // 同上，换成毫秒
+	}
+	for _, tc := range legal {
+		cfg, err := LoadFromMap(map[string]string{KeyGatewayJwksCacheTTL: tc.raw})
+		if err != nil {
+			t.Fatalf("%q 在上界内，不该失败：%v", tc.raw, err)
+		}
+		if cfg.Gateway.JwksCacheTTL != tc.want {
+			t.Fatalf("%q 应换算成 %v，实得 %v", tc.raw, tc.want, cfg.Gateway.JwksCacheTTL)
+		}
+	}
+
+	illegal := []string{
+		"2562048h",              // 超 1 整小时
+		"153722868m",            // 超 1 整分
+		"9223372037s",           // 超 1 整秒
+		"9223372036855ms",       // 超 1 毫秒
+		"9999999999999h",        // 契约 CM-15 举的值
+		"99999999999999999999s", // n 本身超 int64
+	}
+	for _, raw := range illegal {
+		t.Run(raw, func(t *testing.T) {
+			cfg, err := LoadFromMap(map[string]string{KeyGatewayJwksCacheTTL: raw})
+			if err == nil {
+				t.Fatalf("%q 超出 int64 纳秒上界，必须失败（契约 §3.2.1）", raw)
+			}
+			if !errors.Is(err, ErrConfig) || !strings.Contains(err.Error(), KeyGatewayJwksCacheTTL) {
+				t.Fatalf("错误应为 ErrConfig 且含键名，实得 %v", err)
+			}
+			// 文案必须点明「int64 纳秒上界」，不能只是 time.ParseDuration 的通用语法错
+			// （否则换语言/换库就分不清"上界溢出"与"语法非法"，也证不了本判定真在跑）
+			if !strings.Contains(err.Error(), "int64") {
+				t.Fatalf("上界溢出的错误文案应点明 int64 纳秒上界，实得 %q", err.Error())
+			}
+			if cfg.Gateway.JwksCacheTTL != 0 {
+				t.Fatalf("上界溢出不得退化成可用值/截断值，实得 %v", cfg.Gateway.JwksCacheTTL)
+			}
+		})
+	}
+}

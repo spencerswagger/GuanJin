@@ -60,7 +60,7 @@ public final class GuanjinConfigValidator {
      * @throws GuanjinConfigException 非 {@code ^[0-9]+(ms|s|m|h)$}，或数值溢出
      */
     public static Duration parseDuration(String key, String raw) {
-        String v = raw == null ? "" : raw.trim();
+        String v = trimAsciiWhitespace(raw);
         if (!DURATION.matcher(v).matches()) {
             throw new GuanjinConfigException(key, "取不到时长（契约 §3.2.1：合法形态唯一 = trim 后 "
                     + DURATION_PATTERN + "，单位只 ms|s|m|h、小写、非负整数；纯数字 3000 / d / ns / us / "
@@ -69,27 +69,66 @@ public final class GuanjinConfigValidator {
         }
         boolean millis = v.endsWith("ms");
         String number = millis ? v.substring(0, v.length() - 2) : v.substring(0, v.length() - 1);
-        try {
-            long n = Long.parseLong(number);
-            if (millis) {
-                return Duration.ofMillis(n);
-            }
-            switch (v.charAt(v.length() - 1)) {
-                case 's':
-                    return Duration.ofSeconds(n);
-                case 'm':
-                    return Duration.ofMinutes(n);
-                case 'h':
-                    return Duration.ofHours(n);
-                default:
-                    // DURATION 正则已限定单位闭合集；这里只是防御（改动正则而忘了改这里才会到）
-                    throw new GuanjinConfigException(key, "内部错误：正则与单位换算不同步，得到 \"" + raw + "\"");
-            }
-        } catch (NumberFormatException e) {
-            throw new GuanjinConfigException(key, "时长数值超出 long 范围，得到 \"" + raw + "\"", e);
-        } catch (ArithmeticException e) {
-            throw new GuanjinConfigException(key, "时长数值溢出（换算成毫秒失败），得到 \"" + raw + "\"", e);
+        char unit = millis ? 'x' : v.charAt(v.length() - 1);
+        long unitNanos;
+        switch (unit) {
+            case 'x': // ms
+                unitNanos = 1000000L;
+                break;
+            case 's':
+                unitNanos = 1000000000L;
+                break;
+            case 'm':
+                unitNanos = 60000000000L;
+                break;
+            case 'h':
+                unitNanos = 3600000000000L;
+                break;
+            default:
+                // DURATION 正则已限定单位闭合集；这里只是防御（改动正则而忘了改这里才会到）
+                throw new GuanjinConfigException(key, "内部错误：正则与单位换算不同步，得到 \"" + raw + "\"");
         }
+        long n;
+        try {
+            n = Long.parseLong(number);
+        } catch (NumberFormatException e) {
+            throw new GuanjinConfigException(key, "时长数值本身超出 int64 范围（契约 §3.2.1 上界 = "
+                    + "可无损换算成 int64 纳秒），得到 \"" + raw + "\"", e);
+        }
+        if (n > Long.MAX_VALUE / unitNanos) {
+            // 与 Go time.Duration 取交集：不许截断、不许退化成 0（契约 §3.2.1「数值上界」）
+            throw new GuanjinConfigException(key, "时长超出可无损换算的 int64 纳秒上界（"
+                    + Long.MAX_VALUE + " ns ≈ 292 年）——三语言取交集，不许截断或退化成 0，得到 \"" + raw + "\"");
+        }
+        return Duration.ofNanos(n * unitNanos);
+    }
+
+    /**
+     * 契约 §3.2.1 冻结的首尾空白字符集：**只** 4 个 ASCII 空白
+     * （空格 {@code U+0020} / {@code \t} {@code U+0009} / {@code \n} {@code U+000A} / {@code \r} {@code U+000D}），
+     * 逐个剥、顺序无关。
+     *
+     * <p><b>不得用语言默认 trim</b>：Java {@code String.trim()} 会多剥 {@code \u0000–\u001F}，
+     * Go {@code strings.TrimSpace()} 会多剥 NBSP/全角空格等 Unicode 空白，JS {@code trim()} 亦然——
+     * 三者字符集互不相同，用默认实现必然出现「同一份配置某语言收、某语言拒」（撞 §4.1 M7）。
+     */
+    public static String trimAsciiWhitespace(String raw) {
+        if (raw == null) {
+            return "";
+        }
+        int start = 0;
+        int end = raw.length();
+        while (start < end && isAsciiWhitespace(raw.charAt(start))) {
+            start++;
+        }
+        while (end > start && isAsciiWhitespace(raw.charAt(end - 1))) {
+            end--;
+        }
+        return raw.substring(start, end);
+    }
+
+    private static boolean isAsciiWhitespace(char c) {
+        return c == ' ' || c == '\t' || c == '\n' || c == '\r';
     }
 
     /**
