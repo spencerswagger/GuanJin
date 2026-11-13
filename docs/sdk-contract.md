@@ -253,7 +253,7 @@
 | 7 | `guanjin.gateway.assertion-header` | string | `X-GuanJin-Assertion` | 否 | `gateway.assertionHeader` | `gateway.assertionHeader` | `Gateway.AssertionHeader` | 改名**不改变剥离义务**；匹配大小写不敏感；不得配置成 `Authorization` 等宿主已用头 |
 | 8 | `guanjin.gateway.issuer` | string | `guanjin-gateway` | 否 | `gateway.issuer` | `gateway.issuer` | `Gateway.Issuer` | 改值 = 放宽信任域（接受非本平台签发的断言）→ 需 ADR；默认不得动 |
 | 9 | `guanjin.gateway.aud` | string | `${client.id}` | 否 | `gateway.aud` | `gateway.aud` | `Gateway.Aud` | 偏离 `client.id` = 接受发给别家的令牌（跨系统挪用）→ 必须显式评审 |
-| 10 | `guanjin.gateway.clock-skew` | duration | `60s` | 否 | `gateway.clockSkew` | `gateway.clockSkew` | `Gateway.ClockSkew` | 只允许 `s` 级小值；`>300s` 视为风险配置（Gate 告警），它同时放大 `exp` 重放口子 |
+| 10 | `guanjin.gateway.clock-skew` | duration | `60s` | 否 | `gateway.clockSkew` | `gateway.clockSkew` | `Gateway.ClockSkew` | 只允许 `s` 级小值；`>300s` 视为风险配置（Gate 告警），它同时放大 `exp` 重放口子。**下界：无** —— `0s` **合法**（= 零容忍，语义见 §3.2.1 补口①-E42）；**不得**以"必须为正"拒绝（基线无此约束） |
 | 11 | `guanjin.gateway.replay-window` | duration | `60s` | 否 | `gateway.replayWindow` | `gateway.replayWindow` | `Gateway.ReplayWindow` | **必须 ≥ 令牌 `exp`（60s）**；配置得比 `exp` 小会漏检重放 → 启动校验失败 |
 | 12 | `guanjin.gateway.jwks-uri` | string(url) | `${platform.base-url}/.well-known/jwks.json` ✅C-2 | 否 | `gateway.jwksUri` | `gateway.jwksUri` | `Gateway.JwksURI` | **只允许平台 JWKS 基址口径**（C-2）；旧值 `/api/v1/jwks` **全库不存在**、首启 404 → 禁写；跨域/第三方地址 = 换信任源，需 ADR。**执行形态**：SDK 启动期校验 `gateway.jwks-uri` 与 `platform.base-url` **同源**（`scheme` + `host` + `port` 一致），不一致即**启动失败**（本条为执行上述已冻结约束，不新增键/默认值/必填性，不提供任何放行开关；裁定与完整执行形态见 `notes/sdk-jwks-uri-同源校验-2026-11-10.md`） |
 | 13 | `guanjin.gateway.jwks-cache-ttl` | duration | `10m` | 否 | `gateway.jwksCacheTtl` | `gateway.jwksCacheTtl` | `Gateway.JwksCacheTTL` | 公钥公开，缓存**不构成放行降级**；TTL 只影响轮换生效时延 |
@@ -313,7 +313,8 @@
 **补口（#152 落地后按实现定口径，2026-11-13；锚 #152 `be11a67`）——三处细节**
 
 **① `0s` 的合法性与语义 —— 裁决句：「`0s`/`0ms`/`0m`/`0h` 通过 §3.2.1 正则、按零值如实生效；它「不是」"未配置"的同义词——任何一侧都不得把零值回落成默认值，也不得把零值改写成"最小可用值"。」** 三条配套：
-- **逐键安全约束优先**：`gateway.replay-window` 必须 ≥ 令牌 `exp`（60s），故该键置 `0s` → **启动失败**（这是**安全约束**失败，不是解析失败，报错文案要能区分）；`gateway.clock-skew = 0s` **合法**（= 零容忍，语义明确）。
+- **逐键安全约束优先**：`gateway.replay-window` 必须 ≥ 令牌 `exp`（60s），故该键置 `0s` → **启动失败**（这是**安全约束**失败，不是解析失败，报错文案要能区分）。
+- **`gateway.clock-skew = 0s` 合法（= 零容忍）——裁决见下方「E42」，实现侧的"必须为正"是实现自造约束，须去掉。**
 - **风险不等于非法**：`connect-timeout`/`read-timeout`/`jwks-cache-ttl`/`agent.pull.interval` 置 `0s` 属"自伤配置"（必超时 / 每请求拉 JWKS / 轮询风暴），但**显式配置的错值不在 SDK 拦截范围**——SDK 不猜业务意图；要拦就是新增判据，须另行立项。
 - **不得**用 `0s` 表达"请用默认值"；要默认就别配这个键（§3.6 禁隐性逻辑）。
 
@@ -815,6 +816,24 @@ M1 的 S9 **只交付 Java 8 两份产物**；Node / Go 随 M2+ 落地。但**�
 
 > **向量增删清单**见 §3.2.1 末表（`CM-13`~`CM-17`；现有 `CM-06`~`CM-12` 保留）。**判据侧**：`acceptance-criteria.md` 的 `AC-SDK-11` 补一句「零值/上界/trim 字符集」断言（账目仍 **91 = 84/0/0/6/0/1**，不新增判据）。
 
+### 8.8 v15 → v16 修订点（2026-11-13：`clock-skew = 0s` 的零值裁决——契约与实现冲突收口）
+
+> **冲突（#156 撞出）**：v15 §3.2.1 补口① 写「`gateway.clock-skew = 0s` 合法（= 零容忍）」，但 **Java `GuanjinConfigValidator:226` 与 Go `Config.Validate:666` 两侧都按「必须为正」拒**（`skew.isZero()` / `ClockSkew <= 0` → `GuanjinConfigException` / `ErrConfig`）。Gate 已把 `CM-13` 记进 `pending_cases`（`current: go reject@validate / java reject@load`）**未自行判定**，等 Spec 收口。
+
+| # | 位置 | 原（v15） | 现（v16） | 依据 |
+|---|---|---|---|---|
+| **E42** | §3.2 **#10** 安全约束列 + §3.2.1 补口① | #10 列只写上限（`>300s` 告警）、没写下界；补口① 只顺带举例「`clock-skew=0s` 合法」，没给依据 → 与两侧实现正面冲突 | #10 列写明「**下界：无**——`0s` 合法（= 零容忍）；**不得**以"必须为正"拒绝」；补口① 改为指向本条，并把裁决句、依据、实现偏差、fail-closed 方向一次写清（见下） | 见下四条 |
+
+**裁决句（`clock-skew` 零值）：「`guanjin.gateway.clock-skew = 0s` **合法**，语义 = **零容忍**（`exp` 与 `iat` 按严格边界判定、不做偏斜补偿）；**不得**以"必须为正"拒绝——那是实现自造的下界。」**
+
+依据四条：
+1. **基线无下界**：`docs/baseline/GuanJin-SDK契约.md:104` 对该键只写「时钟偏移容忍（`exp`/`iat` 校验）」，**没有任何"必须为正"**；同文档示例代码 `:575-579` 是 `if (a.getExp() + skew < now) 已过期` / `if (a.getIat() - skew > now) 尚未生效`——`skew=0` 时算术**正常**、语义即"零容忍"，**不需要任何特判**。
+2. **实现自造约束 = §3.6 禁止的隐性逻辑**：两侧实现独立写了同一句"必须为正"，属**抄旧代码**而非基线要求；契约不能为了迁就实现而给某个键凭空加下界（要加就得有安全依据，见 3）。
+3. **它没有 `replay-window` 那种安全依据**：`replay-window < exp` 会**漏检重放**（放行已过期令牌 = 安全洞），所以那里必须有下界；`clock-skew = 0` 只会**更严**（更容易把令牌判成过期/未生效），方向是 **fail-closed**，不产生安全洞。
+4. **与 v15 通则一致**：补口① 已定「`0s` = 真零值、≠ 未配置、显式错值 SDK 不拦」；`clock-skew=0` 属"自伤配置"（对端时钟有毫秒级漂移就会被误判为令牌失效），按「风险 ≠ 非法」放行，由运维自己承担——SDK 不猜业务意图。
+
+**实现跟随（归 Nova，已登记 `acceptance-criteria.md` §15-G21⑤）**：Go `Config.Validate` 去掉 `ClockSkew <= 0`（改为 `< 0` 不可达即可删）、Java `GuanjinConfigValidator` 去掉 `isZero()` 判定；`>300s` 告警**保留不变**。**`replay-window` 的下界（≥ `exp`）一字不动**。改完 Gate 把 `CM-13` 从 `pending_cases` 转正（`accept` / 内部值 0 ms / ≠ 默认 60000）。
+
 ## 9. 附录
 
 ### 附录 A：能力 ID ↔ 基线 §2 编号 ↔ 对外 API 入口
@@ -896,4 +915,4 @@ M1 的 S9 **只交付 Java 8 两份产物**；Node / Go 随 M2+ 落地。但**�
 
 ---
 
-**校对快照（v15，供 Spec 抽查）**：`sdk-contract.md` / 行数 **899** 行（`wc -l`）/ md5 **`4262c6831c2b2bbc8a53e053ddf42704`**（md5 覆盖范围 = **正文全部，即第 1..895 行**，命令 `head -n 895 docs/sdk-contract.md | md5sum`——不含快照节自身与其上方分隔线，避免自引用；行数含快照节）。上一快照 = v14 864 行 / md5 `519c9c6deffb86b256427eba0307a8fb`。本版（**E39–E41**，#152 落地后三处细节）：①`0s` **形式合法、语义 = 真零值**（≠"未配置"，不得回落默认），逐键安全约束优先（`replay-window=0s` 属安全约束失败）；②Java/Go **落点按真实实现改写**（core `GuanjinConfigValidator.parseDuration` + boot2 `GuanjinDurationBindingGuard` 回写 trim 值；Go `parseDurationStrict` + `Validate()` 复判）；③**trim 字符集冻结为 4 个 ASCII 空白**（其它空白不 trim）、**数值上界 = 可无损换算 int64 纳秒**（超出启动失败、不许截断），并写明 #152 现状差异与向量增删清单 `CM-13`~`CM-17`。**正则与九类非法形态、29 项键名·类型·默认值·必填性、22 条能力一处未改、无源码**；判据侧 `AC-SDK-11` 补一句断言、账目仍 **91 = 84/0/0/6/0/1**。
+**校对快照（v16，供 Spec 抽查）**：`sdk-contract.md` / 行数 **918** 行（`wc -l`）/ md5 **`a8c3d8ca8edaabec6ab7a36fe08cc32f`**（md5 覆盖范围 = **正文全部，即第 1..914 行**，命令 `head -n 914 docs/sdk-contract.md | md5sum`——不含快照节自身与其上方分隔线，避免自引用；行数含快照节）。上一快照 = v15 899 行 / md5 `4262c6831c2b2bbc8a53e053ddf42704`。本版（**E42**，`clock-skew=0s` 裁决）：§3.2 **#10** 安全约束列写明「**下界：无**——`0s` 合法（= 零容忍），不得以"必须为正"拒绝」；§3.2.1 补口① 改为指向 **§8.8**；新增 §8.8 给**裁决句 + 四条依据**（基线 `SDK契约.md:104` 无下界、示例代码 `:575-579` 在 `skew=0` 算术正常、§3.6 禁实现自造约束、无 `replay-window` 那种安全依据 + fail-closed 方向）+ 实现跟随清单（Nova 去掉两侧 `必须为正`，`>300s` 告警与 `replay-window ≥ exp` 不动）。**正则与九类非法形态、29 项键名·类型·默认值·必填性、22 条能力一处未改、无源码**；判据侧 `AC-REG-04` 加测量口径指向、账目仍 **91 = 84/0/0/6/0/1**。
