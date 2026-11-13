@@ -19,8 +19,12 @@
 #            snakeyaml 1.30→1.31）→ Nova 升 minor + 回归；
 #       C 类 同 major 内无干净版本 **10** 条（spring 5.3.x→6.x、spring-security-crypto→6.3.8、snakeyaml→2.x、
 #            spring-boot 2.7.18→3.0）→ 需跨 major / Boot 3，Nova+Spec 排期。
-#     （**旧账 24/9 作废**：那是按"fix 版本同 major"粗判，未核该版本是否真的发布过 —— 例：spring-security-crypto
-#      区间要 5.7.16，而 5.7 线止于 5.7.14、5.8 线止于 5.8.16（<5.8.18），真正干净的只有 6.3.8。
+#     （**计数单位**：上面 A 12 / B 11 / C 10 是**逐公告**口径；Nova 实施用的**逐批次** A 批 24 / B 批 9 是同一笔账——
+#      换算 `24 = 12 + 11 + 1`、`9 = 10 − 1`，差额恰为 snakeyaml 1.30→2.0（公告跨 major，目标版本 Java 8 兼容、
+#      与 Boot 2.7.18 实测可解析，故 Nova 归"可一批"）。对账依据 `docs/acceptance-criteria.md` §12.1；
+#      **两种单位不得混用，引用时必须写清是哪一种。**
+#      另：判族必须核目标版本**真的发布过**，不能只看"fix 版本同 major" —— 例 spring-security-crypto 区间要 5.7.16，
+#      而 5.7 线止于 5.7.14、5.8 线止于 5.8.16（<5.8.18），真正干净的只有 6.3.8（属 C 类）。
 #      按同一口径复核全部 33 条见 `docs/qa/vuln-scan.md` §5。）
 #   - **Go / npm 条目 = 0 条**：go-redis v9.7.3、vue 3.5.45、vite 6.4.6 已真修（D23② 的 vue/vite 随 #127 落地；go-redis 更早）；
 #     Go 标准库条目同为 0 条 —— stdlib **一律不得进本文件**，只能升 Go（D23①，现行 `go.mod` = `1.26.10`）。
