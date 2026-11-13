@@ -3,7 +3,7 @@
 | 项 | 内容 |
 |---|---|
 | 主笔 / 归属 | 关津 架构 · Ark（TWKJSV） |
-| 输入 | `/docs/baseline/` 12 份 + 索引；`/docs/decisions.md`（D1–**D12**、**P1–P8**、**F0 不可动名单**、R2–R5/R8/R9；R1 已转入 D5、R6 已转入 **P5**、R7 已转入 P4、新增 **P6**（分支纪律）/ **P7**（docs 必须入库），D5/P4/P5/P6/P7/P8 均经 hugo 追认 2026-11-02）；`/docs/acceptance-criteria.md`（**v11，90 条 AC，10 组**：REG 10 / LOGIN 8 / FLOW 13 / SESS 5 / DP 13 / SDK 10 / FC 8 / AUD 12 / ENG 8 / AGENT 3；**83 PASS-able / 0 `PENDING·CH-n` / 0 `BLOCKED` / 6 NOT-APPLICABLE / 0 NOT-IMPLEMENTED / 1「后置（DEFERRED）：本期不做判定」(`AC-AUD-10`)**；v11 = **P8 把 CH-1~CH-5 全部转「已追认」→ 13 条 `PENDING·CH-n` 一次转 `PASS-able`，断言一字未改、只改状态列**；`AC-SDK-03`/`AC-SDK-02` 已按 D6(3)/(4) 降为 `PASS-able`；**`AC-AUD-10` 的呈现以 `decisions.md` D8-B【正式裁定】为唯一口径 = 「后置（DEFERRED）：本期不做判定」、`BLOCKED` 归零**）；`/docs/sdk-contract.md`（**唯一 owner = Nova，落 PR #1**；本文**只引用不复制**，版本/行数/md5 以该 PR 为准——PR #2 曾带过一份 v4，已按 P6「一人一文件」摘除，避免与 v7 互不为祖先而静默回退）；本文只依赖其**数量口径**（22 能力 / 29 配置）与 D6/D10/D11 点名的条目名 |
+| 输入 | `/docs/baseline/` 12 份 + 索引；`/docs/decisions.md`（D1–**D12**、**P1–P8**、**F0 不可动名单**、R2–R5/R8/R9；R1 已转入 D5、R6 已转入 **P5**、R7 已转入 P4、新增 **P6**（分支纪律）/ **P7**（docs 必须入库），D5/P4/P5/P6/P7/P8 均经 hugo 追认 2026-11-02）；`/docs/acceptance-criteria.md`（**v19，91 条 AC，10 组**：REG 10 / LOGIN 8 / FLOW 13 / SESS 5 / DP 13 / SDK **11** / FC 8 / AUD 12 / ENG 8 / AGENT 3；**84 PASS-able / 0 `PENDING·CH-n` / 0 `BLOCKED` / 6 NOT-APPLICABLE / 0 NOT-IMPLEMENTED / 1「后置（DEFERRED）：本期不做判定」(`AC-AUD-10`)**；v11 = **P8 把 CH-1~CH-5 全部转「已追认」→ 13 条 `PENDING·CH-n` 一次转 `PASS-able`，断言一字未改、只改状态列**（v11 时 `90 = 83`）；**v19（#147）新增 `AC-SDK-11`（时长键严格解析）→ `91 = 84`，SDK 组 10 → 11**；`AC-SDK-03`/`AC-SDK-02` 已按 D6(3)/(4) 降为 `PASS-able`；**`AC-AUD-10` 的呈现以 `decisions.md` D8-B【正式裁定】为唯一口径 = 「后置（DEFERRED）：本期不做判定」、`BLOCKED` 归零**）；`/docs/sdk-contract.md`（**唯一 owner = Nova，落 PR #1**；本文**只引用不复制**，版本/行数/md5 以该 PR 为准——PR #2 曾带过一份 v4，已按 P6「一人一文件」摘除，避免与 v7 互不为祖先而静默回退）；本文只依赖其**数量口径**（22 能力 / 29 配置）与 D6/D10/D11 点名的条目名 |
 | 写者纪律（**强制**） | **`/docs/m1-slices.md` 与 `/docs/decisions.md` 仅 Ark 可写**。其他成员（含 Gate / Nova / Spec / Edge / Core / Vue）**只回报改动请求**，不得直接修改这两份文件；发现数字或口径不一致，报给 Ark 一次改齐（防并行改写导致计数抖动——2026-11-02 已发生两起）。主持人的派工权不变，但落笔人只有一个。 |
 | 权威顺序 | 索引 §2 → 端点/数据契约 → `decisions.md` → 本文件（切片口径） |
 | 状态 | 方案稿。**本轮不建骨架、不入库、不写代码**；今晚按本文顺序施工 |
@@ -49,7 +49,7 @@
 | S6 | 协议面令牌签发（authorize/token/revoke/jwks/userinfo） | **Core** | S5、D3-E（已收口，见 §6） | AC-LOGIN-01 / 04 / 05 / 06 / 07 / 08 |
 | S7 | 会话管理 + 实时撤销 + 管理面 sessions | **Core** | S6 | AC-SESS-01~03 / 05、AC-AUD-07（部分） |
 | S8 | 数据面 `cmd/guanjingw` 7 件事 | **Edge** | S7 | **AC-DP-01~13**、AC-SESS-01 / 04 |
-| S9 | 最小 SDK 接入（Java） | **Nova** | S8、`sdk-contract.md`（**Nova 维护、PR #1**）、D6、CH-5（仅「29 项交付集 + 删 `guanjin.mode`」） | **AC-SDK-01~10**、AC-DP-03 / 04~08、AC-FC-04 / 05 |
+| S9 | 最小 SDK 接入（Java） | **Nova** | S8、`sdk-contract.md`（**Nova 维护、PR #1**）、D6、CH-5（仅「29 项交付集 + 删 `guanjin.mode`」） | **AC-SDK-01~11**（v19 起含 `AC-SDK-11` 时长严格解析）、AC-DP-03 / 04~08、AC-FC-04 / 05 |
 | S10 | fail-closed 故障注入 + 审计链校验 Job | **Edge**（+Gate 驱动） | S9、D4、D8 | AC-FC-01~08、AC-AUD-03 / 04 / 05、**AC-AUD-11** |
 | S11 | M1 收口（e2e 演示 + AC 全表 + 交接） | **Gate**（Spec 出验收） | S10 | **AC-AUD-12**、AC-ENG-01 / 05 / 06 / **08（复核）** + 全表无 `NOT-IMPLEMENTED` |
 
@@ -70,7 +70,7 @@
 | **S6** | `GET /authorize`、`POST /authorize/submit`、`POST /oauth/token`、`POST /oauth/revoke`、`POST /oauth/introspect`、`POST /userinfo`、`GET /.well-known/openid-configuration`、`GET /.well-known/jwks.json` | `internal/protocol`（`authorize.go`/`token.go`/`userinfo.go`/`discovery.go`）、`internal/crypto`（`sm2.go`/`jwks.go`）、`internal/session` | `sessions`、`signing_keys`、`auth_events`（读 `flows`） | `AC-LOGIN-01`、`AC-LOGIN-04`、`AC-LOGIN-05`、`AC-LOGIN-06`、`AC-LOGIN-07`、`AC-LOGIN-08` |
 | **S7** | `GET /api/v1/sessions`、`DELETE /api/v1/sessions`、`DELETE /api/v1/sessions/{id}`、`GET /api/v1/me/sessions`、`DELETE /api/v1/me/sessions`、`DELETE /api/v1/me/sessions/{id}`、`POST /logout` | `internal/session/manager.go`、`internal/admin/sessions.go`、`internal/admin/rbac.go`（三员最小骨架）、`internal/audit/event.go` | `sessions`、`auth_events`、`flows`（活跃流置 `abandoned`）、`role_bindings`（三员） | `AC-SESS-01`、`AC-SESS-02`、`AC-SESS-03`、`AC-SESS-05`、`AC-AUD-07`（单副本先行） |
 | **S8** | `ANY /{route}/`（数据面通配转发）+ `POST /api/v1/agent/report`（M1 只落验签件，判据归 M2） | `internal/gateway`（`proxy.go`/`admit.go`/`inject.go`/`strip.go`/`revoke.go`/`slo.go`/`route.go`）、`cmd/guanjingw` | `sessions`、`user_visited_clients`（写）、`clients`（档位读）、`auth_events` | `AC-DP-01~13`、`AC-SESS-01`、`AC-SESS-04` |
-| **S9** | 平台侧无新增端点；SDK 消费 `GET /.well-known/jwks.json`（`GET /api/v1/agent/policies` 默认不调，`AC-SDK-10`） | `sdk/guanjin-core`（零 Spring：验签/claim/`jti`/JWKS 缓存/fail-fast）、`sdk/guanjin-spring-boot2`（`javax.servlet` Filter + `GuanjinProperties`） | **无**（SDK 侧本地 `jti` 落 Redis，不碰平台库） | `AC-SDK-01~10`、`AC-FC-04`、`AC-FC-05`、`AC-DP-03`、`AC-DP-04~08` |
+| **S9** | 平台侧无新增端点；SDK 消费 `GET /.well-known/jwks.json`（`GET /api/v1/agent/policies` 默认不调，`AC-SDK-10`） | `sdk/guanjin-core`（零 Spring：验签/claim/`jti`/JWKS 缓存/fail-fast）、`sdk/guanjin-spring-boot2`（`javax.servlet` Filter + `GuanjinProperties`） | **无**（SDK 侧本地 `jti` 落 Redis，不碰平台库） | `AC-SDK-01~11`（v19 起含 `AC-SDK-11`）、`AC-FC-04`、`AC-FC-05`、`AC-DP-03`、`AC-DP-04~08` |
 | **S10** | 无新增业务端点（`/readyz` 探针 + `cmd/guanjind` 内定时任务） | `internal/audit`（`chain.go`）、`internal/httpx/error.go`（D8-C/C′ 映射）、`internal/config`、`cmd/guanjind` 定时器 | `audit_logs`（分区 + `prev_tag`）、`runtime_config`（`audit.chain.anchor.<YYYYMM>` / `segment.<YYYYMM>`） | `AC-FC-01`、`AC-FC-02`、`AC-FC-07`、`AC-FC-08`、`AC-AUD-03`、`AC-AUD-04`、`AC-AUD-05`、`AC-AUD-11` |
 | **S11** | 全端点回放（一条 e2e：注册→登录→补步→转发→撤销→403） | 全仓（Gate 驱动，Spec 出验收） | 全表（只读取证 + 映射表） | `AC-AUD-12`、`AC-ENG-01`、`AC-ENG-05`、`AC-ENG-06`、`AC-ENG-08`（复核）+ 全表无 `NOT-IMPLEMENTED` |
 
@@ -93,14 +93,14 @@ S0 文档入库+PR
 
 - **硬依赖（不可并行、不可跳）**：`S2→S3`（无表则仓储无落点）、`S3→S4`（无派生键/错误映射则不能写库）、`S4→S5`（无账号与密码因子则流无对象）、`S5→S6`（无 `flows`/`challenges` 则签不出带 `acr/amr` 的令牌）、`S6→S7`（无令牌则撤销无对象）、`S7→S8`（撤销不实时，数据面判 ACR 无依据）、`S8→S9`（无断言头则 SDK 无内容可验）。
 - **可让路（单步内部并行，但合并顺序不变）**：S9 的 SDK 单测可在 S8 完成实体后由 Nova 先写；S10 的审计链并发用例需 Edge+Gate 同场；S5 的 `internal/flow` 单测可在 S4 收尾时先起（`flows` 表已在 S2 就位）。
-- **卡点已解除**：`CH-1`~`CH-5` 全部追认（P8，经 hugo 追认 2026-11-02）——`flow_id` 按必填实现、Descriptor 新字段与错误码变更可直接落、SDK 按 29 项交付。**不再有「等追认」的停工点**；判据侧 Gate 已在 **v11** 把 13 条 `PENDING·CH-n` 一次转 `PASS-able`（**90 = 83 / 0 / 0 / 6 / 0 + 1 后置**），本文数字与之一致。
+- **卡点已解除**：`CH-1`~`CH-5` 全部追认（P8，经 hugo 追认 2026-11-02）——`flow_id` 按必填实现、Descriptor 新字段与错误码变更可直接落、SDK 按 29 项交付。**不再有「等追认」的停工点**；判据侧 Gate 已在 **v11** 把 13 条 `PENDING·CH-n` 一次转 `PASS-able`，**v19 起账目 = 91 = 84 / 0 / 0 / 6 / 0 + 1 后置**（v19 新增 `AC-SDK-11`），本文数字与 `acceptance-criteria.md` **v19** 一致。
 - **禁止**：在 `flows` 缺位时开工 S5；在 S8 实体未完成时合并 S9；把 S10 的故障注入改成 mock（必须真实停容器）。
 
 ---
 
 ## 4. 逐步拆解（目的 / 动作要点 / 验收判据与 PASS 条件 / 退出条件）
 
-> **状态口径（统一，避免与 Gate 判据抖动）**：本节各步写的 `PASS = ...` 都是**「期望行为」**，状态以 `/docs/acceptance-criteria.md`（**v11**）与本文件 §6 契约变更行为准，账目 = **90 = 83 `PASS-able` / 0 `PENDING·CH-n` / 0 `BLOCKED` / 6 N/A / 0 `NOT-IMPLEMENTED` / 1「后置（DEFERRED）：本期不做判定」(`AC-AUD-10`)**；**`PENDING·CH-n` 已归零**——原 13 条（CH-2 = `AC-FLOW-01`/`AC-FLOW-07`；CH-4 = `AC-LOGIN-05`/`AC-FLOW-03`/`AC-SESS-01`/`AC-AUD-07`/`AC-ENG-08`/`AC-REG-08`/`AC-REG-09`/`AC-REG-10`；CH-5 = `AC-SDK-01`/`AC-SDK-07`/`AC-FC-05`）已随 **P8** 追认全部转 `PASS-able`；`AC-FLOW-12/13`（D12）自始 `PASS-able`。
+> **状态口径（统一，避免与 Gate 判据抖动）**：本节各步写的 `PASS = ...` 都是**「期望行为」**，状态以 `/docs/acceptance-criteria.md`（**v19**）与本文件 §6 契约变更行为准，账目 = **91 = 84 `PASS-able` / 0 `PENDING·CH-n` / 0 `BLOCKED` / 6 N/A / 0 `NOT-IMPLEMENTED` / 1「后置（DEFERRED）：本期不做判定」(`AC-AUD-10`)**（v19 在 v11 的 90/83 之上新增 `AC-SDK-11` 时长严格解析 → 91/84）；**`PENDING·CH-n` 已归零**——原 13 条（CH-2 = `AC-FLOW-01`/`AC-FLOW-07`；CH-4 = `AC-LOGIN-05`/`AC-FLOW-03`/`AC-SESS-01`/`AC-AUD-07`/`AC-ENG-08`/`AC-REG-08`/`AC-REG-09`/`AC-REG-10`；CH-5 = `AC-SDK-01`/`AC-SDK-07`/`AC-FC-05`）已随 **P8** 追认全部转 `PASS-able`；`AC-FLOW-12/13`（D12）自始 `PASS-able`。
 
 ### S0 · 仓库与文档骨架 + 开 PR（负责人 Ark，前置：无；开工时间 **今晚 22:05**）
 - **目的**：把"唯一权威"落到版本管理里，之后一切引用可追溯；**S0 的产出必须是一个已开的 PR**（不是本地 diff）。用现成空仓 `spencerswagger/GuanJin`（P3），不新建仓库。
@@ -206,13 +206,13 @@ S0 文档入库+PR
 
 **今晚就能动代码**：**22:05 开工，按本文从 S0 走**（S0 = 文档骨架 + **14 个基线文件** + 四份项目文档 + 5 篇 ADR 入库 + **开 PR**）→ S1（module path 已定稿）→ S2 含 `000015_create_flows`（按 D5 规格 + seed `flow.ttl_seconds`）→ S3 → S4 → S5（含 `AC-FLOW-10/11`）。
 **仍需等外部结论的**：**本期无**——密评整体后置，`AC-AUD-10` 按 **「后置（DEFERRED）：本期不做判定」** 记账（`BLOCKED` 归零，依据 D8-B【正式裁定】：Gate 的 `BLOCKED` 定义前提是"依赖残余待裁"，而 R2/R4 已挂起、R3 已关闭）。**但后置 ≠ 免验**：`acceptance-criteria.md` §11.1 的 7 项输入（I-1~I-7）**仍须在 M2 之前备齐**，否则 M5 的等保密评证据链闭不上；「后置」项不得写成通过、不得写"预检通过"、不得从账目里摘掉。`AC-AUD-12`（应用侧国密实证）仍可独立判定。**等保相关的代码要求不受后置影响**：双因素、审计不可篡改、三员分权、脱敏留痕照基线实现，只是本期不出证/不送检。R5/R8/R9 不卡 M1 编码（状态保留在 `decisions.md`，R5 的 S256 已在 `AC-AUD-12` 里列为唯一白名单）。
-**契约变更：CH-1~CH-5 已全部追认（经 hugo 追认，2026-11-02，见 `decisions.md` P8）**，S5/S6/S9 与全站分页按清单实现即可；CH-6 为内部口径。**判据侧**：**Gate 已在 v11 把 13 条 `PENDING·CH-n` 一次转 `PASS-able`**（**90 = 83 / 0 / 0 / 6 / 0 + 1 后置**，断言一字未改、只改状态列），本文数字与 `acceptance-criteria.md` v11 一致、**不再有「待 Gate 更新」的悬空引用**。**CH-1（`/auth/challenge` 新增必填 `flow_id`）直接决定 S5 的端点签名**——追认后按**必填**实现（缺省 → `MISSING_PARAMETER`），不再有"可选 + 兜底"占位。**挂判据的口径（原 v6 标注，追认后 PENDING 已解除）**：CH-2 → `AC-FLOW-01`/`AC-FLOW-07`；CH-4 → `AC-LOGIN-05`/`AC-FLOW-03`/`AC-SESS-01`/`AC-AUD-07`/`AC-ENG-08`；CH-5（仅「29 项 + 删 `mode`」）→ `AC-SDK-01`/`AC-SDK-07`/`AC-FC-05`；**CH-1 不单独挂判据**（`AC-FLOW-10` 的断言不依赖必填语义）、**CH-3 不挂 M1 判据**（只影响 M5 的 `AC-AUD-08`）。**追认前合计 13 条 `PENDING·CH-n`（Gate v10），已随 P8 在 v11 全部转 `PASS-able`（90 = 83/0/0/6/0+1 后置）**；逐条点名的仍是上面 10 条老判据，v10 新增的 `AC-REG-08/09/10`（CH-4④⑤）随同一批追认解除。
+**契约变更：CH-1~CH-5 已全部追认（经 hugo 追认，2026-11-02，见 `decisions.md` P8）**，S5/S6/S9 与全站分页按清单实现即可；CH-6 为内部口径。**判据侧**：**Gate 已在 v11 把 13 条 `PENDING·CH-n` 一次转 `PASS-able`**（v11 时 **90 = 83 / 0 / 0 / 6 / 0 + 1 后置**，断言一字未改、只改状态列；**v19 起现行账目 = 91 = 84 / 0 / 0 / 6 / 0 + 1 后置**），本文数字与 `acceptance-criteria.md` **v19** 一致、**不再有「待 Gate 更新」的悬空引用**。**CH-1（`/auth/challenge` 新增必填 `flow_id`）直接决定 S5 的端点签名**——追认后按**必填**实现（缺省 → `MISSING_PARAMETER`），不再有"可选 + 兜底"占位。**挂判据的口径（原 v6 标注，追认后 PENDING 已解除）**：CH-2 → `AC-FLOW-01`/`AC-FLOW-07`；CH-4 → `AC-LOGIN-05`/`AC-FLOW-03`/`AC-SESS-01`/`AC-AUD-07`/`AC-ENG-08`；CH-5（仅「29 项 + 删 `mode`」）→ `AC-SDK-01`/`AC-SDK-07`/`AC-FC-05`；**CH-1 不单独挂判据**（`AC-FLOW-10` 的断言不依赖必填语义）、**CH-3 不挂 M1 判据**（只影响 M5 的 `AC-AUD-08`）。**追认前合计 13 条 `PENDING·CH-n`（Gate v10），已随 P8 在 v11 全部转 `PASS-able`（v11 时 90 = 83/0/0/6/0+1 后置；**v19 起 91 = 84/0/0/6/0+1 后置**）**；逐条点名的仍是上面 10 条老判据，v10 新增的 `AC-REG-08/09/10`（CH-4④⑤）随同一批追认解除。
 
 ---
 
 ## 6. Gate 回读后的期望值对齐（已全部收口，无待补项）
 
-Gate 于 2026-11-02 按 `decisions.md` 回填并迭代到 `acceptance-criteria.md` **v11**（`AC-AUD-10` 的呈现按 **D8-B【正式裁定】**统一为「后置（DEFERRED）：本期不做判定」、`BLOCKED` 固定归零；**v11 按 P8 把 CH-1~CH-5 追认落账 → 13 条 `PENDING·CH-n` 一次转 `PASS-able`，账目 `90 = 83 PASS-able / 0 PENDING / 0 BLOCKED / 6 NOT-APPLICABLE / 0 NOT-IMPLEMENTED / 1「后置」`**；ID 未重排、断言未改；v10 另按 **D12** 加 `AC-FLOW-12/13`、按 **CH-4④⑤** 加 `AC-REG-08/09/10`；`AC-SDK-03`/`AC-SDK-02` 已按 D6(3)/(4) 降为 `PASS-able`）。它提出 4 处需我确认的期望值，**结论已全部写入 `decisions.md`**，本节只留对照表备查：
+Gate 于 2026-11-02 按 `decisions.md` 回填并迭代到 `acceptance-criteria.md` **v11**（`AC-AUD-10` 的呈现按 **D8-B【正式裁定】**统一为「后置（DEFERRED）：本期不做判定」、`BLOCKED` 固定归零；**v11 按 P8 把 CH-1~CH-5 追认落账 → 13 条 `PENDING·CH-n` 一次转 `PASS-able`，账目 `90 = 83 PASS-able / 0 PENDING / 0 BLOCKED / 6 NOT-APPLICABLE / 0 NOT-IMPLEMENTED / 1「后置」`；v19（2026-11-13）新增 `AC-SDK-11` → 现行 `91 = 84 PASS-able / 0 / 0 / 6 / 0 / 1`**；ID 未重排、断言未改；v10 另按 **D12** 加 `AC-FLOW-12/13`、按 **CH-4④⑤** 加 `AC-REG-08/09/10`；`AC-SDK-03`/`AC-SDK-02` 已按 D6(3)/(4) 降为 `PASS-able`）。它提出 4 处需我确认的期望值，**结论已全部写入 `decisions.md`**，本节只留对照表备查：
 
 | # | 事项 | 唯一结论（`decisions.md` 位置） | 影响 AC |
 |---|---|---|---|
@@ -223,7 +223,7 @@ Gate 于 2026-11-02 按 `decisions.md` 回填并迭代到 `acceptance-criteria.m
 | 回填 | `AC-ENG-02` 期望表数 | **15 张**（14 + `flows`） | AC-ENG-02 |
 | 回填 | `AC-SDK-07` 期望配置数 | **29 项**（D6 作废"32 项"） | AC-SDK-07 |
 | Edge/Core 对齐 | `flows` 表的 6 处并入（第 13 列 `trace_id` / seed 600 三条件 / 锁序 `sessions→flows` + 锁内禁重活 / 清理两段式 / `completed` 一次性回填 `session_id` / `challenges` 不加 `flow_id`） | **全部采纳**，已写入 `decisions.md` D5 的 I-F6/I-F7/I-F8 与落地方案，并标「Edge/Core 对齐结论（2026-11-02）」（**非追认标注**） | AC-FLOW-10/11、AC-AUD-01 |
-| 契约变更 | 对外可见变更 6 条（CH-1~CH-6） | **CH-1~CH-5 已全部追认（经 hugo 追认 2026-11-02，见 `decisions.md` P8）**；CH-1 的 `flow_id` 按**必填**实现（`AC-FLOW-10` 的断言仍不依赖必填语义）；CH-6 为内部口径。**原先挂 `PENDING·CH-n` 的 13 条已在 v11 转 `PASS-able`**（**90 = 83/0/0/6/0+1 后置**，只改状态列、断言未改）—— 见 `decisions.md`「契约变更清单」：**CH-2**（Descriptor 新字段）= `AC-FLOW-01`、`AC-FLOW-07`；**CH-4**（错误码三变）= `AC-LOGIN-05`、`AC-FLOW-03`、`AC-SESS-01`、`AC-AUD-07`、`AC-ENG-08`；**CH-5**（**仅**「29 项交付集 + 删 `guanjin.mode`」）= `AC-SDK-01`、`AC-SDK-07`、`AC-FC-05`。**CH-1 不单独挂判据**（S5 的 `flow_id` 必填由新契约测试覆盖）；**CH-3 不挂 M1 判据**（只影响 M5 的 `AC-AUD-08`） | `AC-FLOW-01`、`AC-FLOW-07`、`AC-LOGIN-05`、`AC-FLOW-03`、`AC-SESS-01`、`AC-AUD-07`、`AC-ENG-08`、`AC-SDK-01`、`AC-SDK-07`、`AC-FC-05`（共 10 条） |
+| 契约变更 | 对外可见变更 6 条（CH-1~CH-6） | **CH-1~CH-5 已全部追认（经 hugo 追认 2026-11-02，见 `decisions.md` P8）**；CH-1 的 `flow_id` 按**必填**实现（`AC-FLOW-10` 的断言仍不依赖必填语义）；CH-6 为内部口径。**原先挂 `PENDING·CH-n` 的 13 条已在 v11 转 `PASS-able`**（**v19 起账目 `91 = 84/0/0/6/0+1 后置`**，只改状态列、断言未改）—— 见 `decisions.md`「契约变更清单」：**CH-2**（Descriptor 新字段）= `AC-FLOW-01`、`AC-FLOW-07`；**CH-4**（错误码三变）= `AC-LOGIN-05`、`AC-FLOW-03`、`AC-SESS-01`、`AC-AUD-07`、`AC-ENG-08`；**CH-5**（**仅**「29 项交付集 + 删 `guanjin.mode`」）= `AC-SDK-01`、`AC-SDK-07`、`AC-FC-05`。**CH-1 不单独挂判据**（S5 的 `flow_id` 必填由新契约测试覆盖）；**CH-3 不挂 M1 判据**（只影响 M5 的 `AC-AUD-08`） | `AC-FLOW-01`、`AC-FLOW-07`、`AC-LOGIN-05`、`AC-FLOW-03`、`AC-SESS-01`、`AC-AUD-07`、`AC-ENG-08`、`AC-SDK-01`、`AC-SDK-07`、`AC-FC-05`（共 10 条） |
 | Gate v5/v6 回读（G9/G11） | ①**G9**：账目 66/12 → **67 PASS-able / 11 `PENDING`**（卷首、§6、§7、§8 DoD 全部改齐，卷首版本号 v4→**v5**）；②**G11**：`AC-SDK-02`（profile 门控）**定为 D6(4) 纯加固裁定、不进 CH 清单**→ 降为 `PASS-able`（账目 **68/10**，v6 已落地）；③`dataLabel(` 并入 `AC-ENG-08` 禁词扫描 | 3 处全部采纳（标「Gate 回读（2026-11-02）」）。**G11 选②**：`enabled/authz.enabled` 在非 `local\|test` 置 `false` 本来就是基线禁止项（SDK §3.2「验签不可关」+ 移交 §九「不存在生产可跳过验签的开关」），D6(4) 只是把"告警"升级为"启动失败"使其**可执行**，属**加固**而非新增契约面；判据取三分判据「是否让业务方能用基线原本不允许的方式配置 SDK？」→ 不能 | AC-SDK-02、AC-ENG-08 |
 | Gate v6.1 回读（G12） | **同一事实两种标签**（`AC-AUD-10`） | **按 spencer 口径定为唯一一种呈现**：「后置（DEFERRED）：本期不做判定」，`BLOCKED` 归零——依据写成 `decisions.md` **D8-B【正式裁定】**（Gate 的 `BLOCKED` 定义前提是"依赖残余待裁"，而 R2/R4 已挂起、R3 已关闭，前提消失）；**后置 ≠ 免验**（§11.1 的 I-1~I-7 仍须 M2 之前备齐）、不得写"预检通过"、不得从账目摘掉。标「Gate 回读（2026-11-02）」 | `AC-AUD-10` |
 | Nova 回读 | D1 补 **A1 `PATH` 取法**（含 context-path、禁 path 重写）与 **A2 `SORTED_QUERY` 算法**（重复键保留、编码先于排序、name→value 两级排序）；D6 补默认值（`replay-store=redis`、`agent.pull.enabled=false`） | **4 条全部采纳**（标注「Gate/Nova 回读（2026-11-02）」）；D1 两条是 SDK↔平台互验的唯一口径，D6 两条只改默认值列、不动 29 项数量 | `AC-AGENT-01~03`、`AC-SDK-07`、`AC-SESS-05`、`AC-FC-05` |
@@ -236,7 +236,7 @@ Gate 于 2026-11-02 按 `decisions.md` 回填并迭代到 `acceptance-criteria.m
 
 ## 7. 后续切片归属（本次未纳入 M1 的判据，一律有主，不丢）
 
-Gate 判据（**90 条**）里，**7 条**（**6 条 `NOT-APPLICABLE` + 1 条「后置」`AC-AUD-10`**）不在 M1 链路；对应账目 **70 / 13 / 0 / 6 / 0 + 1 后置 = 90**（当初写「8 条」是把 `AC-AGENT-03` 的两次出现重复计了，Gate 已同版改齐）。按「保持 S0–S11 串行与编号不变」的要求，**不塞进 M1 步骤**，在此登记归属与解锁条件；每片开工时由 Spec 把它并入该片的切片文档：
+Gate 判据（**91 条**，v19 起；v10 时为 90 条）里，**7 条**（**6 条 `NOT-APPLICABLE` + 1 条「后置」`AC-AUD-10`**）不在 M1 链路；对应当时账目 **70 / 13 / 0 / 6 / 0 + 1 后置 = 90**（v11 后 `83/0`、v19 后 `84/0`，总数 **91**）（当初写「8 条」是把 `AC-AGENT-03` 的两次出现重复计了，Gate 已同版改齐）。按「保持 S0–S11 串行与编号不变」的要求，**不塞进 M1 步骤**，在此登记归属与解锁条件；每片开工时由 Spec 把它并入该片的切片文档：
 
 | 判据 | 归属 | 为什么不在 M1 | 解锁 / 前置 |
 |---|---|---|---|
@@ -273,7 +273,7 @@ Gate 判据（**90 条**）里，**7 条**（**6 条 `NOT-APPLICABLE` + 1 条「
 ## 8. M1 完成定义（DoD，一页）
 
 1. **可演示**：一条 e2e 脚本从注册跑到撤销，全程真实容器（PG16 + Redis7），无 mock 伪装故障。
-2. **可验收**：`AC-ID → 状态` 映射表齐全，`NOT-IMPLEMENTED` = **0**；账目 **90 = 83 `PASS-able` / 0 `PENDING·CH-n` / 0 `BLOCKED` / 6 `NOT-APPLICABLE` / 0 `NOT-IMPLEMENTED` / 1「后置（DEFERRED）：本期不做判定」(`AC-AUD-10`)**——与 `acceptance-criteria.md` **v11** 数字同源、状态名以 `decisions.md` D8-B【正式裁定】为准（P8 追认后 13 条 `PENDING` 已全转 `PASS-able`）。其中 **`PENDING` 栏仍须单列输出**（本版 0 条，`AC-ENG-05` 要求不得省略该列）；**「后置」项单列、不得写成通过、不得写"预检通过"、不得从账目里摘掉**（后置 ≠ 免验：§11.1 的 7 项输入仍须 M2 之前备齐，`AC-AUD-12` 覆盖应用侧可判定部分）；§7 已把 **7 条**（6 `NOT-APPLICABLE` + 1「后置」）M1 外判据登记到 M2/M5/验收阶段。
+2. **可验收**：`AC-ID → 状态` 映射表齐全，`NOT-IMPLEMENTED` = **0**；账目 **91 = 84 `PASS-able` / 0 `PENDING·CH-n` / 0 `BLOCKED` / 6 `NOT-APPLICABLE` / 0 `NOT-IMPLEMENTED` / 1「后置（DEFERRED）：本期不做判定」(`AC-AUD-10`)**——与 `acceptance-criteria.md` **v19** 数字同源、状态名以 `decisions.md` D8-B【正式裁定】为准（P8 追认后 13 条 `PENDING` 已全转 `PASS-able`）。其中 **`PENDING` 栏仍须单列输出**（本版 0 条，`AC-ENG-05` 要求不得省略该列）；**「后置」项单列、不得写成通过、不得写"预检通过"、不得从账目里摘掉**（后置 ≠ 免验：§11.1 的 7 项输入仍须 M2 之前备齐，`AC-AUD-12` 覆盖应用侧可判定部分）；§7 已把 **7 条**（6 `NOT-APPLICABLE` + 1「后置」）M1 外判据登记到 M2/M5/验收阶段。
 3. **可交接**：`migrations` up/down 无损；门禁在变异注入下确实红；ADR 引用 `decisions.md` D 编号而非基线缺章。
 4. **不越界**：`guanjingw` 只有 7 件事；无 `direct` 形态；无生产跳过验签/跳过 fail-closed 的开关；基线零改动。
 
