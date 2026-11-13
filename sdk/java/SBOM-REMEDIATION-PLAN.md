@@ -179,6 +179,136 @@ GUANJIN_TEST_REDIS_ADDR=127.0.0.1:<port> \
 ./scripts/check-sdk-java8.sh                                       # 三闸
 ```
 
+## 8. 审查证据包（供 Owl 分级，2026-11-13）
+
+> 目的：把审查所需的对账/自查全部备齐，Owl 只做分级判断。全部为本机亲跑（非转述）。
+
+### 8.1 A 批 24 条逐条对账（#136 清单 × 离线快照 × 试跑实测）
+
+| # | 坐标（当前） | 级别 | 公告 | 本线命中区间 | 本线最低安全版本 | A 批目标（tree 实测） | 试跑结果 |
+|---|---|---|---|---|---|---|---|
+| A1 | `ch.qos.logback:logback-classic@1.2.12` | HIGH | `GHSA-vmq6-5m68-f53m` | `>=0.0.0,<1.2.13` | 1.2.13（fix） | **1.2.13** | gate 实测不再命中 ✓ |
+| A2 | `ch.qos.logback:logback-core@1.2.12` | HIGH | `GHSA-gm62-rw4g-vrc4` | `>=1.2.12,<1.2.13` | 1.2.13（fix） | **1.2.13** | gate 实测不再命中 ✓ |
+| A3 | `ch.qos.logback:logback-core@1.2.12` | HIGH | `GHSA-vmq6-5m68-f53m` | `>=0.0.0,<1.2.13` | 1.2.13（fix） | **1.2.13** | gate 实测不再命中 ✓ |
+| A4 | `com.fasterxml.jackson.core:jackson-core@2.13.5` | HIGH | `GHSA-7hhh-6rmp-j9qf` | `>=2.8.0,<2.18.11` | 2.18.11（fix） | **2.18.11** | gate 实测不再命中 ✓ |
+| A5 | `com.fasterxml.jackson.core:jackson-core@2.13.5` | HIGH | `GHSA-h46c-h94j-95f3` | `>=0.0.0,<2.15.0` | 2.15.0（fix） | **2.18.11** | gate 实测不再命中 ✓ |
+| A6 | `com.fasterxml.jackson.core:jackson-core@2.13.5` | HIGH | `GHSA-r7wm-3cxj-wff9` | `>=0.0.0,<2.18.8` | 2.18.8（fix） | **2.18.11** | gate 实测不再命中 ✓ |
+| A7 | `com.fasterxml.jackson.core:jackson-databind@2.13.5` | HIGH | `GHSA-cxp5-3px4-pw24` | `>=2.5.0,<2.18.11` | 2.18.11（fix） | **2.18.11** | gate 实测不再命中 ✓ |
+| A8 | `com.fasterxml.jackson.core:jackson-databind@2.13.5` | HIGH | `GHSA-j3rv-43j4-c7qm` | `>=2.10.0,<2.18.8` | 2.18.8（fix） | **2.18.11** | gate 实测不再命中 ✓ |
+| A9 | `com.fasterxml.jackson.core:jackson-databind@2.13.5` | HIGH | `GHSA-wv8q-qhhj-9h54` | `>=2.0.0,<2.18.11` | 2.18.11（fix） | **2.18.11** | gate 实测不再命中 ✓ |
+| A10 | `commons-io:commons-io@2.11.0` | HIGH | `GHSA-78wr-2p64-hpwj` | `>=2.0,<2.14.0` | 2.14.0（fix） | **2.14.0** | gate 实测不再命中 ✓ |
+| A11 | `io.netty:netty-codec@4.1.101.Final` | HIGH | `GHSA-558v-64gr-wgg4` | `>=0.0.0,<4.1.136.Final` | 4.1.136.Final（fix） | **4.1.137.Final** | gate 实测不再命中 ✓ |
+| A12 | `io.netty:netty-codec@4.1.101.Final` | HIGH | `GHSA-mj4r-2hfc-f8p6` | `>=0.0.0,<4.1.133.Final` | 4.1.133.Final（fix） | **4.1.137.Final** | gate 实测不再命中 ✓ |
+| A13 | `io.netty:netty-handler@4.1.101.Final` | HIGH | `GHSA-3qp7-7mw8-wx86` | `>=0.0.0,<4.1.135.Final` | 4.1.135.Final（fix） | **4.1.137.Final** | gate 实测不再命中 ✓ |
+| A14 | `io.netty:netty-handler@4.1.101.Final` | HIGH | `GHSA-4g8c-wm8x-jfhw` | `>=4.1.91.Final,<4.1.118.Final` | 4.1.118.Final（fix） | **4.1.137.Final** | gate 实测不再命中 ✓ |
+| A15 | `io.netty:netty-handler@4.1.101.Final` | CRITICAL | `GHSA-c4c3-7fpv-j4q5` | `>=0.0.0,<4.1.137.Final` | 4.1.137.Final（fix） | **4.1.137.Final** | gate 实测不再命中 ✓ |
+| A16 | `org.bouncycastle:bcprov-jdk18on@1.78.1` | CRITICAL | `GHSA-574f-3g2m-x479` | `>=1.59,<1.80.2` | 1.80.2（fix） | **1.85** | gate 实测不再命中 ✓ |
+| A17 | `org.bouncycastle:bcprov-jdk18on@1.78.1` | CRITICAL | `GHSA-9pwp-9qqc-pr26` | `>=0.0.0,<1.85` | 1.85（fix） | **1.85** | gate 实测不再命中 ✓ |
+| A18 | `org.bouncycastle:bcprov-jdk18on@1.78.1` | HIGH | `GHSA-p93r-85wp-75v3` | `>=1.71,<1.80.2` | 1.80.2（fix） | **1.85** | gate 实测不再命中 ✓ |
+| A19 | `org.springframework.security:spring-security-core@5.7.11` | HIGH | `GHSA-f3jh-qvm4-mg39` | `>=0.0.0,<5.7.12` | 5.7.12（fix） | **5.7.12** | gate 实测不再命中 ✓ |
+| A20 | `org.springframework:spring-web@5.3.31` | HIGH | `GHSA-2wrp-6fg6-hmc5` | `>=0.0.0,<5.3.34` | 5.3.34（fix） | **5.3.39** | gate 实测不再命中 ✓ |
+| A21 | `org.springframework:spring-web@5.3.31` | HIGH | `GHSA-ccgv-vj62-xf9h` | `>=5.3.0,<5.3.32` | 5.3.32（fix） | **5.3.39** | gate 实测不再命中 ✓ |
+| A22 | `org.springframework:spring-web@5.3.31` | HIGH | `GHSA-hgjh-9rj2-g67j` | `>=0.0.0,<5.3.33` | 5.3.33（fix） | **5.3.39** | gate 实测不再命中 ✓ |
+| A23 | `org.yaml:snakeyaml@1.30` | HIGH | `GHSA-3mc7-4q67-w48m` | `>=0.0.0,<1.31` | 1.31（fix） | **2.0** | gate 实测不再命中 ✓ |
+| A24 | `org.yaml:snakeyaml@1.30` | HIGH | `GHSA-mjmj-j48q-9wg2` | `>=0.0.0,<2.0` | 2.0（fix） | **2.0** | gate 实测不再命中 ✓ |
+
+> A 批 = 24 条（与 #136 清单逐条对上；全部在试跑中不再命中）
+
+| # | 坐标（当前） | 级别 | 公告 | 本线命中区间 | 本线最低安全版本 | 线内可得？ |
+|---|---|---|---|---|---|---|
+| B1 | `org.springframework.boot:spring-boot@2.7.18` | HIGH | `GHSA-rc42-6c7j-7h5r` | `>=0.0.0,<=2.7.24.2` | 2.7.24.2（last_affected） | 否（last_affected，线内无 fix） |
+| B2 | `org.springframework.boot:spring-boot@2.7.18` | HIGH | `GHSA-wwpq-f5c3-7hvx` | `>=0.0.0,<=2.7.32` | 2.7.32（last_affected） | 否（last_affected，线内无 fix） |
+| B3 | `org.springframework.security:spring-security-crypto@5.7.11` | HIGH | `GHSA-mg83-c7gq-rv5c` | `>=0.0.0,<5.7.16` | 5.7.16（fix） | 否（该版本未在 Central 发布） |
+| B4 | `org.springframework:spring-core@5.3.31` | HIGH | `GHSA-jmp9-x22r-554x` | `>=5.3.0,<=5.3.44` | 5.3.44（last_affected） | 否（last_affected，线内无 fix） |
+| B5 | `org.springframework:spring-expression@5.3.31` | HIGH | `GHSA-775g-4xr8-78h8` | `>=0.0.0,<=5.3.39` | 5.3.39（last_affected） | 否（last_affected，线内无 fix） |
+| B6 | `org.springframework:spring-web@5.3.31` | CRITICAL | `GHSA-4wrc-f8pq-fpqp` | `>=0.0.0,<6.0.0` | 6.0.0（fix） | 否（fix 在更高 major 线） |
+| B7 | `org.springframework:spring-webmvc@5.3.31` | HIGH | `GHSA-3chg-m5w7-qfv5` | `>=0.0.0,<=5.3.39` | 5.3.39（last_affected） | 否（last_affected，线内无 fix） |
+| B8 | `org.springframework:spring-webmvc@5.3.31` | HIGH | `GHSA-g5vr-rgqm-vf78` | `>=0.0.0,<=5.3.40` | 5.3.40（last_affected） | 否（last_affected，线内无 fix） |
+| B9 | `org.springframework:spring-webmvc@5.3.31` | CRITICAL | `GHSA-pc63-qcmh-9cmg` | `>=5.3.0,<=5.3.49` | 5.3.49（last_affected） | 否（last_affected，线内无 fix） |
+
+> B 批 = 9 条（试跑后仍命中，全部需换线/Java 17）
+
+**口径说明（三条取最大修正）**：
+- `jackson` 3 条公告本线 fix 分别是 2.15.0/2.18.8/2.18.11 → 一次取 **2.18.11**；
+- `bcprov` 本线 fix 1.80.2（两条）+ 1.85（`GHSA-9pwp`）→ 取 **1.85**；
+- `netty` 本线 fix 4.1.118/4.1.133/4.1.135/4.1.136/4.1.137 → 取 **4.1.137.Final**；
+- `spring-web` 本线 fix 5.3.32/5.3.33/5.3.34 → 取 **5.3.39**（5.3 线 OSS 最后一版，也是 B 批 `GHSA-775g`/`3chg` 的线内顶点）。
+  `本线最低安全版本` 一列由离线快照的 `affected` 区间机算（`<X` → X=fix；`<=X` → last_affected），与 Gate 对账表逐条一致。
+
+### 8.2 自查声明（试跑已回滚、树上无残留）
+
+| 检查 | 命令 | 结果 |
+|---|---|---|
+| 试跑改动已回滚 | `git checkout -- sdk/java/pom.xml` | 已执行 |
+| 未提交改动 | `git status --porcelain \| wc -l` | **0** |
+| 已跟踪文件差异 | `git diff --stat \| wc -l` | **0** |
+| 分支 HEAD | `git log --oneline -1` | `54c59dc docs(sdk/java): 依赖漏洞升级方案…`（只有方案文档） |
+| 试跑产物 | `sdk/java/target/bom.json`、根目录 `.ev-*` | 全部为一次性证据，**未入库**（`target/` 本就 gitignore；`.ev-*` 已删） |
+
+本 PR 只有 1 个文件（`sdk/java/SBOM-REMEDIATION-PLAN.md`）；A 批实施不在本 PR。
+
+### 8.3 B 批 9 条逐条举证（"影响面落宿主、SDK 不触达"）
+
+代码面统一证据：以下 grep 在 `sdk/java/guanjin-core/src/main` + `sdk/java/guanjin-spring-boot2/src/main` 上 **全部 0 命中**：
+
+```bash
+grep -rn -E 'EndpointRequest|actuator'                                   # → 0
+grep -rn -E 'createTempFile|tmpdir|mkdtemp'                              # → 0
+grep -rn -E 'PasswordEncoder|password'                                   # → 0
+grep -rn -E 'SpelExpression|EvaluationContext|SpelParser'                # → 0
+grep -rn -E 'HttpInvoker|RemoteInvocation|ObjectInputStream'             # → 0
+grep -rn -E 'JavaScriptUtils'                                            # → 0
+grep -rn -E 'addResourceHandlers|ResourceHandler'                        # → 0
+grep -rn -E 'XSLT|XsltView|TransformerFactory'                           # → 0
+grep -rn -E 'PreAuthorize|PostAuthorize|EnableMethodSecurity|@Secured'   # → 0
+```
+
+| 公告 | 影响面（快照 summary） | SDK 侧为什么落不到 | 宿主处置 |
+|---|---|---|---|
+| B1 `GHSA-rc42` (spring-boot) | `EndpointRequest.to()` 在 actuator 端点未暴露时匹配错 | SDK 不含 spring-boot-actuator（`mvn dependency:tree` 无此坐标）、不用 `EndpointRequest` 做安全匹配 | 宿主若用 actuator 安全匹配需自升 Boot 3 |
+| B2 `GHSA-wwpq` (spring-boot) | 可预测临时目录且未校验属主 | SDK 不建临时目录/文件（grep 0 命中） | 宿主升级或收紧 tmpdir 权限 |
+| B3 `GHSA-mg83` (spring-security-crypto) | 口令长度未强制 | SDK 无口令认证面（grep `PasswordEncoder|password` 0 命中）；`spring-security-core` 仅用于身份注入 | 宿主口令策略自担（5.7.16 未发布：Central 实测 **404**，5.7 OSS 止 5.7.14） |
+| B4 `GHSA-jmp9` (spring-core) | 注解探测可致越权 | 授权执行点 `GuanjinAuthorizationInterceptor:38-40` 只做 `HandlerMethod.getMethodAnnotation(RequirePermission.class)` / `Class#getAnnotation` 的**存在性判定**；`HandlerMethod` 字节码无 `AnnotatedElementUtils`/`MergedAnnotations` 引用；SDK 不求值任何注解表达式（`@PreAuthorize*` grep 0 命中），权限结论来自 jcasbin `enforce` | 宿主方法级安全（Spring Security 注解）自行评估 |
+| B5 `GHSA-775g` (spring-expression) | SpEL 整数溢出 DoS | SDK 不求值 SpEL（grep 0 命中） | 宿主如有表达式求值需升级 |
+| B6 `GHSA-4wrc` (spring-web, CRITICAL) | HttpInvoker 不安全反序列化 | SDK 不用 HttpInvoker/`ObjectInputStream`（grep 0 命中）；该入口 6.0 已移除 | **宿主不得暴露 HttpInvoker 端点**（写进 README 宿主指引） |
+| B7 `GHSA-3chg` (spring-webmvc) | `JavaScriptUtils` XSS | SDK 不渲染视图、不用 `JavaScriptUtils` | 宿主视图层自担 |
+| B8 `GHSA-g5vr` (spring-webmvc) | 路径穿越 | SDK 不注册资源处理器/函数式路由（grep 0 命中） | 宿主静态资源/路由配置自担 |
+| B9 `GHSA-pc63` (spring-webmvc, CRITICAL) | `XsltView` 路径限制不当 | SDK 不用 XSLT/`XsltView`（grep 0 命中） | 宿主不用 XSLT 视图即可规避 |
+
+### 8.4 snakeyaml 2.0 归 A 批的实测记录（不是推断）
+
+1. **字节码**：Boot 2.7.18 `OriginTrackedYamlLoader` 的 `createYaml` 签名为 `(LoaderOptions) → Yaml`，
+   `OriginTrackingConstructor` 构造器吃 `LoaderOptions` —— 已是 snakeyaml 2.x API 形态。
+2. **真跑 YAML 加载**（Owl 已独立复做）：
+   ```bash
+   mvn -o -pl sdk/java/guanjin-spring-boot2 dependency:build-classpath \
+       -Dsnakeyaml.version=2.0 -Dmdep.outputFile=/tmp/cp.txt   # classpath 里确为 snakeyaml-2.0.jar
+   java -cp "$(cat /tmp/cp.txt):sdk/java/guanjin-spring-boot2/target/classes" <probe>
+   # probe: new YamlPropertySourceLoader().load("p", new ByteArrayResource(yml))
+   # 输出：{guanjin.platform.base-url=http://127.0.0.1:8080, guanjin.enabled=true}
+   ```
+3. **全量回归**：试跑 `mvn verify -Pintegration` 全绿（单测 120 + 集成 10）。
+→ 结论：`GHSA-3mc7`（fix 1.31）+ `GHSA-mjmj`（fix 2.0）两条都在 A 批清掉。
+
+### 8.5 对账差异说明（Owl 指出的两处换边）
+
+| 条目 | 白名单 reason 桶 | 本方案归属 | 依据 |
+|---|---|---|---|
+| `GHSA-mg83`（security-crypto） | 「同 line 小跳」 | **B 批** | 线内 fix 5.7.16 **Maven Central 未发布**（实测 404；5.7 OSS 止 5.7.14）→ 线内不可达 |
+| `GHSA-mjmj`（snakeyaml） | 「跨 major」 | **A 批** | snakeyaml 2.0 **Java 8 兼容 + Boot 2.7.18 实测可用**（§8.4）→ 与「跨 major 必撞 Java 17」不是一回事 |
+
+### 8.6 复算命令
+
+```bash
+mvn -f sdk/java/pom.xml -q test                                  # 120/120
+GUANJIN_TEST_REDIS_ADDR=127.0.0.1:<port> mvn -f sdk/java/pom.xml -q verify -Pintegration  # 10/10
+mvn -f sdk/java/pom.xml -q org.cyclonedx:cyclonedx-maven-plugin:2.8.0:makeAggregateBom
+python3 scripts/vuln-gate.py --root . --java-bom sdk/java/target/bom.json   # 试跑后：命中 9、无新增阻断；白名单 24 行 stale → 按规则删行后即绿
+```
+
+**试跑后 gate 的退出码说明**：试跑后 `vuln-gate.py` 退出 1，原因是白名单里 24 行"本次不再命中"（规则：不许只增不减），
+不是出现新漏洞——摘要行明确 `阻断 0 / 白名单 9 / 仅提示 20`。A 批 PR 里删掉这 24 行即转绿。
+
 ## 附：试跑留痕（2026-11-13）
 
 - 试跑提交：无（pom 改动已 `git checkout --` 回滚，本文只留结论；避免"方案 PR 夹带实施"）。
