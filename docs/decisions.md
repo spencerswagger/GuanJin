@@ -584,7 +584,9 @@
 
 ## D23 `AC-ENG-07` 门禁的三笔"用白名单换时间"的账（Go 1.26 / vue 3.5.42+ / `sdk/java` 未覆盖）
 
-> **触发**：Gate 的 `AC-ENG-07` 门禁（PR #98，`vuln` job）落地后暴露三笔账：10 条 stdlib 白名单（到期 2026-12-31）、1 条 npm 白名单（GHSA-g2v6-rqmx-r4w6，到期 2026-12-15）、`sdk/java` 被 `--skip-dirs sdk` 整目录跳过。他不敢自定，交本条。**状态：① ② 与 ③ 的期限部分 = 待 spencer 追认（未生效，追认前不得据此改 `go.mod` / `package.json`）；③ 的「显式打未覆盖行」= 立即可做（属门禁自身正确性，不需追认）。**
+> **触发**：Gate 的 `AC-ENG-07` 门禁（PR #98，`vuln` job）落地后暴露三笔账：10 条 stdlib 白名单（到期 2026-12-31）、1 条 npm 白名单（GHSA-g2v6-rqmx-r4w6，到期 2026-12-15）、`sdk/java` 被 `--skip-dirs sdk` 整目录跳过。他不敢自定，交本条。
+>
+> **状态（2026-11-13 更新）：已生效，按本条原案执行。** 逐笔事实：**② 已追认**（2026-11-13，spencer）并已随 **#127 squash 合入 main（`d2cb689`，按评审锚 `aaceeb6` 收口）落地**（`web/package.json` vue 3.5.45 / vite 6.4.6）；**① 已解锁执行**（2026-11-13 spencer 放行，归 **Ark**，期限 **2026-11-25**）——`go.mod` `1.25.0 → 1.26.0`（**不写 `toolchain` 行**）；「Gate 删 10 条 stdlib 白名单」**已被 #127 事实完成**（`.trivyignore.yaml` 已删、`docs/qa/vuln-allowlist.tsv` 现为 0 条，D28⑤ 的收口走「升 Go 1.26」路径）→ ① 剩余执行项只剩 `go.mod` 一行；**③ 第一段**（`[UNCOVERED]` 显式标注）已随 #127 落地，**第二段（离线 SBOM）期限不变（2026-12-10）**。**原禁改条款（「追认前不得据此改 `go.mod` / `package.json`」）解除**；执行节奏仍按本条末「三笔账的归属与顺序」表。
 
 ### ① Go 1.26：**升，而且要把"stdlib 白名单"这条后门焊死**
 
@@ -733,6 +735,30 @@
 
 ---
 
+## D29 断言验签算法唯一口径：**平台 keygen 写死 SM2，契约/SDK 侧订正对齐，不做算法自由配置**（2026-11-13，spencer 拍板）
+
+> **触发**：PR #51（S9 Go SDK）评审揭出 alg 三方矛盾——平台 `cmd/guanjind/keygen.go` 给网关用途生成 `algorithm='SM2'` 的密钥（`migrations/000013` 的 CHECK 把 `purpose='gateway'` 绑死 `SM2`），`internal/signing` 把该值**原样写进断言 JWT header**；而契约 `sdk-contract.md` §4.1 M2 行、§4.5 步②、§7 向量行和 Java `Sm2.ALG` 常量都写着 `SM3withSM2`，Java `JwksSet` 还按 alg 过滤 JWKS → **真机链路 100% 401**（真网关键被筛掉 / 验签常量不匹配）。二选一交 spencer，他拍板：**平台 keygen 写死 SM2**——国密是唯一口径，不做算法自由配置。
+
+- **裁定（唯一口径，写死防猜）**：
+  - **网关断言（`X-GuanJin-Assertion`）的 JWT `alg` 值 = `SM2`**：由 `signing_keys.algorithm`（网关用途，`000013` CHECK 已限 `SM2`）**原样写入 header**。**平台侧零改动**（keygen、`000013` CHECK、signing 均已是 SM2，保持写死，不新增任何键）。
+  - **SM2 唯一，预留扩展但不留开关**：SDK 三语言验签只认 `SM2`；不做算法协商、不做降级、无 fallback，**不设任何 alg 配置键/开关**。将来若新增算法值，属新增契约面，走 CH 记录法 + 判据变更引入——与基线 `技术栈:35`「算法可替换抽象」对齐：抽象留在**接口层/`kid`**，不在**配置层**。
+  - **对外令牌（`id_token`/`access_token`）的 `SM3withSM2` 不在本条范围**：基线本就双轨——`技术栈:35`、`数据模型:62/812`：「对外令牌 SM3withSM2、网关断言 SM2」；`000013` CHECK 两侧都绑死。平台两侧均已一致，判据 `AC-LOGIN-01`、`AC-LOGIN-06`、`AC-AUD-12` 的**对外令牌**断言不变（`acceptance-criteria.md` 里 `SM3withSM2` 的三处全是这个语境）。
+- **订正性质 = 纠错，不进 CH**：M2 行原写 `SM3withSM2` 是与基线「网关断言 SM2」**冲突的错标**（同一份 `sdk-contract.md` 里 `GJ-CAP-01` 能力行、§2.1 注入表都写 SM2，本就自相矛盾）。按 CH 段尾的纠错/加固边界（G11①）「把与已生效决定不一致的表述改回一致」属纠错，**不进 CH 清单**；业务方没有因此获得任何基线原本不允许的配置方式。
+- **订正落点（本条只动文档；SDK 代码：Go 侧随 #51 由 spencer 亲自改，Java 侧归 Nova——已交付 **PR #132**）**：
+
+  | # | 处 | 订正 |
+  |---|---|---|
+  | 1 | `sdk-contract.md` §4.1 M2 行 | `SM3withSM2` → **`SM2`（JWT 形态，`alg` 值 = 平台 `signing_keys.algorithm` 原样写入；SM2 唯一，不做协商降级，无开关）** |
+  | 2 | `sdk-contract.md` §4.5 步② | `SM3withSM2` → `SM2` |
+  | 3 | `sdk-contract.md` §7 向量行 `assertion-verify.json` | 「`alg` 非 `SM3withSM2`」→「`alg` 非 `SM2`」 |
+  | 4 | Java `Sm2.ALG` 常量、`Sm2AssertionVerifier` 报错/注释、`sdk/java/README.md` 能力行 | 断言语境下 `SM3withSM2` → `SM2`（Nova，**PR #132**；BC 的 JCA 查找名与对外 alg 标识两层拆开，见该 PR 风险栏） |
+  | 5 | Go `SigningAlg`（#51 内） | 同上；并补 `ParseJWKS` 按用途过滤 + `KeyCount` 只数网关键（#51 已列待办） |
+
+- **判据面**：`acceptance-criteria.md` **零改动、账目零变化**——判据文件里 `alg`/`SM3withSM2` 只出现在对外令牌三条（`AC-LOGIN-01/06`、`AC-AUD-12`），断言侧判据不写 alg 字面值。
+- **状态：已追认并生效（2026-11-13，spencer 拍板「平台 keygen 写死 SM2」）**。#51 的真机 401 按「写死 SM2」修，修绿后按既有流程合入。
+
+---
+
 ## 契约变更清单（对外可见）—— 状态：**CH-1~CH-5 已追认（经 hugo 追认，2026-11-02）；CH-6 为内部口径；CH-7 已裁定；CH-8 待追认（2026-11-04）；CH-9 待追认（2026-11-10）**
 
 > 本表只收**对外可见**的变更（影响业务系统、SDK、前端或对外错误码的）。基线 `/docs/baseline/` 一个字不改，这些变更以本表为准并在**下版契约文档**（OpenAPI + `sdk-contract.md` + 页面规格口径）一次性落盘；落盘时机 = 全部 M1 判据回填后、M1 编码前。**本表状态：CH-1~CH-5 = 已追认（经 hugo 追认，2026-11-02，记录法见 P8）；CH-6 = 内部口径、无需追认；CH-7 = 已裁定；CH-8 = 待追认（2026-11-04）；CH-9 = 待追认（2026-11-10，SLO 通知）。** 后续新增变更一律按 **P8②** 追加行（编号只增不重排）；作废条目改「已撤回」并保留原行。
@@ -837,6 +863,7 @@
 | `D27` | §**D27** | 归档删分区**必须先写段锚**（`audit.chain.segment.<YYYYMM>` = 首+尾，载体 = `runtime_config` jsonb `{head,tail}`、**不新表**、不进 `startupSpecs`）且与 `DROP PARTITION` **同一事务**；校验回退 `TailTagBefore` → `segment.tail` → `anchor[M-1]`，都没有 = 不可判（`unverified` 不判过不判 broken）；**M1 不实现、挂 R9** |
 | `D25` | §**D25** | SDK「非配置命名空间」= **保留命名空间 + 逐条封闭枚举（27 名，表见正文）**，**禁前缀/后缀通配**；清单内不报错也不可读（读了即违约）、清单外仍启动失败；新增平台 env 必须同 PR 加一行；发布说明必须写「升级后启动失败：报错含键名 + 该键不属于 SDK 配置命名空间」；**回归 §3.6 原文、不进 CH**；基线正文不动（`DATABASE_URL` vs `DB_DSN` 等差异已登记待 Spec 定） |
 | `D28` | §**D28** | `AC-ENG-07` 的实现形态：CI **零网络** → 改「离线 OSV 快照（90 天过期即红）+ 本地 python3 判定」；**PASS 口径 = `go.mod` + `web/package-lock.json` 两生态 + `sdk/java` 显式 `[UNCOVERED]`，不得写"全量覆盖"**；D23③ 第二段由 `trivy sbom` 改为「Nova 产 CycloneDX → 同一引擎消费」（期限不变）；Go 命中即红、npm HIGH/CRITICAL、缺级别一律阻断 |
+| `D29` | §**D29** | 断言验签算法唯一口径：**平台 keygen 写死 SM2（`000013` CHECK 不动、平台零改动），契约/SDK 侧由 `SM3withSM2` 订正为 `SM2`（`sdk-contract.md` 三处 + Java 侧 Nova **PR #132** + Go 侧随 #51）；SM2 唯一、不做协商降级、预留扩展但不留开关（无 alg 配置键）**；对外令牌 `SM3withSM2` 不在本刀（基线双轨：对外 `SM3withSM2` / 网关断言 `SM2`）；订正 = 纠错，**不进 CH**、判据零改动；**2026-11-13 spencer 拍板生效** |
 | `D26` | §**D26** | 测试/CI/本地开关整族改名 `GUANJIN_TEST_*` → **`GJTEST_*`**（4 名 + 同族 3 名：`DEV_DSN`/`ALLOW_TEST_CLEANUP`/`AUDIT_NO_ISOLATION`），**一次性硬切、无别名无双读**，同 PR 内改代码→CI→文档；**不阻塞 #51**（推荐先合改名）；不进 CH |
 | `D24` | §**D24** | §5.4 错误分层：**解码层**→`INVALID_REQUEST`、**缺字段层**→`MISSING_PARAMETER`（可空布尔用 `*bool`，禁"零值即未给"）、**值语义层**→`INVALID_PARAMETER`（有专职码用专职码）；顺序固定 **401/403 → 解码 → 缺字段 → 值 → 业务语义**，400 不得先于 401/403，不得为消灭 400 放宽 `DisallowUnknownFields`；不新增码、不进 CH |
 | `D23①②③` | §**D23** | `AC-ENG-07` 三笔账：①**升 Go 1.26**（`go.mod` 是锁定权威、基线版本是建议值）+ **stdlib 一律不得进白名单**（只能升）；②**vue 3.5.42+ 升**（不留豁免，Vue 出回归）；③`sdk/java` **显式打 `[UNCOVERED]`**（立即）+ 一个迭代内改**离线 SBOM**（Nova 产 / Gate 判，2026-12-10 前），逾期则账目降级 |
