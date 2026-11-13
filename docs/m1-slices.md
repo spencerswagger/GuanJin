@@ -266,6 +266,7 @@ Gate 判据（**90 条**）里，**7 条**（**6 条 `NOT-APPLICABLE` + 1 条「
 |---|---|---|---|
 | **TD-1** | **授权码 / refresh token 无持久化落点**（15 张表里没有 `auth_codes` / `refresh_tokens`） | v1 两样都存 **Redis**：`auth:code:{code}` / `auth:rt:{token}`，`GETDEL` 原子消费；消费、轮换、撤销各记一条 audit 事件。Redis **不是持久化存储**——进程/实例故障或 Redis 重启会丢失**未消费**的授权码与 refresh token，影响面 = **用户需重新发起授权**（可用性损失）；**不损安全**（不会出现"已消费的码复活"或"撤销失效"，撤销记录与判定不因此回退）。15 张表已冻结，**加表属基线变更**，故 v1 不加表。 | **M2** 落表（`auth_codes` / `refresh_tokens`），届时按**基线变更流程**走（`/docs/baseline/` 另起一版，不在本仓回写）。 |
 | **TD-2** | **`TOKEN_REVOKED`（令牌级撤销）在 v1 没有触发路径** | v1 的 `/oauth/revoke` **只撤刷新令牌**（删 Redis 键 `auth:rt:{token}` + 一条 `revoke` 审计）；访问令牌是**无状态 JWT**，`/userinfo`、`/introspect` 均**本地验签、零查库**，仓里**没有令牌黑名单**。因此 `decisions.md` **D3-E** 的 `TOKEN_REVOKED`(401) 在 v1 **无触发路径**——契约与实现的落差。访问令牌的**唯一失效路径**是会话撤销（撤销后复查 → **403 `SESSION_REVOKED`**）；即 v1 只能「连同会话一起撤」，不能单独吊销一张访问令牌；令牌自然过期不受影响。 | **M2**。补它需三件**同时**成立：① 访问令牌带 `jti`（当前 claims 无）；② `/oauth/revoke` 把 `jti` 写 **Redis 黑名单**（**键名需随之裁定，v1 未定**）；③ 解析侧**每请求查一次 Redis**。③ 与「`/userinfo`、`/introspect` 零查库」的判据以及 **S8 数据面热路径**正面冲突，故 v1 不做；M2 与黑名单键名一并裁定。 |
+| **TD-3** | **`httputil.ReverseProxy.Director` 已被 Go 1.26 官方废弃（安全理由）** | `internal/gateway/proxy.go`（`proxyFor`，`Director: func(req *http.Request)`）用 `Director` 只改目标地址、**不做 path 重写**（D1-A1：PATH 两端逐字节一致）。Go 1.26 起 `Director` 标废弃、推荐迁 `Rewrite`（就位修改语义）。现状 CI 不红、行为不变，但这是**只对"本地最低工具链"可见的废弃信号**——若本地停在旧版本，它会随"CI 全绿"无声留存。 | **随 S8 数据面后续迭代迁 `Rewrite`**（Go 1.27 前）；归属 **Edge**（文件 owner），本条只登记不派工（Owl 评审 PR #133 时提出，2026-11-13）。 |
 
 ---
 
