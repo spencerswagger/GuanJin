@@ -91,6 +91,15 @@
           <artifactId>maven-failsafe-plugin</artifactId>
           <version>${maven-failsafe-plugin.version}</version>
         </plugin>
+        <!-- D23③ 第二段：离线 SBOM（CycloneDX）。版本锁死；**不绑 phase**（默认 mvn test 行为零变化），
+             由显式命令在线产出：mvn cyclonedx:makeAggregateBom（2.8.0 三枚 goal 均 requiresOnline，
+             mvn -o 必炸；sdk job 拉依赖后 ~/.m2 已热，直接跑；消费侧 vuln-gate.py 离线读 artifact，
+             见 docs/decisions.md D23③/D28③ 与 sdk/java/README.md 首段）。 -->
+        <plugin>
+          <groupId>org.cyclonedx</groupId>
+          <artifactId>cyclonedx-maven-plugin</artifactId>
+          <version>2.8.0</version>
+        </plugin>
       </plugins>
     </pluginManagement>
   </build>
