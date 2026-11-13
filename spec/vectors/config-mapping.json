@@ -636,7 +636,7 @@
       "case": "duration_reject_over_int64_nanos",
       "current": {
         "go": "reject@load",
-        "java": "accept"
+        "java": "reject@load"
       },
       "key": "guanjin.platform.connect-timeout",
       "reason": "补口③：超上界（必须能无损换算成 int64 纳秒，≈292 年）→ 启动失败报键名；**不许**截断或退化成 0",
@@ -646,7 +646,7 @@
     {
       "case": "duration_reject_nbsp_not_trimmed",
       "current": {
-        "go": "accept",
+        "go": "reject@load",
         "java": "reject@load"
       },
       "key": "guanjin.gateway.clock-skew",

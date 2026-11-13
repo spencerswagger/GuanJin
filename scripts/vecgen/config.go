@@ -180,10 +180,10 @@ func genConfig() {
 			"current": map[string]string{"go": "reject@validate", "java": "reject@load"}},
 		map[string]any{"vector_id": "CM-15", "case": "duration_reject_over_int64_nanos", "key": gj.KeyPlatformConnectTimeout, "value": "9999999999999h",
 			"reason":  "补口③：超上界（必须能无损换算成 int64 纳秒，≈292 年）→ 启动失败报键名；**不许**截断或退化成 0",
-			"current": map[string]string{"go": "reject@load", "java": "accept"}},
+			"current": map[string]string{"go": "reject@load", "java": "reject@load"}},
 		map[string]any{"vector_id": "CM-16", "case": "duration_reject_nbsp_not_trimmed", "key": gj.KeyGatewayClockSkew, "value": "\u00A02s",
 			"reason":  "补口③：NBSP（U+00A0）**不在** 4 字符 trim 集内 → 落正则外即失败。用语言默认 trim（Go `strings.TrimSpace` / Java `String.trim()`）会误放行",
-			"current": map[string]string{"go": "accept", "java": "reject@load"}},
+			"current": map[string]string{"go": "reject@load", "java": "reject@load"}},
 	}
 
 	// 契约已定、实现未跟上（**正向期望**的欠账）。消费者同样按 `current` 钉死现状：落地后本表立刻红，
