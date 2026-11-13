@@ -15,7 +15,7 @@ import (
 type keyMeta struct {
 	Index    int    `json:"index"`
 	Key      string `json:"key"`
-	Kind     string `json:"kind"` // bool | string | duration_ms | list
+	Kind     string `json:"kind"` // bool | string | resource | duration_ms | list（resource = 包内资源路径，见契约 §3.2.2）
 	Required bool   `json:"required"`
 }
 
@@ -36,7 +36,7 @@ var keyMetas = []keyMeta{
 	{14, gj.KeyGatewayJwksUnknownKidRefresh, "bool", false},
 	{15, gj.KeyAuthzEnabled, "bool", false},
 	{16, gj.KeyAuthzDefaultRole, "string", false},
-	{17, gj.KeyAuthzModelConf, "string", false},
+	{17, gj.KeyAuthzModelConf, "resource", false},
 	{18, gj.KeyAuthzReplayStore, "string", false},
 	{19, gj.KeyAgentReportEnabled, "bool", false},
 	{20, gj.KeyAgentReportOnStartup, "bool", false},
@@ -245,7 +245,7 @@ func genConfig() {
 		"keys":         keyMetas,
 		"cases":        cases,
 		"known_divergences": map[string]any{
-			"note":    "已定性的三语言不一致。第一类是**实现缺陷**：2026-11-13 `guanjin.authz.model-conf`（Go 曾给 \"model.conf\"）修好后**当前为空**；再出现时按旧法登记（期望按契约、把实现现值钉死，漂移即红）。第二类 duration 解析口径差异已由契约 §3.2.1 裁决（收紧 Java），落到 `duration_rule` + `reject_cases`，不再是\"差异\"",
+			"note":    "口径（写死，别两种说法并存）：**已修就删表、未修才登记**。①首选**生成期硬校验** —— 实现一漂移，`go run ./scripts/vecgen` 直接 panic（例：#17 的默认值，见上方校验循环），不留任何\"静默覆盖期望\"的口子；②只有\"生成期判不死、又必须先把契约值当期望\"的偏差才进 `defects`，写法固定为「期望按契约 + 把实现现值钉死」，漂移即红；③**修好后必须删掉该条**（不保留\"已修历史\"，历史在 git 里）。当前 `defects` 为空：`guanjin.authz.model-conf`（Go 曾给 \"model.conf\"）已于 2026-11-13 修好并删表。duration 口径差异已由契约 §3.2.1 裁决（收紧 Java），落到 `duration_rule` + `reject_cases`，不再是\"差异\"",
 			"defects": []map[string]string{},
 			"duration_rule": map[string]any{
 				"spec":              "docs/sdk-contract.md §3.2.1（v13 裁决：收紧 Java，不放宽契约）",
