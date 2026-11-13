@@ -8,7 +8,15 @@
 #   3. 条目**本次扫描不再命中** → 红（必须删行，白名单不许只增不减）；
 #   4. 不许整类 ignore（"忽略所有 devDependencies"这类写法不支持，只认 id + 生态 + 模块）。
 #
-# 当前条目 = 0 条（本轮把命中项全部真修掉了：go-redis v9.7.3、vue 3.5.45、vite 6.4.6）。
+# 当前条目 = **33 条，全部是 Maven（sdk/java）**，到期日统一 2026-12-13（登记日 2026-11-13，30 天）。
+#   - 来源：`sdk/java` 首次经 CycloneDX BOM 入闸（#136 / merge `2df9879`，D23③②）一次性暴露的**真实命中**，
+#     **不是**放宽阈值或整类豁免换来的绿；
+#   - 级别：CRITICAL **5** 条（bcprov-jdk18on ×2、spring-web、spring-webmvc、netty-handler）/ HIGH **28** 条；
+#   - 分族（按快照该公告的 fix 上界机械判定，不按模块名拍脑袋）：同 major 小跳 **24** 条（Nova 出升级 PR）
+#     + 跨 major **9** 条（fix 在更新 major 线、需契约同步 → Nova+Spec 排期）；
+#   - **Go / npm 条目 = 0 条**：go-redis v9.7.3、vue 3.5.45、vite 6.4.6 已真修（D23①②，#127）；
+#     Go 标准库条目同为 0 条——stdlib **一律不得进本文件**，只能升 Go（D23①，现行 `go.mod` = 1.26.10）。
+#   - 到期（2026-12-13）由 `scripts/vuln-gate.py` **自动重新判红**，不靠人记得；逾期未升级则 `AC-ENG-07` 降级。
 # 新增条目必须写清「为什么现在不能修」+ 谁在什么期限内修。
 #
 # id	ecosystem	module	reason	expires

@@ -70,20 +70,29 @@ python3 scripts/vuln-snapshot-refresh.py --osv http://<内网镜像>   # 内网�
   `# dropped: N`，此时刷新脚本 **exit 1**、门禁**判红**——宁可让人复核，也不发布半份数据。
   （`SEMVER` 与 npm 风格 `ECOSYSTEM` 区间同时存在时取 `SEMVER`，这是权威区间。）
 - **为什么不入库整份 OSV DB**：整库体积过大且绝大多数与本仓坐标无关；本快照**只收本仓坐标**的公告
-  （Go 18 个模块 + npm 107 个包 = 125 个坐标 → **185 行 / 72 个公告**）。
+  （Go 18 个模块 + npm 107 个包 + Maven 51 个组件 = **176 个坐标** → **602 行 / 279 个公告**，
+  以快照头 `# coordinates:` / `# entries:` 为准；本地不传 `--java-bom` 时是 125 个坐标的快照子集）。
 - **代价（写清，不藏）**：依赖坐标集合变了就必须重刷——这条由 `coords_sha256` 机器强制，不靠人记得。
 
-## 4. 白名单（当前 **0 条**）
+## 4. 白名单（当前 **33 条**，全部 Maven，到期 2026-12-13）
 
 `docs/qa/vuln-allowlist.tsv`，5 列 TAB 分隔：`id / ecosystem / module / reason / expires`。
 
-**当前 0 条**：本轮把命中项**全部真修掉了**，没有留豁免：
+**当前 33 条，全部是 Maven（`sdk/java`）**，到期日统一 **2026-12-13**（登记日 2026-11-13，30 天）：
+`sdk/java` 首次经 CycloneDX BOM 入闸（#136 / merge `2df9879`，D23③②）一次性暴露的**真实命中**——
+**不是**放宽阈值或整类豁免换来的绿；分族与责任人见 §5 末（同 major 小跳 24 条 / 跨 major 9 条），
+CRITICAL 5 / HIGH 28。到期由 `scripts/vuln-gate.py` **自动重新判红**，逾期未升级则 `AC-ENG-07` 降级。
+
+**Go / npm 侧 0 条**：`#127`（D23①②）已把这两生态的命中项**全部真修掉**，清单留作口径先例：
 
 | 依赖 | 原状态 | 处置 |
 |---|---|---|
 | `github.com/redis/go-redis/v9` | `v9.7.0`（命中 GO-2025-3540 / GHSA-92cp-5422-2mw7） | 升 **`v9.7.3`** |
 | `vue` | `3.5.13`（`@vue/server-renderer` 命中 GHSA-g2v6-rqmx-r4w6 HIGH） | 升 **`3.5.45`**（D23② 的"升，不留豁免"） |
 | `vite` | `6.0.7`（命中 2 条 HIGH：GHSA-587h-7wmj-h5pm / GHSA-p9ff-h696-f583） | 升 **`6.4.6`** |
+
+**Go 标准库条目恒为 0 条**（D23①：stdlib 不许进白名单，只能升 Go）——不是"没有 stdlib 漏洞"，
+而是本闸的扫描面不含 stdlib（见 §5 末行），别把它读成"Go 面全绿"。
 
 新增条目必须写清「为什么现在不能修」+ 谁在什么期限内修，到期日 **≤180 天**（超过即红）。
 
@@ -95,7 +104,7 @@ python3 scripts/vuln-snapshot-refresh.py --osv http://<内网镜像>   # 内网�
 | `web/package-lock.json` | **覆盖**（107 个包，逐包 `文件:行号`） |
 | `sdk/java` | **覆盖**（D23③②，2026-11-13 起）：CI `vuln` job 消费 `sdk` job 产出的 **CycloneDX 1.5 聚合 BOM** artifact（`--java-bom`），51 个第三方组件（`com.guanjin:*` 自有模块排除，两端规则逐字一致）；**不解析 pom**（要外网、实测 429），BOM 每次构建重生成、artifact 锚定本次 run（`bom-commit.txt` 逐字节核对，缺失或不符 = 红）。**覆盖边界：只含 compile/runtime 作用域组件**——cyclonedx 插件 `includeTestScope` 默认 false（pom 未打开），test 依赖（junit-jupiter、spring-boot-starter-test 及其传递链）**不入闸**（它们不进发布物；要覆盖 test 面属新判据，须另行立项）。本地**不传** `--java-bom` 时该生态不进判定，但**显式打** `[UNCOVERED] sdk/java：未提供 --java-bom …`（不许静默跳过）；`make gates` 的本地口径即此，且此时 **33 条 Maven 白名单条目完全不参与判定（汇总行 `白名单 0`）** |
 | `go.mod` 里的**本地路径** `replace` | **不覆盖**，每次运行显式打 `[UNCOVERED] go.mod:<行号> …` |
-| **Go 标准库** | **不覆盖**（快照只收 `go.mod` 的第三方坐标、引擎不读 `go` 指令；`grep -c stdlib docs/qa/vuln-advisories.tsv` = 0）→ D23① 的 10 条 stdlib 公告（修复只在 go1.26.x）在本闸**不产生输出**，**"阻断 0" ≠ "Go 面全绿"**；收口见 `decisions.md` **D28⑤**（升 Go 1.26 或快照加 `stdlib` 行，同一期限 2026-12-10） |
+| **Go 标准库** | **不覆盖**（快照只收 `go.mod` 的第三方坐标、引擎不读 `go` 指令；`grep -c stdlib docs/qa/vuln-advisories.tsv` = 0）→ D23① 的 10 条 stdlib 公告（修复只在 go1.26.x）在本闸**不产生输出**，**"阻断 0" ≠ "Go 面全绿"**。**D28⑤ 已于 2026-11-13 走「升 Go」路径收口**（`go.mod` = `1.26.10`，#133 `6cff27c`；CI `go-version-file: go.mod` 实跑 `go version go1.26.10`）——那 10 条公告**不再适用**，所以 stdlib 白名单条目 = 0 是"没有需要豁免的公告"，不是"扫过且干净"。**结构性边界不因收口消失**：扫描面仍不含 stdlib，**未来新增的 stdlib 公告本闸不会发现**，也没有白名单能承载它（D23① 禁止）；这条边界须在 `AC-ENG-07` 账目里单列，不得记成"Go 面永久无债" |
 
 **`AC-ENG-07` 的 PASS 口径（D23③② 落地后）** = **三生态**（`go.mod` + `web/package-lock.json` + `sdk/java` 的 CycloneDX BOM）
 依赖坐标无未白名单的阻断级漏洞 **且** CI `vuln` job 的 SBOM artifact 存在、锚定本次 commit。
