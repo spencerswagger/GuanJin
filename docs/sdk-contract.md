@@ -38,7 +38,7 @@
 | **Go 缩写大小写（封闭白名单）** | 只允许这 5 个缩写全大写，其余单词**只有首字母大写**：`ID` / `URI` / `URL` / `TTL` / `HMAC`。故 `client.id`→`Client.ID`、`gateway.jwks-uri`→`Gateway.JwksURI`、`jwks-cache-ttl`→`JwksCacheTTL`；**`jwks` 一律写 `Jwks`（不是 `JWKS`）** | — | — | 由键名**机械推导**，不得手写特例 |
 | 枚举值 | 小写 snake（`memory`/`redis`） | 枚举 + 小写序列化 | 字符串字面量联合 | 自定义类型 + `Validate()` |
 | 错误码 | 接口清单 §5.4（含 D3-F 新增 `STEP_ALREADY_SATISFIED`、D8-C′ 废弃 `SERVICE_DEGRADED`），**SDK 只消费不新增** | 常量类 | 常量对象 | 常量 + `error` 实现 |
-| 时长 | 字符串 `<n><unit>`（`60s`/`10m`/`300s`），**规范形态是字符串** | `java.time.Duration` | 毫秒 `number`（内部） | `time.Duration` |
+| 时长 | 字符串 `<n><unit>`（`60s`/`10m`/`300s`），**规范形态是字符串**；**单位闭合集与严格形态见 §3.2.1（`^[0-9]+(ms\|s\|m\|h)$`，三语言同一正则）** | `java.time.Duration` | 毫秒 `number`（内部） | `time.Duration` |
 | 列表 | JSON 数组 | `List<String>` | `string[]` | `[]string` |
 
 > 时长为什么定成字符串：三语言原生类型不同，只有字符串是同一份配置在三语言都可读、也能进一致性向量的形态。
@@ -284,6 +284,32 @@
 
 > **给 Gate 的交接**：`AC-SDK-07` / `AC-FC-05` 的「契约表」「29 项白名单」在实现期**以本文 §3.2 为准**（键名 + 类型 + **默认值**）。默认值共 4 处与基线原表不同，且**全部已定**（无待追认项）：C-1 门控语义（#1/#15）、C-2 `jwks-uri`（#12）、C-4 `replay-store`（#18）、C-5 `pull.enabled`（#22）；后两项依据 `decisions.md` **D6(5)**，可写进期望值、**不再标 `PENDING`**。
 
+### 3.2.1 时长键的**严格解析**（`FROZEN`，三语言同一正则；2026-11-13 裁决）
+
+> **起因（实测，不是推演）**：`spec/vectors` 首跑发现 **纯数字（`3000`）与单位 `d`（`1d`）只有 Java 接受**——Java 走 Spring 的 `Duration` 转换器（裸数字按**毫秒**、`d` 按天、还接受 ISO-8601 `PT60S`），Go 的 `time.ParseDuration` 两者都拒。同一份配置「Java 起得来、Go 拒」= **静默不兼容**（`spec/vectors/README.md` 缺口 6、`config-mapping.json` 的 `known_divergences.parse_forms`）。
+> **裁决：收紧 Java，不放宽契约。** 依据三条：①§1.1 已冻结「时长的规范形态是字符串 `<n><unit>`」，Java 接受裸数字等于**自己发明了一个隐式单位（毫秒）**——§3.6「禁隐性逻辑」正面禁止；②§4.1 **M7**（配置键名/取值三语言一致）与 §1.1 表头「机械可转」要求三语言对同一份配置**同接受/同拒绝**；③放宽契约（三语言都认裸数字与 `d`）要新增默认单位与「天」语义、且 Go 无 `d` 单位，成本与歧义都更大。
+
+| 项 | 规定（三语言逐字一致） |
+|---|---|
+| 合法形态 | **唯一形态**：`<非负整数><单位>`；`trim` 后整串匹配 **`^[0-9]+(ms\|s\|m\|h)$`** |
+| 单位闭合集 | **只 4 个**：`ms` / `s` / `m` / `h`（覆盖 29 键全部默认值 `2s`/`3s`/`60s`/`10m`/`30s`）；**大写单位不认**（`1S`/`10M` 非法） |
+| **必须失败**的形态 | ①纯数字 `3000`；②`d`（`1d`）；③`ns`/`us`/`µs`/`μs`；④小数 `1.5s`；⑤组合 `1h30m`；⑥ISO-8601 `PT60S`；⑦带符号 `+60s`/`-1s`；⑧空串 / 纯空白；⑨内部空白 `60 s` |
+| 首尾空白 | **允许 `trim`**（显式写明，不算隐性）；`trim` 后为空 → 按 ⑧ 失败 |
+| 失败行为 | **启动失败（fail-fast）**，与 §3.6 同口径：进程非 0 退出 / 构造期抛错，**错误信息必须含键名**；**不得静默回落默认值**、不得「告警后按毫秒」 |
+| 语义换算 | `ms`=毫秒、`s`=秒、`m`=分、`h`=时；内部统一按毫秒数（Java `java.time.Duration`、Go `time.Duration`、Node `number` 毫秒），**无隐式单位** |
+| 各键上下限 | 仍按 §3.2「安全约束」列**逐键**判（`replay-window` ≥ 令牌 `exp`、`clock-skew` > 300s 告警等）；本节**只管解析**，不改任何键的默认值、必填性、数量 |
+
+**三语言落点（谁必须改）**：
+
+| 语言 | 现状 | 要求 |
+|---|---|---|
+| Java 8 | Spring `Duration` 默认转换器接受纯数字（按毫秒）/`d`/ISO-8601 → **偏差方** | **不得依赖**默认转换器：在 `guanjin-core` 的 `Config.validate()`（零 Spring 依赖，§3.6 Java ②）里按上表正则解析，`guanjin-spring-boot2` 绑定阶段调用；违规 → `GuanjinConfigException`（启动失败） |
+| Go | `time.ParseDuration(strings.TrimSpace(raw))`：拒纯数字/`d`，但**接受** `1h30m`/`1.5s`/`100ns` | `Config.Validate()` **先**跑同一正则、**再**用 `time.ParseDuration` 换算；正则不过 → 返回 error 且**不得**同时返回可用实例（§3.6 Go ④） |
+| Node | 未实现 | 照上表正则实现；非法即 `throw GuanjinConfigError`（附键名 + 可用键清单） |
+
+> **不新增配置键、不改 29 项、不进 CH**：本裁决只把 §1.1 已冻结的「字符串 `<n><unit>`」变成**可执行判定**，未改任何键名/默认值/必填性，业务方仍不能用基线原本不允许的方式配置 SDK → 按三分判据不进 CH。判据侧见 `docs/acceptance-criteria.md` **`AC-SDK-11`**（v19 新增，组末追加）。
+> **向量侧待补（Gate / `scripts/vecgen`）**：`config-mapping.json` 的 `known_divergences.parse_forms` 两条应从「口径差异」改写为**负例**（`3000`、`1d` 必须启动失败），并按上表补 `1h30m` / `1.5s` / `PT60S` 三条负例；改完前它们只是**定性记录**，不构成断言。
+
 ### 3.3 3 项已废止（`REMOVED`，不得实现）
 
 | 基线原编号 | 推定键名（基线未印出点分键，由字段名机械推导） | 原语义 | 废止依据 | 若保留会怎样 |
@@ -422,6 +448,11 @@ X-GuanJin-Signature = Base64( HMAC-SM3( K, canonical ) )
 | `NONCE` | **base64url 无填充，16~64 字节**，字符集 `[A-Za-z0-9_-]`；去重键 `agent:nonce:{client_id}:{nonce}`，TTL **600s**，重复 → `AGENT_NONCE_REPLAY` |
 | `K` | 交付 secret 的 base64 文本**解码后的 32 字节**原始密钥（不做二次编码） |
 | 头名 | `X-GuanJin-Client` / `X-GuanJin-Timestamp` / `X-GuanJin-Nonce` / `X-GuanJin-Signature` |
+
+> **A2 的「`?` 后原始串是否先解码」——已定（2026-11-13 补句，关闭 `AH-15` pending）**：**必须先 percent-decode，再编码、排序**。①「取请求行 `?` 之后的原始串」是**取来源**；②切分出的 name / value 在 ④ 编码**之前**各做一次 **percent-decode**：`%2B`→`+`、`%2b` 与 `%2B` 等价、`%E4%B8%AD`→`中`；**`+` 按字面 `+` 处理（不按 `application/x-www-form-urlencoded` 语义转空格）**；解出的逻辑值再按 ④ 的保留集编码 —— 故 `q=a%2Bb` 的 `SORTED_QUERY` = **`q=a%2Bb`**，**不是** `q=a%252Bb`。
+> **依据（两条，都在本文/冻结判据内）**：① A2 ⑦ 的示例 `?b=2&a=1&c=%E4%B8%AD` → `a=1&b=2&c=%E4%B8%AD`（同一示例亦见 `acceptance-criteria.md` `AC-AGENT-02` ⑦）——若按「原始串直接再编码」，`%` 会被二次转义成 `%25E4%25B8%25AD`，与该示例**矛盾**；② `decisions.md` D1-A2 ④ 的「避免"解码后比较"造成的大小写/保留字符歧义」约束的是**比较与排序**（编码先于排序），**不是解析**——先解码成逻辑值、再编码成唯一形态，两者不冲突。
+> **非法 percent 序列**（`%` 后不足两位 hex，或非 hex）→ 该请求**签名不可验证**，按验签失败 **fail-closed** 处理（不新增错误码、**不做宽容解码**、不得"跳过该对"）。
+> **实现现状**：`internal/agent.SortedQuery(pairs []KV)` 的入参本就是**逻辑值**（编码在它内部做），缺的是「raw query → pairs」这一步（`spec/vectors/README.md` 缺口 1 已记，`ParseRawQuery` 类入口不存在）；本补句**不改** `AH-15` 的期望值（`q=a%2Bb`），待消费者摘掉 `pending` 标记后转正（`agent-hmac.json` + Go 侧 pending 集合断言两处，归 Edge/Gate）。
 
 > **D1 定稿状态（2026-11-02）**：`PATH`（A1）与 `SORTED_QUERY`（A2）两处**已由 `decisions.md` D1 补齐**，上表按定稿逐字转写，不再有推定成分。
 > ⚠️ **对 v2 的更正**：v2 曾推定「`PATH` 取原始请求行、**不含** context-path」——**与 D1 定稿相反**（定稿要求**含** context-path，且禁中间件重写）。照 v2 实现会让带 context-path 的业务系统与平台算出不同串、签名全失败；本节已更正，`/a` 与 `/a/` 的差异也一并按定稿处理。
@@ -710,6 +741,18 @@ M1 的 S9 **只交付 Java 8 两份产物**；Node / Go 随 M2+ 落地。但**�
 
 ---
 
+### 8.5 v12 → v13 修订点（2026-11-13：两处契约裁决 + 一处实现状态登记，均由 `spec/vectors` 首跑揪出）
+
+> 本轮**只补口径、不动结构**：29 项配置键名/默认值/必填性、22 条能力、判据（`acceptance-criteria.md` 侧除新增 `AC-SDK-11` 外）一条未改；基线正文未动、无源码。
+
+| # | 位置 | 原（v12） | 现（v13） | 依据 |
+|---|---|---|---|---|
+| **E35** | §1.1「时长」行 + 新增 **§3.2.1** | 只写「规范形态是字符串 `<n><unit>`」，**没说哪些形态必须失败** → Java（Spring `Duration` 转换器）接受纯数字（按毫秒）/`d`/ISO-8601，Go `time.ParseDuration` 拒纯数字与 `d`，两侧静默不兼容 | 新增 §3.2.1：**合法 = `trim` 后 `^[0-9]+(ms\|s\|m\|h)$`**，单位闭合集只 4 个；纯数字 / `d` / `ns`·`us` / 小数 / 组合 `1h30m` / `PT60S` / 带符号 / 空 / 内部空白 **一律启动失败并报键名**；并写明三语言落点（Java **不得依赖**默认转换器、Go 先正则再换算、Node 照此） | §1.1 已冻结的规范形态 + §3.6 禁隐性逻辑 + §4.1 M7 三语言一致；实测见 `spec/vectors/README.md` 缺口 6 与 `config-mapping.json` 的 `known_divergences.parse_forms` |
+| **E36** | §4.3 `SORTED_QUERY`（D1-A2） | A2 ①只写「取 `?` 之后的原始串」+ A1「不做 URL 解码」⇒ 可被读成「raw 直接再编码」（`%2B`→`%252B`），与 ⑦ 的示例 `c=%E4%B8%AD` → `c=%E4%B8%AD` 矛盾；向量 `AH-15` 因此挂 `pending` | 补句：**必须先 percent-decode 再编码排序**；`+` 按字面 `+`（不转空格）、`%2b`≡`%2B`；非法 percent 序列 → 签名不可验证、fail-closed；并点明 `AH-15` 的期望值不变（`q=a%2Bb`），待消费者摘 `pending` 转正 | A2 ⑦ 示例（同见 `AC-AGENT-02` ⑦）+ D1-A2 ④ 的「避免解码后比较」只约束**比较/排序**、不约束解析 |
+| **E37** | 附录 C 表后 | 只列四份向量的覆盖要求，**没写哪些条目当前无实现** → 易被读成「向量在 = 已验」 | 补「向量实现状态」三条：①`scope()`（`GJ-CAP-17`）与模型/策略完整性校验**两侧均未实现**（`scope_cases`/`integrity_cases` = `UNIMPLEMENTED`，**不得记 PASS**）、归属 M5、**不阻塞 M1/S11 门禁**；②`duration` 形态按 §3.2.1、两条已知差异须改负例；③`AH-15` pending 已由 E36 消解 | `spec/vectors/README.md` 缺口 1/2/3/6；账目侧 = `acceptance-criteria.md` §15-**G18** |
+
+> **未做（留给对应责任人，本节只登记）**：`agent-hmac.json` 摘 `AH-15` 的 `pending` + Go 侧 `pending` 集合断言（Edge/Gate）；`config-mapping.json` 的 duration 负例（Gate/`scripts/vecgen`）；Java 严格时长解析与 Go 正则前置（Nova，判据 `AC-SDK-11`）；`scope()` / 完整性校验实现（Nova/Edge，M5）。
+
 ## 9. 附录
 
 ### 附录 A：能力 ID ↔ 基线 §2 编号 ↔ 对外 API 入口
@@ -780,10 +823,15 @@ M1 的 S9 **只交付 Java 8 两份产物**；Node / Go 随 M2+ 落地。但**�
 | `spec/vectors/authz-decisions.json` | 12 | RBAC allow/deny、`defaultRole` 兜底、`auditor` 豁免、密级 `>`/`=`/`<`、`scope()` 受限/全量、完整性校验失败 fail-closed |
 | `spec/vectors/config-mapping.json` | 29 | 29 个规范键 → 三语言读入后内部值等价（含默认值、`duration` 解析） |
 
+> **向量实现状态（2026-11-13 登记，不得记 PASS）**：
+> ① **`scope()`（`GJ-CAP-17`）与「模型/策略完整性校验」两侧均未实现** —— Java `guanjin-core` 与 Go SDK 都没有 `scope()`（Go `capabilities.go` 里 `GJ-CAP-12~16` 为 `Implemented:false`；Java `Authz.init` 无 digest 校验），故 `authz-decisions.json` 的 `scope_cases` / `integrity_cases` 只做**定性**（`status: UNIMPLEMENTED`，含 `AZ-S1/S2/S3` 三条用例**先落盘不判 PASS**）。**归属 M5、不阻塞 M1/S11 门禁**（M1 只验「接入 + 验签 + 剥离」，22 条能力签名归 M5；`GJ-CAP` 编号**不进** AC 账目）；实现落地后由**同一 runner** 接向量转正，账目侧登记见 `acceptance-criteria.md` §15-**G18**。
+> ② **`duration` 形态按 §3.2.1 判**：`config-mapping.json` 里 `known_divergences.parse_forms` 的两条（`3000` / `1d`）须由「口径差异」改写为**负例**（必须启动失败），并补 `1h30m` / `1.5s` / `PT60S` 负例；未改前它们只是定性记录。
+> ③ `agent-hmac.json` 的 `AH-15` pending 已由 §4.3 的 A2 补句消解（口径 = 先解码再编码），待消费者摘 `pending` 转正。
+
 ---
 
 *本文是实现口径，不是基线；与 `/docs/baseline/` 冲突处以 `decisions.md` 为准并已在 §6 登记。本文不含任何源文件，未修改基线，未执行 `git worktree` 操作。*
 
 ---
 
-**校对快照（v12，供 Spec 抽查）**：`sdk-contract.md` / 行数 **789** 行（`wc -l`）/ md5 **`25aef4a3515e032f73d8ce0a74fd8bc1`**（md5 覆盖范围 = **正文全部，即第 1..785 行**，命令 `head -n 785 docs/sdk-contract.md | md5sum`——不含快照节自身与其上方分隔线，避免自引用；行数含快照节）。上一快照 = v11 789 行 / md5 `a98bf146998f3aa999a2cf4a29195703`（#51 评审 P1 收口：附录 37 → 36 条）。本版（D25 台账同步的连带订正，`decisions.md` D25）：§3.6 与 D25 的关系注 **①** 由「D25 记的旧名已被改名，台账请 Ark 同步」改为「**D25 台账已同步收现名** `GUANJIN_GW_CLOCK_SKEW`」，并补机器守线名 `TestReservedEnvNeverShadowsConfigKeyMappings`。**只改这一处交叉引用，附录 36 条、29 项键名/编号/默认值/必填性、22 条能力、判据一处未改；基线正文未动、无源码。**
+**校对快照（v13，供 Spec 抽查）**：`sdk-contract.md` / 行数 **837** 行（`wc -l`）/ md5 **`1c2f770b95379cec4e5d67db292c00b3`**（md5 覆盖范围 = **正文全部，即第 1..833 行**，命令 `head -n 833 docs/sdk-contract.md | md5sum`——不含快照节自身与其上方分隔线，避免自引用；行数含快照节）。上一快照 = v12 789 行 / md5 `25aef4a3515e032f73d8ce0a74fd8bc1`。本版（**E35–E37**，`spec/vectors` 首跑揪出的两裁决 + 一登记）：①新增 **§3.2.1**（时长严格解析：合法 = `trim` 后 `^[0-9]+(ms\|s\|m\|h)$`，纯数字/`d`/小数/组合 `1h30m`/`PT60S` 一律启动失败；Java 不得依赖 Spring 默认转换器）+ §1.1 时长行加指向；②§4.3 补 **A2 解码口径**（先 percent-decode 再编码排序、`+` 按字面，关闭 `AH-15` pending）；③附录 C 表后补**向量实现状态**（`scope()` / 模型完整性校验两侧未实现 = 不得记 PASS、归 M5、不阻塞 M1/S11 门禁）。**29 项键名/编号/默认值/必填性、22 条能力、基线正文一处未改、无源码**；判据侧见 `acceptance-criteria.md` v19（新增 `AC-SDK-11` + G18/G19）。
