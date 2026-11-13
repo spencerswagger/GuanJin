@@ -167,16 +167,25 @@ func (f *flowFixture) registerEmailUser(t *testing.T, db *gorm.DB, email, passwo
 // 口径（D21 ③，逐条落地）：
 //   - 同一端点、同一请求体形状，**只换 `value`**：A = 已存在 email（409 IDENTIFIER_ALREADY_BOUND）、
 //     B = 不存在 email（200 need_challenge）；不跨端点比（`register/complete` 有口令派生，量级不同）。
-//   - 每条路径 **每轮 15 次、丢前 3 次预热、取中位数**；单轮判据 = `|median(A) − median(B)| ≤ 阈值`。
-//   - **抖动容忍（2026-11-13 加，理由见下）**：判定要求**可复现** —— 连续 **3 轮**都超阈值才判红；
-//     任一轮在阈值内即通过并留痕 `noise_pass`。单轮判定最多跑 6 轮（前 3 轮全红即停）。
+//   - **测量口径 = `acceptance-criteria.md` §15-G22（2026-11-13 定，判据句未改）**，逐条落地：
+//     ①采样 = 每条路径每轮 **15 次**、**丢前 3 次预热**、余 **12 样本取中位数**；
+//     ②单轮判定 = `|median(A) − median(B)| ≤ 阈值`；
+//     ③判红规则 = **连续 3 轮**均超阈才判红（单轮超阈 = 抖动，保留原始样本），任一轮在阈内即通过并留 `noise_pass`；
+//     ④阈值只从 `runtime_config` 读；⑤失败打印最差一轮完整样本 + 每轮摘要。
+//     G22 的「四条不许动」：阈值来源 / 统计量必须稳健（中位数/分位数，不得用均值或最大值）/
+//     不得删原始样本打印 / 改采样数或轮数须在 PR 说明理由并附前后数据 —— **"连续 3 轮"是允许重测，不是允许改阈值**。
+//   - 为什么要这层抖动容忍（2026-11-13 加，实测依据）：本判据要抓的是**结构性差异**（"存在性"走不同查询路径），
+//     结构性差异不会自己消失；而共享 runner 上 `-p 8` 跨包并行时，别的包对 `challenges`/`flows` 做
+//     TRUNCATE/DROP 会拿到 ACCESS EXCLUSIVE 锁 —— B 路径要写 `challenges`，于是整轮 B 被锁等抬到
+//     几十上百毫秒（实测 docs-only PR：A=1.1ms / B=100.5ms，重跑即绿；见 `notes/flake-ledger.md` FL 系列）。
+//     这是**测试隔离/机器噪声**，不是注册面的时序泄漏。
 //     依据：本判据要抓的是**结构性差异**（"存在性"走不同查询路径），结构性差异不会自己消失；
 //     而共享 runner 上 `-p 8` 跨包并行时，别的包对 `challenges`/`flows` 做 TRUNCATE/DROP 会拿到
 //     ACCESS EXCLUSIVE 锁 —— B 路径要写 `challenges`，于是整轮 B 被锁等抬到几十上百毫秒
 //     （实测 docs-only PR：A=1.1ms / B=100.5ms，重跑即绿；见 `notes/flake-ledger.md` FL 系列）。
 //     这是**测试隔离/机器噪声**，不是注册面的时序泄漏。
 //   - **判据文字未改**：AC-REG-04 只写「耗时差异 ≤ 阈值（阈值取自 `runtime_config`）」，
-//     "中位数 / 多少轮" 是测量方法（D21 ③）。改的是**测量的可复现性**，不是阈值、也不是判据。
+//     统计量与轮数是**测量方法**（G22：判据=属性、测量随机器走）。改的是测量的可复现性，不是阈值、也不是判据。
 //   - 时钟 = **进程单调钟**（`time.Since`），不用 DB `now()`（那会把网络往返与两钟偏差当信号）。
 //   - **不做 sleep**：任何"凑时长"都等于用可用性换判据绿（D21 ② 反作弊条）。
 //   - 阈值**只从 `runtime_config` 读**（D21：`register.timing.max_diff_ms`，int、>0）；
@@ -243,13 +252,10 @@ func TestE2E_AC_REG_04_TimingDiffWithinThreshold(t *testing.T) {
 		return passResult{medianA: ma, medianB: mb, diff: math.Abs(ma - mb), samplesA: samplesA, samplesB: samplesB}
 	}
 
-	const (
-		maxPasses   = 6 // 单轮判定最多跑 6 轮
-		failPassesN = 3 // 连续 3 轮超阈值 = 结构性差异（可复现才算红）
-	)
-	results := make([]passResult, 0, maxPasses)
-	overCount := 0
-	for p := 1; p <= maxPasses; p++ {
+	// G22③：连续 3 轮均超阈才判红（任一轮在阈内即通过并 return，故最多 3 轮）。
+	const failPassesN = 3
+	results := make([]passResult, 0, failPassesN)
+	for p := 1; p <= failPassesN; p++ {
 		r := measurePass()
 		results = append(results, r)
 		within := r.diff <= float64(maxDiffMS)
@@ -263,10 +269,7 @@ func TestE2E_AC_REG_04_TimingDiffWithinThreshold(t *testing.T) {
 				p, r.diff, maxDiffMS)
 			return
 		}
-		overCount++
-		if overCount >= failPassesN {
-			break
-		}
+
 	}
 
 	// 到这里 = 连续 3 轮都超阈值（可复现）。打印最差一轮完整样本 + 全部轮摘要。
