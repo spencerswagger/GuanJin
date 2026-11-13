@@ -139,13 +139,17 @@ spring-webmvc GHSA-pc63-qcmh-9cmg；netty-handler GHSA-c4c3-7fpv-j4q5）。这�
 |---|---:|---|---|
 | **A** 同 minor 线补丁已发布 | **12** | 目标与现装同 `major.minor`（如 spring-web 5.3.31→**5.3.34**、logback 1.2.12→**1.2.13**、netty 4.1.101.Final→**4.1.137.Final**、spring-security-core 5.7.11→**5.7.12**） | **Nova**（落在 **A 批 24** 内）：一行 `<properties>` 版本覆盖 + 回归 |
 | **B** 同 major 内需升 minor | **11** | 目标同 major、跨 minor（jackson 2.13.5→**2.15.0/2.18.8/2.18.11**、bcprov 1.78.1→**1.80.2/1.85**、commons-io 2.11.0→**2.14.0**、snakeyaml 1.30→**1.31**） | **Nova**（落在 **A 批 24** 内）：升 minor + 回归（Jackson 跨 5 个 minor，需跑 SDK 全测） |
-| **C** 同 major 内无干净版本（须跨 major） | **10** | 该模块在现 major 内**没有任何已发布版本**能清掉本公告全部区间 → 目标落在更高 major（spring-web/webmvc/spring-expression/spring-core→**6.x**、spring-security-crypto→**6.3.8**、snakeyaml→**2.0**、spring-boot 2.7.18→**3.0.0**） | **按批次拆**：**9 条 → B 批**（Spring 6 / Security 6 / Boot 3 要 Java 17，与 SDK 的 Java 8 契约冲突）→ **spencer 拍板**（α 加 Boot 3 轨／β 风险接受 + 书面续期／γ 缩 SBOM 面，见 `sdk/java/SBOM-REMEDIATION-PLAN.md` §3）；**1 条 `snakeyaml→2.0`**（Java 8 兼容、与 Boot 2.7.18 实测可解析）→ 随 **A 批**归 Nova |
+| **C** 同 major 内无干净版本（须跨 major） | **10** | 该模块在现 major 内**没有任何已发布版本**能清掉本公告全部区间 → 目标落在更高 major（spring-web/webmvc/spring-expression/spring-core→**6.x**、spring-security-crypto→**6.3.8**、snakeyaml→**2.0**、spring-boot 2.7.18→**3.0.0**） | **按批次拆**：**9 条 → B 批**（Spring 6 / Security 6 / Boot 3 要 Java 17，与 SDK 的 Java 8 契约冲突）→ **spencer 拍板**（α 加 Boot 3 轨／β 风险接受 + 书面续期／γ 缩 SBOM 面——**γ 只能作 α/β 的辅助口径**，Nova §3.1 明写不建议单用，见 `sdk/java/SBOM-REMEDIATION-PLAN.md` §3）；**1 条 `snakeyaml→2.0`**（Java 8 兼容、与 Boot 2.7.18 实测可解析）→ 随 **A 批**归 Nova |
 
 > **两种单位，别混用（2026-11-13 补）**：上表是**逐公告**单位（按"清掉该公告**全部**受影响区间"算，机械可复算）；
 > `sdk/java/SBOM-REMEDIATION-PLAN.md`（#140，已 `mvn verify -Pintegration` 试跑：白名单命中 33 → **9**、class major ≤52）
 > 是**逐批次**单位（**A 批 24 / B 批 9**，按"能不能一批做/是否撞 Java 17"分）。两者**同一笔账、已对账**：
 > **`24 = 12 + 11 + 1`**、**`9 = 10 − 1`**，差额恰为 **`snakeyaml 1.30 → 2.0`**（公告跨 major → 本表归 C；
 > 但目标版本 Java 8 兼容 → Nova 归"可一批"）。**引用时必须写清是哪一种单位**（并列口径见 `docs/acceptance-criteria.md` **§12.1**）。
+>
+> **目标版本也分两口径（别当成又一处对不上）**：本表取**最小干净版**（如 spring-boot→`3.0.0`、spring-webmvc→`6.0.0/6.2.0`）；
+> Nova 表取**受支持线的最低修复版**（`3.3.11 / 3.5.14 / 6.2.19 / 7.0.9`，涉 4 行：`GHSA-rc42`、`GHSA-wwpq`、`GHSA-3chg`、`GHSA-pc63`）。
+> 两列都是"能清掉全部区间"的合法解，差别只在"选哪条线"，不是数错。
 >
 > **撤掉的是第三种口径（不是 Nova 的逐批次 24/9）**：`#136` 头注释原先写的「24 同 major / 9 跨 major」按"fix 上界与组件**同 major**"粗判，
 > **没核该版本是否真的发布过** → 不可复算，已撤（它与 Nova 的 24/9 数字相同纯属巧合，**不是**同一套判据；Nova 那套有 `mvn verify` 实跑证据）。
