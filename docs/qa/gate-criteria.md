@@ -227,10 +227,11 @@ tsc_exit=0  tsc_errors=0
 | `AC-ENG-05`（映射表六栏） | S11 判定；三闸是它的**前置**（先绿才有资格出映射表） |
 | `AC-ENG-06`（证据留档） | 本文件 §4 是它的 gate 子集落地，格式不冲突（`artifacts/<commit>/<AC-ID>/` 可并存） |
 | `AC-ENG-07`（依赖漏洞/gofmt/vue-tsc） | 本文件 §1.1/§1.3 覆盖 `gofmt` 与 `vue-tsc`；依赖漏洞门禁是**独立 job `vuln`**，仍必跑且 fail-closed。**实现形态已按 `docs/decisions.md` D28 改为「离线 OSV 快照 + 本地判定」**（CI 零网络，不现跑 `govulncheck`/`trivy`）。**PASS 口径（2026-11-13 起，D23③② 落地）** = **三生态**（`go.mod` + `web/package-lock.json` + `sdk/java` 的 CycloneDX BOM）依赖坐标无未白名单的阻断级命中，**且** `vuln` job 消费的 SBOM artifact 存在并锚定本次 commit（`bom-commit.txt` 逐字节核对）；CI 里出现 `[UNCOVERED] sdk/java` 行即红（不再"标注即算过"）。**本地**不传 `--java-bom`（如 `make gates`）= Go+npm 两生态判净 + 显式 `[UNCOVERED] sdk/java`，**只是本地口径**，不得当 CI 证据。账目不得写"全量覆盖"；**Go 标准库不在扫描面**（`grep -c stdlib docs/qa/vuln-advisories.tsv` = 0），"阻断 0" ≠ "Go 面全绿"。详见 `docs/qa/vuln-scan.md` §5 |
+| `AC-SDK-11`（时长键严格解析，v19 新增；第 91 条） | **不在三闸内**：判据是「启动失败 + 错误信息含键名」，归 SDK 单测/一致性向量（`spec/vectors/config-mapping.json` 的 `reject_cases` = 7 条负例，Go 与 Java 消费者双侧断言）；与三闸的关系 = **不冲突、不替代**：三闸绿不代表时长解析合规，反之亦然。口径见 `docs/sdk-contract.md` **§3.2.1**，解析差异的来历与收口见 `spec/vectors/README.md` |
 | `AC-ENG-08`（禁码/禁词四注入） | 与三闸同批（S1 建、S11 复核），见 §5-H |
 | `AC-AUD-10` / 密评 | **完全无关**：密评不进三闸、不进契约强制项，见 `docs/decisions.md` **D8-B【正式裁定】/ D8-E 第二版**（密评整体后置）+ `docs/acceptance-criteria.md` **§11.1**（重启密评的 7 项输入 I-1~I-7）；三闸**不得**因为密评口径未定而卡住或放宽 |
 
-**账目未动**：本文件不新增、不重排任何 `AC-*`，不改 `acceptance-criteria.md` 的账目（**现 v11：90 = 83 `PASS-able` / 0 `PENDING` / 0 `BLOCKED` / 6 `NOT-APPLICABLE` / 0 `NOT-IMPLEMENTED` / 1「后置（DEFERRED）：本期不做判定」**；v1 写的是当时 v9 的 85/68/10，v11 追认后已变，本文件只引用、不记账）。
+**账目未动**：本文件不新增、不重排任何 `AC-*`，不改 `acceptance-criteria.md` 的账目（**现 v19：91 = 84 `PASS-able` / 0 `PENDING` / 0 `BLOCKED` / 6 `NOT-APPLICABLE` / 0 `NOT-IMPLEMENTED` / 1「后置（DEFERRED）：本期不做判定」**；v19 相对 v11 的 +1 = `AC-SDK-11`（时长键严格解析，契约 §3.2.1）。**引用口径**：本文件只引用、不记账；`AC-ENG-05` 的 CI 映射表按 **91 条**出六栏，`AC-SDK-11` 必须单独成行（不得并入 `AC-SDK-07` 或 `AC-SDK-10`）。
 
 ---
 

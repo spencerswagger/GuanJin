@@ -95,8 +95,8 @@ func TestSpecVectorsAgentHMAC(t *testing.T) {
 	}
 
 	// pending 只能是已登记的那一条（AH-15：A2 raw/解码口径未定）。悄悄多出/少掉都要红。
-	if len(pending) != 1 || pending[0] != "AH-15" {
-		t.Fatalf("pending 集合变了：%v（只允许 AH-15，见 spec/vectors/README.md）", pending)
+	if len(pending) != 0 {
+		t.Fatalf("pending 集合变了：%v（AH-15 已由契约 v13 §4.3 A2 消解，不该再有 pending）", pending)
 	}
 	t.Logf("pending（未参与断言）：%v", pending)
 }

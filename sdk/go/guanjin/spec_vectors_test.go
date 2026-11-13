@@ -169,6 +169,14 @@ func TestSpecVectorsConfigMapping(t *testing.T) {
 		Removed struct {
 			Keys []string `json:"keys"`
 		} `json:"removed_keys"`
+		RejectCases []struct {
+			VectorID string            `json:"vector_id"`
+			Case     string            `json:"case"`
+			Key      string            `json:"key"`
+			Value    string            `json:"value"`
+			Reason   string            `json:"reason"`
+			Current  map[string]string `json:"current"`
+		} `json:"reject_cases"`
 		Divergences struct {
 			Defects []struct {
 				Key      string `json:"key"`
@@ -192,6 +200,29 @@ func TestSpecVectorsConfigMapping(t *testing.T) {
 		}
 		if ConfigKeys[i] != k.Key {
 			t.Errorf("第 %d 项键名不一致：向量=%q Go=%q", k.Index, k.Key, ConfigKeys[i])
+		}
+	}
+
+	// §3.2.1 的时长负例：按 `current.go` 把「今日实跑行为」钉死——不是"跳过"，而是**断言现状**。
+	// Nova 按 §3.2.1 收紧后，这里立刻红并提示把 current 改成 "reject"（钉桩不会腐化成假绿）。
+	if len(doc.RejectCases) == 0 {
+		t.Fatalf("config-mapping.json 缺 reject_cases（§3.2.1 的负例向量没了）")
+	}
+	for _, rc := range doc.RejectCases {
+		in := map[string]string{rc.Key: rc.Value}
+		_, err := LoadFromMap(in)
+		got := "accept"
+		if err != nil {
+			got = "reject"
+		}
+		want := rc.Current["go"]
+		if got != want {
+			t.Errorf("%s(%s) 键=%s 值=%q：Go 当前 %s，向量里钉的是 %s —— 若 §3.2.1 已落地，请把 config-mapping.json 的 current.go 改成 \"reject\"（并确认错误信息含键名）",
+				rc.VectorID, rc.Case, rc.Key, rc.Value, got, want)
+			continue
+		}
+		if got == "reject" && !strings.Contains(err.Error(), rc.Key) {
+			t.Errorf("%s: 拒绝信息里没有键名 %q（§3.2.1 要求错误信息含键名）：%v", rc.VectorID, rc.Key, err)
 		}
 	}
 
