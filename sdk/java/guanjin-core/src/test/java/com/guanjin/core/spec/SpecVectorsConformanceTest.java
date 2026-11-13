@@ -10,6 +10,8 @@ import com.guanjin.core.authz.AuthzModel;
 import com.guanjin.core.config.GuanjinConfig;
 import com.guanjin.core.config.GuanjinConfigException;
 import com.guanjin.core.config.GuanjinConfigLoader;
+import com.guanjin.core.config.GuanjinConfigValidator;
+import com.guanjin.core.config.GuanjinEnvironment;
 import com.guanjin.core.error.ErrorCodes;
 import com.guanjin.core.error.GuanjinSdkException;
 import com.guanjin.core.http.HttpFetchException;
@@ -245,32 +247,66 @@ class SpecVectorsConformanceTest {
 
     // ---------------- config-mapping ----------------
 
+    /** 该条在 Java 侧的真实行为：装载期 + 校验期两段都看（安全约束只在 validate 里）。 */
+    private static String javaBehavior(String key, String value) {
+        // 必备键补齐，否则 validate 会因为"缺 base-url"先失败，掩盖本条的真实判定。
+        Map<String, String> in = new LinkedHashMap<String, String>();
+        in.put("guanjin.platform.base-url", "https://p.example.com");
+        in.put("guanjin.client.id", "c1");
+        in.put("guanjin.client.hmac-secret", "s");
+        in.put(key, value);
+        try {
+            GuanjinConfig cfg = GuanjinConfigLoader.fromMap(in);
+            java.util.List<String> errs = GuanjinConfigValidator.validate(cfg, GuanjinEnvironment.of("local"));
+            if (errs == null || errs.isEmpty()) {
+                return "accept";
+            }
+            boolean hasKey = false;
+            for (String e : errs) {
+                if (e != null && e.contains(key)) {
+                    hasKey = true;
+                }
+            }
+            return hasKey ? "reject@validate" : "reject@validate:no-key";
+        } catch (RuntimeException e) {
+            String msg = e.getMessage() == null ? "" : e.getMessage();
+            return msg.contains(key) ? "reject@load" : "reject@load:no-key";
+        }
+    }
+
     @Test
     void configDurationRejectCasesMatchContractSection321() throws Exception {
         JsonNode doc = vector("config-mapping.json");
         JsonNode rejects = doc.get("reject_cases");
         assertNotNull(rejects, "config-mapping.json 缺 reject_cases（§3.2.1 的负例向量没了）");
         assertTrue(rejects.size() > 0, "reject_cases 为空");
+        // 词表与生成器 scripts/vecgen/config.go 同口径：
+        //   accept / reject@load / reject@validate / reject@load:no-key / reject@validate:no-key
         for (JsonNode rc : rejects) {
-            Map<String, String> in = new LinkedHashMap<>();
-            in.put(rc.get("key").asText(), rc.get("value").asText());
-            String got = "accept";
-            String msg = "";
-            try {
-                GuanjinConfigLoader.fromMap(in);
-            } catch (RuntimeException e) {
-                got = "reject";
-                msg = e.getMessage() == null ? "" : e.getMessage();
-            }
+            String key = rc.get("key").asText();
+            String got = javaBehavior(key, rc.get("value").asText());
             String want = rc.get("current").get("java").asText();
             String id = rc.get("vector_id").asText();
-            assertEquals(want, got, id + "(" + rc.get("case").asText() + ") 键=" + rc.get("key").asText()
-                    + " 值=" + rc.get("value").asText() + "：Java 当前行为与向量钉的值不一致 —— 若 §3.2.1 已落地，"
-                    + "请把 config-mapping.json 的 current.java 改成 \"reject\"");
-            if ("reject".equals(got)) {
-                assertTrue(msg.contains(rc.get("key").asText()),
-                        id + " 拒绝信息里没有键名（§3.2.1 要求含键名）：" + msg);
-            }
+            assertEquals(want, got, id + "(" + rc.get("case").asText() + ") 键=" + key
+                    + " 值=" + rc.get("value").asText() + "：Java 当前行为与向量钉的值不一致 —— 行为已变，"
+                    + "请把 config-mapping.json 的 current.java 改成 \"" + got + "\"（并确认错误信息含键名）");
+        }
+    }
+
+    @Test
+    void configPendingCasesMatchContractSection321() throws Exception {
+        JsonNode doc = vector("config-mapping.json");
+        JsonNode pending = doc.get("pending_cases");
+        assertNotNull(pending, "config-mapping.json 缺 pending_cases（契约已定的正向欠账没了：CM-13 clock-skew=0s）");
+        assertTrue(pending.size() > 0, "pending_cases 为空");
+        for (JsonNode pc : pending) {
+            String key = pc.get("key").asText();
+            String got = javaBehavior(key, pc.get("value").asText());
+            String want = pc.get("current").get("java").asText();
+            String id = pc.get("vector_id").asText();
+            assertEquals(want, got, id + "(" + pc.get("case").asText() + ") 键=" + key
+                    + " 值=" + pc.get("value").asText() + "：Java 当前行为与向量钉的值不一致 —— 若已按契约改好，"
+                    + "请把这条**升级成正例**（进 cases，按 " + pc.get("expect_after_fix").asText() + " 断言），不要只改 current");
         }
     }
 

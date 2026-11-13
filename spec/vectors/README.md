@@ -9,7 +9,7 @@
 | `agent-hmac.json` | 15 | 空 query、单 query、多 query 乱序、重复键（不同值/同值）、`?` 后为空、空 body、UTF-8 body、带 context-path 的 PATH、`/a` vs `/a/`、字节序大小写、**RFC3986 编码**（`AH-12` 空格/`+`/`/`/中文；`AH-15` 先 decode 再编码，`%2Bb`→`a+b`→`a%2Bb`） | `internal/agent/spec_vectors_test.go`（canonical 走 `internal/agent.Canonical/SortedQuery`，签名 HMAC-SM3 现算） |
 | `assertion-verify.json` | 14 | 正常、签名错、`exp`/`iat` 边界两侧（±skew 与 +1）、`iss`/`aud` 错、未知 `kid`、JWKS 不可达无缓存（503 `KEY_UNAVAILABLE`）、`jti` 重放、**`alg` 非 SM2 → 拒**（AV-12 oidc 轨键 / AV-13 HS256 / **AV-14 网关键 + `SM3withSM2` + 网关私钥真签**） | Go `sdk/go/guanjin/spec_vectors_test.go`（`Verifier`+`ValidateClaims`+`MemoryReplayGuard`）；Java `SpecVectorsConformanceTest`（`Sm2AssertionVerifier`+`ClaimValidator`+`ReplayGuard`） |
 | `authz-decisions.json` | 14（+3 `scope`、+1 完整性 定性） | RBAC allow/deny、`defaultRole` 兜底与最小权限、`auditor` 行级豁免、密级 `>`/`=`/`<`/公开 0 级、资源组、未认证（401） | Java `SpecVectorsConformanceTest`（**真 jcasbin + 真 `classpath:/guanjin/model.conf`**） |
-| `config-mapping.json` | 5 组 × 29 键 + **7 条时长负例** | 默认值、全显式、duration 形态、派生值（#12 jwks-uri / #9 aud）、list 与 role-prefix、REMOVED 键出现即失败、**§3.2.1 时长非法形态必须启动失败**；`keys[].kind` 词表 = `bool\|string\|resource\|duration_ms\|list`（#17 `guanjin.authz.model-conf` = **`resource`**，契约 §3.2.2） | Go `LoadFromMap` + Java `GuanjinConfigLoader.fromMap`，两侧都断言 **expect 键集 = 29 项** |
+| `config-mapping.json` | 5 组 × 29 键 + **10 条负例** + **1 条 pending** + 2 条 trim 正例 | 默认值、全显式、duration 形态、派生值（#12 jwks-uri / #9 aud）、list 与 role-prefix、REMOVED 键出现即失败、**§3.2.1 时长非法形态必须启动失败**（含 v15 补口：`0s` 越权、`int64` 纳秒上界、NBSP 不 trim）、**4 字符 ASCII trim 集内合法**；`keys[].kind` 词表 = `bool\|string\|resource\|duration_ms\|list`（#17 `guanjin.authz.model-conf` = **`resource`**，契约 §3.2.2） | Go `LoadFromMap` + Java `GuanjinConfigLoader.fromMap`，两侧都断言 **expect 键集 = 29 项** |
 
 ## 生成器与门禁的边界（**裁量结论：不作为门禁**，2026-11-13）
 
@@ -33,9 +33,12 @@
   `require` 未命中**抛** 403 `INSUFFICIENT_ROLE`（未认证抛 401 `TOKEN_INVALID`）。要钉住错误码就必须走
   `require`——allow 侧也留了一条 `require`（AZ-01）证明放行不抛。
 - `agent-hmac.json` 的 `query_raw` 只记录来源形态；断言只用 `query_pairs`。
-- `config-mapping.json` 的 `reject_cases`：每条带 `current.{go,java}` = **该语言今日实跑行为**，消费者按它钉死
-  ——某语言收紧后断言立刻红并提示把该格改成 `"reject"`（钉桩不会腐化成假绿）。`current` 出现 `"reject"` 时
-  还要求**错误信息含键名**（§3.2.1 的 fail-fast 口径）。
+- `config-mapping.json` 的 `reject_cases` / `pending_cases`：每条带 `current.{go,java}` = **该语言今日实跑行为**，
+  消费者按它钉死。词表五种（`scripts/vecgen/config.go` 与两侧消费者同口径）：
+  `accept` / `reject@load`（装载期解析失败）/ `reject@validate`（装载成功、**校验期**失败，如 `replay-window=0s`
+  撞安全约束）/ `reject@load:no-key` 与 `reject@validate:no-key`（失败但**错误信息不含键名** → §3.2.1 缺陷）。
+  某语言行为一变即红并提示改成新行为；`pending_cases` 更进一步——须**升级成正例**（进 `cases` 按 `expect_after_fix`
+  断言），不许只改 `current` 挂着。
 
 ## 怎么跑
 
@@ -50,4 +53,15 @@ go test -count=1 -run TestSpecVectors ./internal/agent/ ./sdk/go/guanjin/
 2. **模型/策略完整性校验无实现**：Java `Authz.init` 无 digest 校验、Go `internal/authz` 只有 `doc.go` → `integrity_cases` 定性 UNIMPLEMENTED（附录 C 把这条与 `scope()` 分列，故单列一个桶）。
 3. **Agent HMAC 无生产实现**：全仓 `hmac.New` 非测试调用 = 0，`internal/agent` 只拼 canonical；`internal/crypto.HMACSM3WithUserSecret` 明确**禁止**用于 Agent HMAC；Java `PullRequestSigner` 只有接口 → 签名由 gmsm 独立实现算出，待 Edge 落地后接同一向量。
 5. **Go SDK 默认值缺陷（已修，2026-11-13）**：`guanjin.authz.model-conf` 契约 #17 = `classpath:/guanjin/model.conf`，Go 曾给 `model.conf`。现已对齐、`defects` **已删空**（口径：**已修就删表、未修才登记**；历史只在 git 里，不留"已修条目"）。首选拦法是**生成期硬校验**（实现漂移则 `go run ./scripts/vecgen` 直接 panic），`defects` 只留给"生成期判不死"的偏差。
-5. **duration 严格解析已落地（契约 §3.2.1 / `AC-SDK-11`，2026-11-13）**：合法形态唯一 = `trim` 后 `^[0-9]+(ms|s|m|h)$`。**Java 与 Go 都已收紧**——Java 走 core 的 `GuanjinConfigValidator.parseDuration` （零 Spring 判定）+ boot2 的绑定期守卫（在 `@ConfigurationProperties` 绑定之前判原始文本，并把 trim 后的规范值回写属性源），Go 先正则再 `time.ParseDuration`，且 `Validate()` 复判。故 `reject_cases` 的 `current` 七格全部为 `"reject"`；任一语言回退（又接受非法形态）消费者断言即红。
+5. **duration 严格解析（契约 §3.2.1 v15 / `AC-SDK-11`）：九类非法已落地，补口三项仍有差异**
+   - **已落地**：`3000`/`1d`/`1h30m`/`1.5s`/`PT60S`/`+60s`/`1S` 及空串/内部空白 —— 两侧全部 `reject@load`（`CM-06`~`CM-12`）。
+   - **差异 1（`CM-15`）**：`platform.connect-timeout=9999999999999h` —— Go `reject@load`（`time.ParseDuration` 溢出），
+     **Java `accept`**（`Duration.ofHours` 不溢出，缺 `toNanos()` 上界判定）→ 补口③ 未落地。
+   - **差异 2（`CM-16`）**：`gateway.clock-skew="\u00A02s"`（NBSP）—— **Go `accept`**（`strings.TrimSpace` 会剥 Unicode 空白），
+     Java `reject@load`（已按 4 字符集）→ 补口③ 只在 Java 落地。
+   - **差异 3（`CM-13`，pending）**：`gateway.clock-skew=0s` —— 契约补口① 明写**合法**（零容忍），但**两侧都拒**：
+     Go `reject@validate`（『必须为正（默认 60s）』）、Java `reject@load`（同义）。要么 Nova 放开零值，要么 Spec 改补口①
+     措辞，**Gate 不自行判**（已报 Spec）。
+   - `CM-14`（`replay-window=0s`）两侧都拒且属**安全约束**失败（不是解析失败），与补口① 一致。
+   - `CM-17`（`"\t30s\r\n"` → 30000）/ `CM-17B`（`"\t45s\r\n"` → 45000）：trim 已落地。**CM-17 单独证明不了
+     「没回落默认」**（30s 恰是 #23 的默认值），故 Gate 补了 `CM-17B`——这一条是加严，不是 Spec 清单要求。

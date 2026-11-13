@@ -152,25 +152,48 @@ func genConfig() {
 		return c
 	}
 
-	// §3.2.1 的「必须失败」形态抽 7 条落成负例（Spec E35 点名 5 条 + `+60s`/`1S` 两条实测偏差）。
-	// `current` = 该语言对这条负例的**期望行为**：§3.2.1 于 2026-11-13 两侧落地（Java core 正则 +
-	// boot2 绑定期守卫、Go 先正则再 time.ParseDuration），故全部 reject。消费者按 current 钉死：
-	// 某语言一旦回退（又接受非法形态），断言立刻红（表不会腐化成假绿）。
+	// §3.2.1 的「必须失败」形态 + 补口（v15）的越界/零值/空白形态，逐条落成负例。
+	//
+	// `current` = **该语言今日实跑行为**（2026-11-13 main `528a30f` 实测，probe 见 notes）。词表四种：
+	//   `accept`             = 装载成功且校验通过；
+	//   `reject@load`        = 装载期即失败（解析失败）；
+	//   `reject@validate`    = 装载成功、**校验期**失败（安全约束/上下限，**不是**解析失败）；
+	//   `reject@load:no-key` / `reject@validate:no-key` = 失败但错误信息**不含键名**（§3.2.1 要求含 → 缺陷）。
+	// 消费者按 `current` 钉死：某语言一旦偏离即红，提示把该格改成新行为（做到就用 `reject@load`）。
 	rejectCases := []any{
 		map[string]any{"vector_id": "CM-06", "case": "duration_reject_plain_number", "key": gj.KeyGatewayClockSkew, "value": "3000",
-			"reason": "§3.2.1 必须失败①：纯数字（隐式毫秒单位）", "current": map[string]string{"go": "reject", "java": "reject"}},
+			"reason": "§3.2.1 必须失败①：纯数字（隐式毫秒单位）", "current": map[string]string{"go": "reject@load", "java": "reject@load"}},
 		map[string]any{"vector_id": "CM-07", "case": "duration_reject_unit_d", "key": gj.KeyGatewayClockSkew, "value": "1d",
-			"reason": "§3.2.1 必须失败②：单位 `d`（不在闭合集 ms|s|m|h）", "current": map[string]string{"go": "reject", "java": "reject"}},
+			"reason": "§3.2.1 必须失败②：单位 `d`（不在闭合集 ms|s|m|h）", "current": map[string]string{"go": "reject@load", "java": "reject@load"}},
 		map[string]any{"vector_id": "CM-08", "case": "duration_reject_combined", "key": gj.KeyGatewayClockSkew, "value": "1h30m",
-			"reason": "§3.2.1 必须失败⑤：组合形态", "current": map[string]string{"go": "reject", "java": "reject"}},
+			"reason": "§3.2.1 必须失败⑤：组合形态", "current": map[string]string{"go": "reject@load", "java": "reject@load"}},
 		map[string]any{"vector_id": "CM-09", "case": "duration_reject_fraction", "key": gj.KeyPlatformReadTimeout, "value": "1.5s",
-			"reason": "§3.2.1 必须失败④：小数", "current": map[string]string{"go": "reject", "java": "reject"}},
+			"reason": "§3.2.1 必须失败④：小数", "current": map[string]string{"go": "reject@load", "java": "reject@load"}},
 		map[string]any{"vector_id": "CM-10", "case": "duration_reject_iso8601", "key": gj.KeyPlatformConnectTimeout, "value": "PT60S",
-			"reason": "§3.2.1 必须失败⑥：ISO-8601", "current": map[string]string{"go": "reject", "java": "reject"}},
+			"reason": "§3.2.1 必须失败⑥：ISO-8601", "current": map[string]string{"go": "reject@load", "java": "reject@load"}},
 		map[string]any{"vector_id": "CM-11", "case": "duration_reject_signed", "key": gj.KeyAgentPullInterval, "value": "+60s",
-			"reason": "§3.2.1 必须失败⑦：带符号", "current": map[string]string{"go": "reject", "java": "reject"}},
+			"reason": "§3.2.1 必须失败⑦：带符号", "current": map[string]string{"go": "reject@load", "java": "reject@load"}},
 		map[string]any{"vector_id": "CM-12", "case": "duration_reject_upper_unit", "key": gj.KeyGatewayJwksCacheTTL, "value": "1S",
-			"reason": "§3.2.1 单位闭合集判据：大写单位不认（`1S`/`10M` 非法）", "current": map[string]string{"go": "reject", "java": "reject"}},
+			"reason": "§3.2.1 单位闭合集判据：大写单位不认（`1S`/`10M` 非法）", "current": map[string]string{"go": "reject@load", "java": "reject@load"}},
+		map[string]any{"vector_id": "CM-14", "case": "duration_reject_zero_replay_window_by_safety_rule", "key": gj.KeyGatewayReplayWindow, "value": "0s",
+			"reason":  "补口①：`0s` **解析合法**，但 `gateway.replay-window` 必须 ≥ 令牌 `exp`（60s）→ 启动失败。这条**不是解析失败**，文案要能与 §3.2.1 的解析失败区分（Go『必须 ≥ 1m0s』/ Java『必须 ≥ 60s』）",
+			"current": map[string]string{"go": "reject@validate", "java": "reject@load"}},
+		map[string]any{"vector_id": "CM-15", "case": "duration_reject_over_int64_nanos", "key": gj.KeyPlatformConnectTimeout, "value": "9999999999999h",
+			"reason":  "补口③：超上界（必须能无损换算成 int64 纳秒，≈292 年）→ 启动失败报键名；**不许**截断或退化成 0",
+			"current": map[string]string{"go": "reject@load", "java": "accept"}},
+		map[string]any{"vector_id": "CM-16", "case": "duration_reject_nbsp_not_trimmed", "key": gj.KeyGatewayClockSkew, "value": "\u00A02s",
+			"reason":  "补口③：NBSP（U+00A0）**不在** 4 字符 trim 集内 → 落正则外即失败。用语言默认 trim（Go `strings.TrimSpace` / Java `String.trim()`）会误放行",
+			"current": map[string]string{"go": "accept", "java": "reject@load"}},
+	}
+
+	// 契约已定、实现未跟上（**正向期望**的欠账）。消费者同样按 `current` 钉死现状：落地后本表立刻红，
+	// 提示把该条**升级成正例**（进 `cases`，按 `expect_after_fix` 断言），而不是继续挂在 pending 里。
+	pendingCases := []any{
+		map[string]any{"vector_id": "CM-13", "case": "duration_accept_zero_clock_skew", "key": gj.KeyGatewayClockSkew, "value": "0s",
+			"contract":         "补口①：`0s` 过正则、按零值如实生效；`gateway.clock-skew = 0s` **合法**（= 零容忍），且 ≠ 默认 60000",
+			"expect_after_fix": "accept，内部值 0（毫秒）",
+			"owner":            "Nova：Go `Config.Validate` 与 Java 校验器目前都把 0 判成『必须为正』，需按补口①放开零值（只 clock-skew；replay-window 仍由安全约束拦，见 CM-14）",
+			"current":          map[string]string{"go": "reject@validate", "java": "reject@load"}},
 	}
 
 	base := "http://127.0.0.1:18080"
@@ -225,6 +248,16 @@ func genConfig() {
 			gj.KeySecurityRolePrefix:        "ROLE_",
 			gj.KeyPublicPathsIncludeBuiltin: "true",
 		}, "list 无方括号（逗号分隔）与带方括号（CM-02）等价"),
+		// §3.2.1 补口③：trim 只认 4 个 ASCII 空白（空格/\t/\n/\r），逐个剥后合法。
+		run("CM-17", "duration_trim_ascii_whitespace", map[string]string{
+			gj.KeyPlatformBaseURL:   base,
+			gj.KeyAgentPullInterval: "\t30s\r\n",
+			gj.KeyGatewayClockSkew:  " 60s ",
+		}, "补口③：\t/\r/\n/空格 属冻结的 4 字符 trim 集，剥后合法（#23 = 30000ms、#10 = 60000ms）。**但 30s 恰是 #23 的默认值**，本条只证『接受』，不能单独证明『没回落默认』——那一点由 CM-17B 覆盖"),
+		run("CM-17B", "duration_trim_not_default_value", map[string]string{
+			gj.KeyPlatformBaseURL:   base,
+			gj.KeyAgentPullInterval: "\t45s\r\n",
+		}, "补口③（Gate 补强）：trim 后 45s ≠ 默认 30s → 值 = 45000ms。一侧若『没真解析、直接回落默认』，本条必红；CM-17 单独排不掉这种回落"),
 	}
 
 	// 向量期望一律按**契约**。历史上 #17（Go 曾给 "model.conf"）靠 known_divergences 钉死；
@@ -256,7 +289,8 @@ func genConfig() {
 				"owner":             "Nova 实施（Java + Go 同一正则）；Gate 出负例向量",
 			},
 		},
-		"reject_cases": rejectCases,
+		"reject_cases":  rejectCases,
+		"pending_cases": pendingCases,
 		"removed_keys": map[string]any{
 			"note": "契约 §3.3 REMOVED：出现即启动失败（AC-SDK-01）。Go/Java 判错文案不同，两个实现都必须抛错",
 			"keys": gj.RemovedKeys,

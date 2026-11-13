@@ -177,6 +177,16 @@ func TestSpecVectorsConfigMapping(t *testing.T) {
 			Reason   string            `json:"reason"`
 			Current  map[string]string `json:"current"`
 		} `json:"reject_cases"`
+		PendingCases []struct {
+			VectorID       string            `json:"vector_id"`
+			Case           string            `json:"case"`
+			Key            string            `json:"key"`
+			Value          string            `json:"value"`
+			Contract       string            `json:"contract"`
+			ExpectAfterFix string            `json:"expect_after_fix"`
+			Owner          string            `json:"owner"`
+			Current        map[string]string `json:"current"`
+		} `json:"pending_cases"`
 		Divergences struct {
 			Defects []struct {
 				Key      string `json:"key"`
@@ -203,26 +213,53 @@ func TestSpecVectorsConfigMapping(t *testing.T) {
 		}
 	}
 
-	// §3.2.1 的时长负例：按 `current.go` 把「今日实跑行为」钉死——不是"跳过"，而是**断言现状**。
-	// Nova 按 §3.2.1 收紧后，这里立刻红并提示把 current 改成 "reject"（钉桩不会腐化成假绿）。
+	// §3.2.1（v15）的时长负例 / 未落地项：按 `current.go` 把「今日实跑行为」钉死——
+	// 不是"跳过"，而是**断言现状**；偏离即红并提示改表（钉桩不会腐化成假绿）。
+	//
+	// 词表（生成器 `scripts/vecgen/config.go` 同口径）：
+	//   accept / reject@load / reject@validate / reject@load:no-key / reject@validate:no-key
 	if len(doc.RejectCases) == 0 {
 		t.Fatalf("config-mapping.json 缺 reject_cases（§3.2.1 的负例向量没了）")
 	}
-	for _, rc := range doc.RejectCases {
-		in := map[string]string{rc.Key: rc.Value}
-		_, err := LoadFromMap(in)
-		got := "accept"
+	// goBehavior 返回该条在 Go 侧的真实行为（装载期 + 校验期两段都看，因为安全约束只在 Validate 里）。
+	goBehavior := func(key, value string) string {
+		// 必备键补齐，否则 Validate 会因为"缺 base-url"先失败，掩盖本条的真实判定。
+		in := map[string]string{
+			KeyPlatformBaseURL:  "https://p.example.com",
+			KeyClientID:         "c1",
+			KeyClientHMACSecret: "s",
+			key:                 value,
+		}
+		cfg, err := LoadFromMap(in)
 		if err != nil {
-			got = "reject"
+			if !strings.Contains(err.Error(), key) {
+				return "reject@load:no-key"
+			}
+			return "reject@load"
 		}
-		want := rc.Current["go"]
+		if verr := cfg.Validate(EnvLocal); verr != nil {
+			if !strings.Contains(verr.Error(), key) {
+				return "reject@validate:no-key"
+			}
+			return "reject@validate"
+		}
+		return "accept"
+	}
+	for _, rc := range doc.RejectCases {
+		got, want := goBehavior(rc.Key, rc.Value), rc.Current["go"]
 		if got != want {
-			t.Errorf("%s(%s) 键=%s 值=%q：Go 当前 %s，向量里钉的是 %s —— 若 §3.2.1 已落地，请把 config-mapping.json 的 current.go 改成 \"reject\"（并确认错误信息含键名）",
-				rc.VectorID, rc.Case, rc.Key, rc.Value, got, want)
-			continue
+			t.Errorf("%s(%s) 键=%s 值=%q：Go 当前 %s，向量里钉的是 %s —— 行为已变，请把 config-mapping.json 的 current.go 改成 %q（并确认错误信息含键名）",
+				rc.VectorID, rc.Case, rc.Key, rc.Value, got, want, got)
 		}
-		if got == "reject" && !strings.Contains(err.Error(), rc.Key) {
-			t.Errorf("%s: 拒绝信息里没有键名 %q（§3.2.1 要求错误信息含键名）：%v", rc.VectorID, rc.Key, err)
+	}
+	if len(doc.PendingCases) == 0 {
+		t.Fatalf("config-mapping.json 缺 pending_cases（契约已定的正向欠账没了：CM-13 clock-skew=0s）")
+	}
+	for _, pc := range doc.PendingCases {
+		got, want := goBehavior(pc.Key, pc.Value), pc.Current["go"]
+		if got != want {
+			t.Errorf("%s(%s) 键=%s 值=%q：Go 当前 %s，向量里钉的是 %s —— 若已按契约改好，请把这条**升级成正例**（进 cases，按 %q 断言），不要只改 current",
+				pc.VectorID, pc.Case, pc.Key, pc.Value, got, want, pc.ExpectAfterFix)
 		}
 	}
 
