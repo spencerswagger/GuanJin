@@ -1,7 +1,7 @@
 {
   "algorithm": "X-GuanJin-Signature = Base64(HMAC-SM3(K, canonical))；K = base64 解码后的 32 字节",
   "generated_by": "Gate 2026-11-13：canonical 段用真实现 internal/agent（Canonical/SortedQuery），HMAC-SM3 用独立实现（gmsm）",
-  "query_pairs_note": "query_pairs = 请求行 query 按 \u0026 / 首个 = 切分后的键值对（本文件取**解码后**形态）；query_raw 只记录来源形态、不参与断言。契约 A2 未明写「解码」这一步 → AH-12 标 pending_spec=true 由消费者跳过，待 Spec 补一句后转正",
+  "query_pairs_note": "query_pairs = 请求行 query 按 \u0026 / 首个 = 切分后 **percent-decode** 的键值对（契约 §4.3 A2 v13 补句：先解码再编码排序，`+` 按字面）；query_raw 只记录来源形态、不参与断言",
   "secret_b64": "Z3Vhbmppbi1hZ2VudC1obWFjLXZlYy1zZWNyZXQtMzI=",
   "spec": "docs/sdk-contract.md §4.3 / decisions.md D1（canonical 逐字 FROZEN）",
   "vectors": [
@@ -243,8 +243,7 @@
     },
     {
       "vector_id": "AH-15",
-      "case": "rfc3986_raw_vs_decoded_pending_spec",
-      "pending_spec": true,
+      "case": "rfc3986_decode_before_encode",
       "method": "GET",
       "path": "/api/v1/agent/policies",
       "query_raw": "q=a%2Bb",
@@ -261,7 +260,7 @@
       "expected_body_sm3": "1ab21d8355cfa17f8e61194831e81a8f22bec8c728fefb747ed035eb5082aa2b",
       "expected_canonical": "GET\n/api/v1/agent/policies\nq=a%2Bb\n1ab21d8355cfa17f8e61194831e81a8f22bec8c728fefb747ed035eb5082aa2b\n1767225600\nbm9uY2UtdmVjdG9yLTAwMDE",
       "expected_signature": "arDQt5ugIPZAFJ7Pwoi7UmK8OKql3hmzbiEVB4TmNE0=",
-      "note": "**PENDING（消费者跳过）**：契约 A2 字面「取 ? 之后原始串 → 编码在比较之前」+ A1「不做 URL 解码」⇒ raw→再编码（%2Bb→%252Bb）；本向量取先解码再编码（%2Bb→%2Bb）。两种口径结果不同，待 Spec 在 A2 补一句后二选一"
+      "note": "契约 §4.3 A2（v13 补句，2026-11-13）：**先 percent-decode 成 name/value、再按 RFC3986 规范编码排序**；`+` 按字面（不是空格）→ `%2Bb` 解码成 `a+b`、再编码回 `a%2Bb`。原 AH-15 pending 已由 E36 消解"
     },
     {
       "vector_id": "AH-13",

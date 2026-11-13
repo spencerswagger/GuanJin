@@ -152,6 +152,26 @@ func genConfig() {
 		return c
 	}
 
+	// §3.2.1 的「必须失败」形态抽 7 条落成负例（Spec E35 点名 5 条 + `+60s`/`1S` 两条实测偏差）。
+	// `current` = **各语言今日实跑**的现状（与契约不符的那格就是待 Nova 修的偏差）。消费者按
+	// current 钉死：某语言一旦收紧，断言立刻红并提示把该格改成 "reject"（表不会腐化成假绿）。
+	rejectCases := []any{
+		map[string]any{"vector_id": "CM-06", "case": "duration_reject_plain_number", "key": gj.KeyGatewayClockSkew, "value": "3000",
+			"reason": "§3.2.1 必须失败①：纯数字（隐式毫秒单位）", "current": map[string]string{"go": "reject", "java": "accept"}},
+		map[string]any{"vector_id": "CM-07", "case": "duration_reject_unit_d", "key": gj.KeyGatewayClockSkew, "value": "1d",
+			"reason": "§3.2.1 必须失败②：单位 `d`（不在闭合集 ms|s|m|h）", "current": map[string]string{"go": "reject", "java": "accept"}},
+		map[string]any{"vector_id": "CM-08", "case": "duration_reject_combined", "key": gj.KeyGatewayClockSkew, "value": "1h30m",
+			"reason": "§3.2.1 必须失败⑤：组合形态", "current": map[string]string{"go": "accept", "java": "reject"}},
+		map[string]any{"vector_id": "CM-09", "case": "duration_reject_fraction", "key": gj.KeyPlatformReadTimeout, "value": "1.5s",
+			"reason": "§3.2.1 必须失败④：小数", "current": map[string]string{"go": "accept", "java": "reject"}},
+		map[string]any{"vector_id": "CM-10", "case": "duration_reject_iso8601", "key": gj.KeyPlatformConnectTimeout, "value": "PT60S",
+			"reason": "§3.2.1 必须失败⑥：ISO-8601", "current": map[string]string{"go": "reject", "java": "reject"}},
+		map[string]any{"vector_id": "CM-11", "case": "duration_reject_signed", "key": gj.KeyAgentPullInterval, "value": "+60s",
+			"reason": "§3.2.1 必须失败⑦：带符号", "current": map[string]string{"go": "accept", "java": "accept"}},
+		map[string]any{"vector_id": "CM-12", "case": "duration_reject_upper_unit", "key": gj.KeyGatewayJwksCacheTTL, "value": "1S",
+			"reason": "§3.2.1 单位闭合集判据：大写单位不认（`1S`/`10M` 非法）", "current": map[string]string{"go": "reject", "java": "accept"}},
+	}
+
 	base := "http://127.0.0.1:18080"
 	cases := []cse{
 		run("CM-01", "defaults", nil, "空输入 = 29 项默认值（必填项为空串时由 Validate 拦，不在本表判）"),
@@ -225,13 +245,17 @@ func genConfig() {
 		"keys":         keyMetas,
 		"cases":        cases,
 		"known_divergences": map[string]any{
-			"note":    "已定性的三语言不一致。第一类是**实现缺陷**：2026-11-13 `guanjin.authz.model-conf`（Go 曾给 \"model.conf\"）修好后**当前为空**；再出现时按旧法登记（期望按契约、把实现现值钉死，漂移即红）。第二类是解析口径差异（向量不采用这些形态，须 Spec/Ark 收口）",
+			"note":    "已定性的三语言不一致。第一类是**实现缺陷**：2026-11-13 `guanjin.authz.model-conf`（Go 曾给 \"model.conf\"）修好后**当前为空**；再出现时按旧法登记（期望按契约、把实现现值钉死，漂移即红）。第二类 duration 解析口径差异已由契约 §3.2.1 裁决（收紧 Java），落到 `duration_rule` + `reject_cases`，不再是\"差异\"",
 			"defects": []map[string]string{},
-			"parse_forms": []map[string]string{
-				{"form": "纯数字 duration（如 3000）", "go": "红：time.ParseDuration 要求单位", "java": "绿：按毫秒"},
-				{"form": "单位 d（如 1d）", "go": "红：Go duration 无 d 单位", "java": "绿：按天"},
+			"duration_rule": map[string]any{
+				"spec":              "docs/sdk-contract.md §3.2.1（v13 裁决：收紧 Java，不放宽契约）",
+				"legal":             "trim 后整串匹配 ^[0-9]+(ms|s|m|h)$（单位闭合集只 4 个，大写不认）",
+				"failure":           "启动失败（fail-fast），错误信息必须含键名；不得静默回落默认值",
+				"former_divergence": "首跑时 3000/1d 只有 Java 接受（Spring Duration 转换器）、Go 拒；1h30m/1.5s/+60s 反过来是 Go 接受、Java 拒 → 按 §3.2.1 全部改成负例，见 reject_cases（current = 各语言今日实跑行为）",
+				"owner":             "Nova 实施（Java + Go 同一正则）；Gate 出负例向量",
 			},
 		},
+		"reject_cases": rejectCases,
 		"removed_keys": map[string]any{
 			"note": "契约 §3.3 REMOVED：出现即启动失败（AC-SDK-01）。Go/Java 判错文案不同，两个实现都必须抛错",
 			"keys": gj.RemovedKeys,

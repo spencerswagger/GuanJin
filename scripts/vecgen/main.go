@@ -85,7 +85,7 @@ func main() {
 		{"AH-10", "path_no_trailing_slash", "GET", "/a", "", nil, "", "`/a` 与 `/a/` 是不同 PATH（本条 = 不带斜杠）"},
 		{"AH-11", "path_trailing_slash", "GET", "/a/", "", nil, "", "`/a/` 必须与 `/a` 算出不同签名"},
 		{"AH-12", "rfc3986_encoding", "GET", "/api/v1/agent/policies", "q=a b%2Bc/中&n=~-._", [][2]string{{"q", "a b+c/中"}, {"n", "~-._"}}, "", "D1-A2 第④⑤步的唯一覆盖：空格→%20、+→%2B、/→%2F、中文按 UTF-8 大写 hex；断言只看 query_pairs，与 raw 串怎么解出 pairs 无关"},
-		{"AH-15", "rfc3986_raw_vs_decoded_pending_spec", "GET", "/api/v1/agent/policies", "q=a%2Bb", [][2]string{{"q", "a+b"}}, "", "**PENDING（消费者跳过）**：契约 A2 字面「取 ? 之后原始串 → 编码在比较之前」+ A1「不做 URL 解码」⇒ raw→再编码（%2Bb→%252Bb）；本向量取先解码再编码（%2Bb→%2Bb）。两种口径结果不同，待 Spec 在 A2 补一句后二选一"},
+		{"AH-15", "rfc3986_decode_before_encode", "GET", "/api/v1/agent/policies", "q=a%2Bb", [][2]string{{"q", "a+b"}}, "", "契约 §4.3 A2（v13 补句，2026-11-13）：**先 percent-decode 成 name/value、再按 RFC3986 规范编码排序**；`+` 按字面（不是空格）→ `%2Bb` 解码成 `a+b`、再编码回 `a%2Bb`。原 AH-15 pending 已由 E36 消解"},
 		{"AH-13", "case_sensitive_byte_order", "GET", "/api/v1/agent/policies", "B=2&a=1&A=3&b=4", [][2]string{{"B", "2"}, {"a", "1"}, {"A", "3"}, {"b", "4"}}, "", "字节序比较（大写字母在小写之前），不做大小写折叠"},
 	}
 
@@ -102,8 +102,7 @@ func main() {
 		vectors = append(vectors, hmacVec{
 			VectorID: cs.id, Case: cs.name, Method: cs.method, Path: cs.path,
 			QueryRaw: cs.raw, QueryPairs: cs.pairs, Timestamp: ts, Nonce: nonce,
-			PendingSpec: cs.name == "rfc3986_raw_vs_decoded_pending_spec",
-			BodyUTF8:    cs.body, ExpectedSortedQuery: sq, ExpectedBodySM3: sbody,
+			BodyUTF8: cs.body, ExpectedSortedQuery: sq, ExpectedBodySM3: sbody,
 			ExpectedCanonical: canon, ExpectedSignature: sig, Note: cs.note,
 		})
 	}
@@ -112,7 +111,7 @@ func main() {
 		"algorithm":        "X-GuanJin-Signature = Base64(HMAC-SM3(K, canonical))；K = base64 解码后的 32 字节",
 		"generated_by":     "Gate 2026-11-13：canonical 段用真实现 internal/agent（Canonical/SortedQuery），HMAC-SM3 用独立实现（gmsm）",
 		"secret_b64":       b64(secret),
-		"query_pairs_note": "query_pairs = 请求行 query 按 & / 首个 = 切分后的键值对（本文件取**解码后**形态）；query_raw 只记录来源形态、不参与断言。契约 A2 未明写「解码」这一步 → AH-12 标 pending_spec=true 由消费者跳过，待 Spec 补一句后转正",
+		"query_pairs_note": "query_pairs = 请求行 query 按 & / 首个 = 切分后 **percent-decode** 的键值对（契约 §4.3 A2 v13 补句：先解码再编码排序，`+` 按字面）；query_raw 只记录来源形态、不参与断言",
 		"vectors":          vectors,
 	}
 	write("spec/vectors/agent-hmac.json", out)

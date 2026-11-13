@@ -246,6 +246,35 @@ class SpecVectorsConformanceTest {
     // ---------------- config-mapping ----------------
 
     @Test
+    void configDurationRejectCasesMatchContractSection321() throws Exception {
+        JsonNode doc = vector("config-mapping.json");
+        JsonNode rejects = doc.get("reject_cases");
+        assertNotNull(rejects, "config-mapping.json 缺 reject_cases（§3.2.1 的负例向量没了）");
+        assertTrue(rejects.size() > 0, "reject_cases 为空");
+        for (JsonNode rc : rejects) {
+            Map<String, String> in = new LinkedHashMap<>();
+            in.put(rc.get("key").asText(), rc.get("value").asText());
+            String got = "accept";
+            String msg = "";
+            try {
+                GuanjinConfigLoader.fromMap(in);
+            } catch (RuntimeException e) {
+                got = "reject";
+                msg = e.getMessage() == null ? "" : e.getMessage();
+            }
+            String want = rc.get("current").get("java").asText();
+            String id = rc.get("vector_id").asText();
+            assertEquals(want, got, id + "(" + rc.get("case").asText() + ") 键=" + rc.get("key").asText()
+                    + " 值=" + rc.get("value").asText() + "：Java 当前行为与向量钉的值不一致 —— 若 §3.2.1 已落地，"
+                    + "请把 config-mapping.json 的 current.java 改成 \"reject\"");
+            if ("reject".equals(got)) {
+                assertTrue(msg.contains(rc.get("key").asText()),
+                        id + " 拒绝信息里没有键名（§3.2.1 要求含键名）：" + msg);
+            }
+        }
+    }
+
+    @Test
     void configVectorsMatchLoaderOnAll29Keys() throws Exception {
         JsonNode doc = vector("config-mapping.json");
         JsonNode keys = doc.get("keys");
