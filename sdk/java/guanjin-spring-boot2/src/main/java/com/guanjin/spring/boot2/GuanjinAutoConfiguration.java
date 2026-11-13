@@ -72,7 +72,7 @@ public class GuanjinAutoConfiguration {
     }
 
     /**
-     * 断言验签（GJ-CAP-01）：**默认就是 SM2 真验签**（{@code SM3withSM2} + {@code kid} 选键 + 不协商算法）。
+     * 断言验签（GJ-CAP-01）：**默认就是 SM2 真验签**（{@code alg=SM2}（D29），+ {@code kid} 选键 + 不协商算法）。
      *
      * <p>宿主可覆盖（{@code @ConditionalOnMissingBean}），但**不能关掉**：没有验签器的形态不存在，
      * 因为这里总会提供一个。

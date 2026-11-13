@@ -448,6 +448,22 @@
 
 ---
 
+## D18 无 client 上下文时的 `ACR_INSUFFICIENT` 不带 `details.flow` —— **待 spencer 拍板（未生效）**
+
+> **状态：草案，未生效。** 拍板前**不得作为判据依据**，实现侧可先按此备稿但**不得宣布生效**；拍板后本条才转为有效口径（并补一行"已拍板 2026-xx-xx"）。
+
+- **结论**：**无 `client_id` 上下文**的自助操作（如 `POST /api/v1/me/identifiers`）返回 `ACR_INSUFFICIENT`（403）时，**不带 `details.flow`**，最多给**平铺**的 `current_acr` / `target_acr`；**不得**为此造 Descriptor、**不得**给 `terminal_state` 增新值（`not_started` 之类等于改 **D7** 的枚举词表）。
+- **依据（逐条，不是"感觉上更简单"）**：
+  1. **`details` 本就是可选的**：`接口清单:739` 的措辞是「`ACR_INSUFFICIENT` 不直接失败，响应 `details.flow` 给出当前档位与待补步骤」；但同一份文件的 **§5.4**（`接口清单:711`）明写 `details` 为**可选项**（「如 `{"retry_after":…}` / `{"flow":{…}}`（**引导阶梯认证时回带**）」）→ 「三面都回 `details.flow`」不是强制项。
+  2. **Descriptor 的必填字段在无上下文时无来源**：**D7 / CH-2** 冻结的 Descriptor 必填 `flow_id`、`client{...}`、`expires_at`；无 client 上下文时这三项**全无来源**，硬造即是**新增契约面**（F0 禁自造 wire 名/字段）。
+  3. **技术上开不出 flow**：`flows.client_id` 是 **NOT NULL** 且有 `flows_client_not_blank` CHECK（`migrations/000015_create_flows.up.sql:9` / `:28`）→ 无上下文根本落不了一行 flow；此时给出 `flow_id` 会**误导客户端**去调 `/auth/challenge/{factor}`（CH-1 要求 `purpose ∈ {login, step_up}` 必带 `flow_id`），必然失败，属于"看起来给了引导、实际给不出"的假引导。
+- **受影响 / 落地（拍板后）**：**Core**（自助面 `ACR_INSUFFICIENT` 的错误构造：平铺字段、不塞 `details.flow`）；**Gate**（`AC-FLOW-09` 断言只取平铺 `current_acr`/`target_acr`，**不得**断言 `details.flow` 存在）；**Nova / Vue**（客户端在该场景**不得**据此调 `/auth/challenge`，改走"提示去某个业务系统完成阶梯"）。
+- **与既有条目的关系**：`AC-DP-09`（**有** client 上下文的数据面，`acceptance-criteria.md:185`）仍然**带** `details.flow` —— 本条只裁无上下文那一类，两者不冲突；本条不改 D7/CH-2 的 Descriptor 字段，也不改 `AC-DP-09`，与 D16② 不冲突。
+- **验收标准**：①判据面——`AC-FLOW-09`（`acceptance-criteria.md:140`，原文本就不含 `details`）按平铺字段断言即可，`acceptance-criteria.md` **一字不动**、账目数字零变化；本条**不进 CH**（对外契约面：不新增/不改任何 wire 字段，只是"不给"）。②本条自身的 PR 面——纯文档改动：`git diff --name-only origin/main...HEAD` **只有 `docs/decisions.md`**，不动代码 / `migrations/` / `go.mod` / `package.json`（D23② 追认悬而未决），三闸照常全绿。
+- **待裁决依赖**：**无外部依赖**——不依赖 #51 的 alg 二选一、不依赖 R12/R13（R13 裁的是 `steps[i].challenge_id` 的无值形态，键不同、已裁）；**唯一待办 = spencer 对本条的拍板**（见上方状态行）。
+
+---
+
 ## D19 概念名 vs 物理列：`disabled_factors` 的权威落点 = `login_policies`（2026-11-11，实现与判据不变，只登记措辞）
 
 > **触发**：Spec 实读基线时发现**既有文本冲突**——`接口清单:211`（`GET /authorize/flow` 响应要点）写「`disabled_factors` 来自 `clients` 的"禁用因子"」，而数据模型的 DDL 把该列放在 `login_policies`（`数据模型:770`）。**本条只登记权威判定与影响面：不改基线正文、不改代码、不动判据、不动账目。**（编号说明：**D18** 由 draft PR #72「无 client 上下文时 `ACR_INSUFFICIENT` 不带 `details.flow`」占用、待 spencer 拍板，本条顺延为 **D19**，不重排、不占 D18。）
@@ -568,7 +584,9 @@
 
 ## D23 `AC-ENG-07` 门禁的三笔"用白名单换时间"的账（Go 1.26 / vue 3.5.42+ / `sdk/java` 未覆盖）
 
-> **触发**：Gate 的 `AC-ENG-07` 门禁（PR #98，`vuln` job）落地后暴露三笔账：10 条 stdlib 白名单（到期 2026-12-31）、1 条 npm 白名单（GHSA-g2v6-rqmx-r4w6，到期 2026-12-15）、`sdk/java` 被 `--skip-dirs sdk` 整目录跳过。他不敢自定，交本条。**状态：① ② 与 ③ 的期限部分 = 待 spencer 追认（未生效，追认前不得据此改 `go.mod` / `package.json`）；③ 的「显式打未覆盖行」= 立即可做（属门禁自身正确性，不需追认）。**
+> **触发**：Gate 的 `AC-ENG-07` 门禁（PR #98，`vuln` job）落地后暴露三笔账：10 条 stdlib 白名单（到期 2026-12-31）、1 条 npm 白名单（GHSA-g2v6-rqmx-r4w6，到期 2026-12-15）、`sdk/java` 被 `--skip-dirs sdk` 整目录跳过。他不敢自定，交本条。
+>
+> **状态（2026-11-13 更新）：已生效，按本条原案执行。** 逐笔事实：**② 已追认**（2026-11-13，spencer）并已随 **#127 squash 合入 main（`d2cb689`，按评审锚 `aaceeb6` 收口）落地**（`web/package.json` vue 3.5.45 / vite 6.4.6）；**① 已解锁执行**（2026-11-13 spencer 放行，归 **Ark**，期限 **2026-11-25**）——`go.mod` `1.25.0 → 1.26.0`（**不写 `toolchain` 行**）；「Gate 删 10 条 stdlib 白名单」**已被 #127 事实完成**（`.trivyignore.yaml` 已删、`docs/qa/vuln-allowlist.tsv` 现为 0 条，D28⑤ 的收口走「升 Go 1.26」路径）→ ① 剩余执行项只剩 `go.mod` 一行；**③ 第一段**（`[UNCOVERED]` 显式标注）已随 #127 落地，**第二段（离线 SBOM）期限不变（2026-12-10）**。**原禁改条款（「追认前不得据此改 `go.mod` / `package.json`」）解除**；执行节奏仍按本条末「三笔账的归属与顺序」表。
 
 ### ① Go 1.26：**升，而且要把"stdlib 白名单"这条后门焊死**
 
@@ -590,7 +608,8 @@
 
 - **结论**：**不接受"整目录静默跳过"**（`--skip-dirs sdk` 现在连一行提示都不打，等于"默默放过"，与 SKIP=未验证=红 同一类问题）。**分两段**：
   - **第一段（立即可做，不需追认）**：`scripts/check-vuln.sh` 必须在输出里**显式打一行** `[UNCOVERED] sdk/java：pom 解析需外网（实测 429），本闸不覆盖——见 decisions.md D23③`，并把这行计入 job 日志（**不是注释、不是 echo 到 /dev/null**）；`docs/qa/vuln-scan.md` 同步写清 **`AC-ENG-07` 的 PASS 口径 = `go.mod` + `web/package-lock.json` 两个生态 + `sdk/java` 未覆盖（显式标注）**，账目里不得写成"全量覆盖"。
-  - **第二段（一个迭代内，2026-12-10 前）**：改**离线 SBOM**，链路是「**Nova 产 → Gate 判**」：`sdk` job 里用 `cyclonedx-maven-plugin`（`mvn -o` 或复用当次已热的 `~/.m2`）生成 `bom.json` 并作为 **artifact 上传**；`vuln` job 下载 artifact 后 `trivy sbom --severity HIGH,CRITICAL --exit-code 1`。**保鲜** = SBOM **每次构建重生成**（与依赖同源，不用人维护），`vuln` job **只消费当次 artifact、不解析 pom、不打外网** → 天然免疫 429。**判红** = ①有未白名单的 HIGH/CRITICAL；②**artifact 缺失或早于本次 commit**（= 未验证 = 红）；③白名单条目过期/不再命中（沿用现有规则）。
+  - **第二段（一个迭代内，2026-12-10 前）**：改**离线 SBOM**（**手段已被 D28③ 修订**：`trivy sbom` 需 `ghcr.io` 的库，零网络下跑不起来 → 改为「Nova 产 CycloneDX `bom.json` → 同一判定引擎消费」；**期限与逾期降级不变**），链路是「**Nova 产 → Gate 判**」：`sdk` job 里用 `cyclonedx-maven-plugin`（`mvn -o` 或复用当次已热的 `~/.m2`）生成 `bom.json` 并作为 **artifact 上传**；`vuln` job 下载 artifact 后由**同一判定引擎**消费（`vuln-gate.py` 读 CycloneDX `bom.json` 按坐标逐条判；
+  **不再用 `trivy sbom`**，理由见 D28③——trivy 要 `ghcr.io` 的库）。**保鲜** = SBOM **每次构建重生成**（与依赖同源，不用人维护），`vuln` job **只消费当次 artifact、不解析 pom、不打外网** → 天然免疫 429。**判红** = ①有未白名单的 HIGH/CRITICAL；②**artifact 缺失或早于本次 commit**（= 未验证 = 红）；③白名单条目过期/不再命中（沿用现有规则）。
   - **逾期后果（写死，防拖）**：2026-12-10 未上线 SBOM，则 `AC-ENG-07` 的账目**必须降级为"Java 侧未覆盖"并如实写**，不能继续记完整 PASS。
 - **属基线变更吗**：**不算**（CI 门禁实现范围，不涉对外契约/表结构/表名/端点）→ 不进 CH；但 **`AC-ENG-07` 的 PASS 口径** 由本条钉住，Gate 记账照此。
 
@@ -681,6 +700,62 @@
   - **触发前提**（三条同时成立才动手）：①spencer 定下归档介质与密钥保管方（R9 本体）；②保留期策略开始执行（超 365 天要删）；③运维侧确认 `DROP PARTITION` 走归档流程而非手工 SQL。
   - **验收方式**：①删掉一个已写段锚的月份分区后，**次月复核必须通过**（无 `prev_tag_mismatch`）；②**真断链仍报红**：篡改被删段之前或之后任一条 → 仍报 `prev_tag_mismatch` / `anchor_mismatch`（证明回退没有变松）；③**缺段锚**（模拟"只删不写"）→ 复核结果为**不可判/`unverified` + 告警**，不得静默通过；④`AC-AUD-05` 的 `broken`/`unverified` 枚举语义不变。
 - **M1 明确不做**：不写 `segment.*` 的写入代码、不加清理 Job 的删除分支、不改 `AC-AUD-05` 判据——**本条只是把"将来必须怎么做"写死**，避免归档上线时再拍一次脑袋。
+
+---
+
+## D28 `AC-ENG-07` 的实现形态变更：CI **零网络**，改「离线快照 + 本地判定」
+
+> **触发**：#98 的依赖漏洞门禁必须在零网络的 CI 里落地（`#125` 已定 runner 解析不到外网源：`apt-get` 退避 4 分钟后 `exit 100`、后续 13 个 step 全 skipped），而 `#98` 原方案在 CI 里**五处联网**（`go install govulncheck`、`curl` trivy、`vuln.go.dev`、`ghcr.io` 的 trivy-db、`--self-test` 里的 `go mod tidy`）→ 跑不起来，而"跑不起来就跳过"等于关掉门禁。**#98 已关闭，由 #127 取代。**
+>
+> **状态**：判定**语义**不变（无未白名单的 HIGH/CRITICAL）；变的是**手段**——`acceptance-criteria.md:281`
+> 点名的 `govulncheck` / `trivy` **不再执行**（零网络下跑不起来），故本条登记**手段替代**，Gate 记账引用本条。
+> **判据文字要不要改成工具无关表述属判据变更，须 spencer 拍；本条不擅改**（该文件一字未动）。**属实现口径，不入 CH**（不涉对外契约 / 表结构 / 表名 / 端点）。
+
+- **① 手段**：CI 不再现跑 `govulncheck`/`trivy`，改为
+  「**数据离线入库**（`docs/qa/vuln-advisories.tsv`，OSV 快照，PR 里逐行可评审）+ **本地纯标准库 python3 判定**（`scripts/vuln-gate.py`）」；
+  快照由 `scripts/vuln-snapshot-refresh.py` 在**有网环境人工/定期**生产（CI 里不跑），
+  `generated_at` 超过 **90 天**即判红（"库旧等于没扫"没有放松），并带 `coords_sha256` 指纹——
+  **新增/换掉依赖而没重刷快照 → 判红**（否则新坐标从没被查过 = 假绿）。
+- **② `AC-ENG-07` 的 PASS 口径（钉住，Gate 照此记账）**：`go.mod` + `web/package-lock.json` **两个生态**
+  无未白名单的阻断级漏洞，**且** `sdk/java` 的未覆盖被**显式打印**（`[UNCOVERED]`，D23③ 第一段）。
+  账目里**不得**写成"全量覆盖"。
+- **③ D23③ 第二段的手段随之收窄**：原文写的是「`trivy sbom --severity HIGH,CRITICAL --exit-code 1`」，
+  而 trivy 自己要 `ghcr.io` 的库、零网络下同样跑不起来 → 改为「**Nova 产 CycloneDX `bom.json` → 同一判定引擎消费**」。
+  **期限与逾期后果不变**（2026-12-10 前未上线则账目降级为"Java 侧未覆盖"）。
+- **④ 分级口径**（沿用 #98，未降阈值）：Go 侧**命中即红**（官方 OSV 不带 CVSS，离线无符号级可达性 → 坐标级判定是**超集**）；
+  npm 侧照判据原文 **HIGH/CRITICAL** 阻断，`severity` 缺失（`-`，如 `MAL-*` 恶意包）**一律阻断**（缺级别 ≠ 低危）。
+- **⑤ 覆盖边界（Gate 记账必须照抄，不得省）**：本闸 Go 侧**只覆盖 `go.mod` 的第三方模块坐标（18 个）**；
+  **Go 标准库不在扫描面**——快照只收 `go.mod` 的坐标、引擎不读 `go` 指令
+  （`grep -c stdlib docs/qa/vuln-advisories.tsv` = **0**）。因此 D23① 记的 **10 条 stdlib 公告（修复只在 go1.26.x）
+  在本闸不产生任何输出**，"阻断 0"**≠**"Go 面全绿"。收口二选一：①spencer 追认 D23① 后升 Go 1.26（问题消失）；
+  ②快照加 `ecosystem=Go / module=stdlib` 行、引擎按 `go` 指令的**工具链版本**判（与 ③ 的 SBOM **同一期限 2026-12-10**，
+  逾期按同一条降级记账）。在此之前，stdlib 面的账仍由 D23① 的白名单承担，**不得**因本闸"阻断 0"而删那 10 行。
+- **⑥ 快照维护责任人**：**Gate**（唯一入口）。无依赖变更时 **30–60 天**刷一次，硬红线 **90 天**（过期即红）；
+  依赖**坐标集合**变了（新增 / 删掉 / 换掉）必须**同 PR 重刷**（`coords_sha256` 机器强制，不靠人记得）。
+
+---
+
+## D29 断言验签算法唯一口径：**平台 keygen 写死 SM2，契约/SDK 侧订正对齐，不做算法自由配置**（2026-11-13，spencer 拍板）
+
+> **触发**：PR #51（S9 Go SDK）评审揭出 alg 三方矛盾——平台 `cmd/guanjind/keygen.go` 给网关用途生成 `algorithm='SM2'` 的密钥（`migrations/000013` 的 CHECK 把 `purpose='gateway'` 绑死 `SM2`），`internal/signing` 把该值**原样写进断言 JWT header**；而契约 `sdk-contract.md` §4.1 M2 行、§4.5 步②、§7 向量行和 Java `Sm2.ALG` 常量都写着 `SM3withSM2`，Java `JwksSet` 还按 alg 过滤 JWKS → **真机链路 100% 401**（真网关键被筛掉 / 验签常量不匹配）。二选一交 spencer，他拍板：**平台 keygen 写死 SM2**——国密是唯一口径，不做算法自由配置。
+
+- **裁定（唯一口径，写死防猜）**：
+  - **网关断言（`X-GuanJin-Assertion`）的 JWT `alg` 值 = `SM2`**：由 `signing_keys.algorithm`（网关用途，`000013` CHECK 已限 `SM2`）**原样写入 header**。**平台侧零改动**（keygen、`000013` CHECK、signing 均已是 SM2，保持写死，不新增任何键）。
+  - **SM2 唯一，预留扩展但不留开关**：SDK 三语言验签只认 `SM2`；不做算法协商、不做降级、无 fallback，**不设任何 alg 配置键/开关**。将来若新增算法值，属新增契约面，走 CH 记录法 + 判据变更引入——与基线 `技术栈:35`「算法可替换抽象」对齐：抽象留在**接口层/`kid`**，不在**配置层**。
+  - **对外令牌（`id_token`/`access_token`）的 `SM3withSM2` 不在本条范围**：基线本就双轨——`技术栈:35`、`数据模型:62/812`：「对外令牌 SM3withSM2、网关断言 SM2」；`000013` CHECK 两侧都绑死。平台两侧均已一致，判据 `AC-LOGIN-01`、`AC-LOGIN-06`、`AC-AUD-12` 的**对外令牌**断言不变（`acceptance-criteria.md` 里 `SM3withSM2` 的三处全是这个语境）。
+- **订正性质 = 纠错，不进 CH**：M2 行原写 `SM3withSM2` 是与基线「网关断言 SM2」**冲突的错标**（同一份 `sdk-contract.md` 里 `GJ-CAP-01` 能力行、§2.1 注入表都写 SM2，本就自相矛盾）。按 CH 段尾的纠错/加固边界（G11①）「把与已生效决定不一致的表述改回一致」属纠错，**不进 CH 清单**；业务方没有因此获得任何基线原本不允许的配置方式。
+- **订正落点（本条只动文档；SDK 代码：Go 侧随 #51 由 spencer 亲自改，Java 侧归 Nova——已交付 **PR #132**）**：
+
+  | # | 处 | 订正 |
+  |---|---|---|
+  | 1 | `sdk-contract.md` §4.1 M2 行 | `SM3withSM2` → **`SM2`（JWT 形态，`alg` 值 = 平台 `signing_keys.algorithm` 原样写入；SM2 唯一，不做协商降级，无开关）** |
+  | 2 | `sdk-contract.md` §4.5 步② | `SM3withSM2` → `SM2` |
+  | 3 | `sdk-contract.md` §7 向量行 `assertion-verify.json` | 「`alg` 非 `SM3withSM2`」→「`alg` 非 `SM2`」 |
+  | 4 | Java `Sm2.ALG` 常量、`Sm2AssertionVerifier` 报错/注释、`sdk/java/README.md` 能力行 | 断言语境下 `SM3withSM2` → `SM2`（Nova，**PR #132**；BC 的 JCA 查找名与对外 alg 标识两层拆开，见该 PR 风险栏） |
+  | 5 | Go `SigningAlg`（#51 内） | 同上；并补 `ParseJWKS` 按用途过滤 + `KeyCount` 只数网关键（#51 已列待办） |
+
+- **判据面**：`acceptance-criteria.md` **零改动、账目零变化**——判据文件里 `alg`/`SM3withSM2` 只出现在对外令牌三条（`AC-LOGIN-01/06`、`AC-AUD-12`），断言侧判据不写 alg 字面值。
+- **状态：已追认并生效（2026-11-13，spencer 拍板「平台 keygen 写死 SM2」）**。#51 的真机 401 按「写死 SM2」修，修绿后按既有流程合入。
 
 ---
 
@@ -787,6 +862,8 @@
 | `D19` | §**D19** | `disabled_factors` 的物理落点 = `login_policies`（client 级 `client_override`、回落 `tier_default`），`clients` 无此列；`接口清单:211`/`页面规格:533` 的"来自 clients"是笔误、只改措辞不进 CH；**有效禁用集 = 平台级 `runtime_config.factors.disabled`（唯一聚合键，jsonb 数组，见 D22）∪ client 级，互不覆盖** |
 | `D27` | §**D27** | 归档删分区**必须先写段锚**（`audit.chain.segment.<YYYYMM>` = 首+尾，载体 = `runtime_config` jsonb `{head,tail}`、**不新表**、不进 `startupSpecs`）且与 `DROP PARTITION` **同一事务**；校验回退 `TailTagBefore` → `segment.tail` → `anchor[M-1]`，都没有 = 不可判（`unverified` 不判过不判 broken）；**M1 不实现、挂 R9** |
 | `D25` | §**D25** | SDK「非配置命名空间」= **保留命名空间 + 逐条封闭枚举（27 名，表见正文）**，**禁前缀/后缀通配**；清单内不报错也不可读（读了即违约）、清单外仍启动失败；新增平台 env 必须同 PR 加一行；发布说明必须写「升级后启动失败：报错含键名 + 该键不属于 SDK 配置命名空间」；**回归 §3.6 原文、不进 CH**；基线正文不动（`DATABASE_URL` vs `DB_DSN` 等差异已登记待 Spec 定） |
+| `D28` | §**D28** | `AC-ENG-07` 的实现形态：CI **零网络** → 改「离线 OSV 快照（90 天过期即红）+ 本地 python3 判定」；**PASS 口径 = `go.mod` + `web/package-lock.json` 两生态 + `sdk/java` 显式 `[UNCOVERED]`，不得写"全量覆盖"**；D23③ 第二段由 `trivy sbom` 改为「Nova 产 CycloneDX → 同一引擎消费」（期限不变）；Go 命中即红、npm HIGH/CRITICAL、缺级别一律阻断 |
+| `D29` | §**D29** | 断言验签算法唯一口径：**平台 keygen 写死 SM2（`000013` CHECK 不动、平台零改动），契约/SDK 侧由 `SM3withSM2` 订正为 `SM2`（`sdk-contract.md` 三处 + Java 侧 Nova **PR #132** + Go 侧随 #51）；SM2 唯一、不做协商降级、预留扩展但不留开关（无 alg 配置键）**；对外令牌 `SM3withSM2` 不在本刀（基线双轨：对外 `SM3withSM2` / 网关断言 `SM2`）；订正 = 纠错，**不进 CH**、判据零改动；**2026-11-13 spencer 拍板生效** |
 | `D26` | §**D26** | 测试/CI/本地开关整族改名 `GUANJIN_TEST_*` → **`GJTEST_*`**（4 名 + 同族 3 名：`DEV_DSN`/`ALLOW_TEST_CLEANUP`/`AUDIT_NO_ISOLATION`），**一次性硬切、无别名无双读**，同 PR 内改代码→CI→文档；**不阻塞 #51**（推荐先合改名）；不进 CH |
 | `D24` | §**D24** | §5.4 错误分层：**解码层**→`INVALID_REQUEST`、**缺字段层**→`MISSING_PARAMETER`（可空布尔用 `*bool`，禁"零值即未给"）、**值语义层**→`INVALID_PARAMETER`（有专职码用专职码）；顺序固定 **401/403 → 解码 → 缺字段 → 值 → 业务语义**，400 不得先于 401/403，不得为消灭 400 放宽 `DisallowUnknownFields`；不新增码、不进 CH |
 | `D23①②③` | §**D23** | `AC-ENG-07` 三笔账：①**升 Go 1.26**（`go.mod` 是锁定权威、基线版本是建议值）+ **stdlib 一律不得进白名单**（只能升）；②**vue 3.5.42+ 升**（不留豁免，Vue 出回归）；③`sdk/java` **显式打 `[UNCOVERED]`**（立即）+ 一个迭代内改**离线 SBOM**（Nova 产 / Gate 判，2026-12-10 前），逾期则账目降级 |

@@ -36,7 +36,7 @@ public final class StartupReport {
         return jwksKids;
     }
 
-    /** 网关用途（{@code alg=SM3withSM2}）的 kid，SDK 只用这些验签。 */
+    /** 网关用途（{@code alg=SM2}，D29 双轨）的 kid，SDK 只用这些验签。 */
     public List<String> gatewayKids() {
         return gatewayKids;
     }

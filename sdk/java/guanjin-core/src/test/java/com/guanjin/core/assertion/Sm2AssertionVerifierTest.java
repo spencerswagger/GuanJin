@@ -29,7 +29,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * （`go run ./artifacts/local/gen-sdk-vectors`，import `internal/signing`，即数据面签发路径），
  * 不是手搓的 SM2 签名，也不是自造 claim。
  *
- * <p>覆盖：合法断言验签通过、篡改 payload、未知 kid、`alg` 降级（用户令牌用途的 `SM2` 键）、
+ * <p>覆盖：合法断言验签通过、篡改 payload、未知 kid、`alg` 降级（用户令牌用途的 `SM3withSM2` 键）、
  * `exp` 过期、`iat` 在未来、`iss`/`aud` 不符。
  */
 class Sm2AssertionVerifierTest {
@@ -92,7 +92,7 @@ class Sm2AssertionVerifierTest {
 
     @Test
     void oidcPurposeKeyCannotVerifyAssertion() {
-        // alg=SM2（用户令牌用途）→ 拒绝算法降级，且不得拿用户令牌公钥验断言（GJ-CAP-02 密钥分离）
+        // alg=SM3withSM2（用户令牌用途）→ 拒绝算法降级，且不得拿用户令牌公钥验断言（GJ-CAP-02 密钥分离）
         GuanjinSdkException e = assertThrows(GuanjinSdkException.class,
                 () -> verifier().verify(vector("oidcAlg").get("token").asText()));
         assertEquals(ErrorCodes.TOKEN_INVALID, e.getCode());

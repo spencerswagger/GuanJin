@@ -2,6 +2,15 @@
 
 > 权威契约：**`docs/sdk-contract.md`**（22 条能力 `GJ-CAP-01..22` + 29 项配置）。
 > 本目录只放**实现**，口径一律以那份文档为准，本文不复制契约内容。
+>
+> **D23③（spencer 2026-11-13 追认通过；手段见 D28③）**：`sdk/java` 的依赖漏洞覆盖——
+> 本目录聚合 `pom.xml` 已内置 `org.cyclonedx:cyclonedx-maven-plugin`（**2.8.0**，版本锁死；
+> **不绑 phase**，默认 `mvn test` 行为零变化）。生成：`mvn cyclonedx:makeAggregateBom` →
+> `target/bom.json`（CycloneDX **1.5** 聚合 BOM，两模块依赖一体收录，**每次构建重生成、不用人维护**）。
+> 注意：2.8.0 的 goal 标注 `@RequiresOnline`，**生成需联网**（D23 写的「`mvn -o`」不可行，按
+> 「复用当次已热的 `~/.m2`」执行——`sdk` job 拉依赖后仓库已热）；**消费侧离线**（`vuln` job 由
+> 同一判定引擎 `scripts/vuln-gate.py` 读 artifact、不解析 pom、不打外网）。链路 = **Nova 产 → Gate 判**；
+> **死线 2026-12-10**，逾期则 `AC-ENG-07` 账目降级为「Java 侧未覆盖」并如实记账。
 
 ## 交付结构（契约 §5.1）
 
@@ -28,7 +37,7 @@ Java 8 双门禁（契约 §5.1.1）：JDK 9+ 构建走 `release=8`（挡 API �
 | `AC-SDK-10` | ①默认 `replay-store=redis`；②默认 `agent.pull.enabled=false`，30s 内 `/api/v1/agent/policies` **零调用** | `GuanjinConfigValidatorTest.AC_SDK_10_*`、`AgentPullZeroCallIT.AC_SDK_10_*` |
 | `AC-SESS-05` | 多副本（非 `local\|test`）用 `memory` → 启动失败；默认即 `redis` | `GuanjinConfigValidatorTest.AC_SESS_05_*`、`RedisReplayStoreIT.AC_SESS_05_*` |
 | `AC-DP-08`（SDK 半边） | 同 `jti` 二次 → **401 `TOKEN_INVALID`**（由验签方产生并记账，平台数据面不判重） | `ReplayGuardTest.AC_DP_08_*`、`GuanjinAssertionFilterTest.AC_DP_08_*`、`RedisReplayFilterIT.AC_DP_08_*`、`Sm2FilterIT.AC_DP_08_replayOfRealGatewayJtiIs401` |
-| `AC-DP-03`（SDK 反向）/ `GJ-CAP-01/02/04` | **SM2 真验签**：`SM3withSM2` + `kid` 选键 + 未知 kid 强刷一次 + `alg` 不协商；篡改 payload / 未知 kid / `alg=SM2`（用户令牌用途）→ 401 | `Sm2AssertionVerifierTest`（6 条，向量由平台签发代码产出）、`Sm2FilterIT`（3 条，真 HTTP JWKS + 真 Redis） |
+| `AC-DP-03`（SDK 反向）/ `GJ-CAP-01/02/04` | **SM2 真验签**：`alg=SM2`（D29）+ `kid` 选键 + 未知 kid 强刷一次 + `alg` 不协商；篡改 payload / 未知 kid / `alg=SM3withSM2`（用户令牌用途）→ 401 | `Sm2AssertionVerifierTest`（6 条，向量由平台签发代码产出）、`Sm2FilterIT`（3 条，真 HTTP JWKS + 真 Redis） |
 | `AC-SDK-08` ③ | **三处消费者**都取不到断言头：handler / 下游转发 / 日志 | `AssertionHeaderConsumersTest.AC_SDK_08_threeConsumersCannotSeeAssertionHeader` |
 | `AC-SDK-08` ④ | Filter 排在 Spring Security **之前**（`HIGHEST_PRECEDENCE + 100` < `SecurityProperties.DEFAULT_FILTER_ORDER` = -100，直接引用常量断言） | `GuanjinFilterOrderTest` |
 | `GJ-CAP-10`（Spring 落点） | `SecurityContext` 注入：`GuanjinAuthenticationConverter.toAuthentication(p)` 产出已认证 `Authentication`，principal = `GuanjinPrincipal`（**不含断言原文**，credentials/details 均 null），authorities = `role-prefix` + 可选 `GrantedAuthoritiesResolver`（GJ-CAP-11，抛异常即 fail-closed 403）；未认证取身份是 **401** 不是 500 | `GuanjinSecurityContextTest`（8 条，含 filter 注入→清理） |

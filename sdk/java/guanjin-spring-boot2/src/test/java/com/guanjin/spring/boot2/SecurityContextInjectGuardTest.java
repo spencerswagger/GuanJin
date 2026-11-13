@@ -180,7 +180,7 @@ class SecurityContextInjectGuardTest {
         @org.springframework.context.annotation.Primary
         com.guanjin.core.http.HttpFetcher httpFetcher() {
             final byte[] jwks = ("{\"keys\":[{\"kty\":\"EC\",\"crv\":\"SM2\",\"kid\":\"gw-1\","
-                    + "\"use\":\"sig\",\"alg\":\"SM3withSM2\",\"x\":\"aa\",\"y\":\"bb\"}]}")
+                    + "\"use\":\"sig\",\"alg\":\"SM2\",\"x\":\"aa\",\"y\":\"bb\"}]}")
                     .getBytes(java.nio.charset.Charset.forName("UTF-8"));
             return new com.guanjin.core.http.HttpFetcher() {
                 @Override

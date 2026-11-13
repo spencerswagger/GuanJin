@@ -23,7 +23,7 @@ class GuanjinStartupCheckerTest {
 
     private static final Charset UTF8 = Charset.forName("UTF-8");
     private static final String JWKS_BODY = "{\"keys\":[{\"kty\":\"EC\",\"crv\":\"SM2\",\"kid\":\"gw-1\","
-            + "\"use\":\"sig\",\"alg\":\"SM3withSM2\",\"x\":\"aa\",\"y\":\"bb\"}]}";
+            + "\"use\":\"sig\",\"alg\":\"SM2\",\"x\":\"aa\",\"y\":\"bb\"}]}";
 
     @Test
     void AC_SDK_03_startupFetchesJwksAndReportsGatewayKids() {

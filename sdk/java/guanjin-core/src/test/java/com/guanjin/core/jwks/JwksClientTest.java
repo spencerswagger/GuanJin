@@ -31,11 +31,11 @@ class JwksClientTest {
     private static final Charset UTF8 = Charset.forName("UTF-8");
     private static final URI JWKS = URI.create("http://127.0.0.1:18080/.well-known/jwks.json");
 
-    /** 平台真实形态：oidc（alg=SM2）+ gateway（alg=SM3withSM2）两把键。 */
+    /** 平台真实形态（000013 CHECK 绑死 / keygen.go:44-47 / D29）：oidc（alg=SM3withSM2）+ gateway（alg=SM2）两把键。 */
     private static final String REAL_JWKS = "{\"keys\":["
-            + "{\"kty\":\"EC\",\"crv\":\"SM2\",\"kid\":\"oidc-1\",\"use\":\"sig\",\"alg\":\"SM2\","
+            + "{\"kty\":\"EC\",\"crv\":\"SM2\",\"kid\":\"oidc-1\",\"use\":\"sig\",\"alg\":\"SM3withSM2\","
             + "\"x\":\"11qq\",\"y\":\"22ww\"},"
-            + "{\"kty\":\"EC\",\"crv\":\"SM2\",\"kid\":\"gw-1\",\"use\":\"sig\",\"alg\":\"SM3withSM2\","
+            + "{\"kty\":\"EC\",\"crv\":\"SM2\",\"kid\":\"gw-1\",\"use\":\"sig\",\"alg\":\"SM2\","
             + "\"x\":\"33ee\",\"y\":\"44rr\"}"
             + "]}";
 
@@ -45,7 +45,7 @@ class JwksClientTest {
         JwksSet set = client.refresh();
         assertEquals(2, set.size());
         assertEquals(2, set.kids().size());
-        assertEquals(1, set.gatewayKeys().size(), "只有 alg=SM3withSM2 的键可验内部断言");
+        assertEquals(1, set.gatewayKeys().size(), "只有 alg=SM2 的键可验内部断言（D29）");
         assertEquals("gw-1", set.gatewayKeys().get(0).kid());
         assertNull(set.gatewayKey("oidc-1"), "用户令牌公钥不得用于验断言（GJ-CAP-02 密钥分离）");
         assertNotNull(client.publicKey("gw-1"));
@@ -107,7 +107,7 @@ class JwksClientTest {
                 String body = served.size() == 1
                         ? REAL_JWKS
                         : "{\"keys\":[{\"kty\":\"EC\",\"crv\":\"SM2\",\"kid\":\"gw-2\",\"use\":\"sig\","
-                        + "\"alg\":\"SM3withSM2\",\"x\":\"55tt\",\"y\":\"66yy\"}]}";
+                        + "\"alg\":\"SM2\",\"x\":\"55tt\",\"y\":\"66yy\"}]}";
                 return new HttpResult(200, body.getBytes(UTF8), "application/json");
             }
         };

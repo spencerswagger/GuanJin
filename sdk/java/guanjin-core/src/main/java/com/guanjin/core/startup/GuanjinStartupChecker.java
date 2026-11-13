@@ -44,7 +44,7 @@ public final class GuanjinStartupChecker {
             gatewayKids.add(k.kid());
         }
         if (gatewayKids.isEmpty()) {
-            warnings.add("JWKS 里没有 alg=" + com.guanjin.core.jwks.JwksKey.ALG_SM3_WITH_SM2
+            warnings.add("JWKS 里没有 alg=" + com.guanjin.core.jwks.JwksKey.ALG_SM2
                     + " 的网关用途公钥：任何断言都会 401（检查平台 signing_keys 的 purpose=gateway）");
         }
         return new StartupReport(cfg.getPlatform().getBaseUrl(), jwks.jwksUri().toString(),
