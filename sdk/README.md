@@ -5,7 +5,7 @@
 
 ## 这是什么
 
-`net/http` 中间件形态的接入 SDK：**验签内部断言 `X-GuanJin-Assertion`（SM3withSM2）→ 校验 claim → `jti` 防重放 → 注入身份 → 替换请求视图（剥离 header）→ handler**。
+`net/http` 中间件形态的接入 SDK：**验签内部断言 `X-GuanJin-Assertion`（`alg=SM2`，`decisions.md` D29 唯一口径）→ 校验 claim → `jti` 防重放 → 注入身份 → 替换请求视图（剥离 header）→ handler**。
 剥离严格按契约 §4.5（= `decisions.md` **D10** 的**唯一六步时序**），**禁止"验签前剥离"**。
 
 ## 快速接入
@@ -36,7 +36,7 @@ if !ok { /* 该路由未受保护（公开路径）——不是"已登录但没�
 
 | 能力 | 名称 | 状态 | 说明 |
 |---|---|:--:|---|
-| `GJ-CAP-01` | `VerifyAssertion` | ✅ 已实现 | SM2 验签；`alg` 必须是 `SM3withSM2`（不做协商降级） |
+| `GJ-CAP-01` | `VerifyAssertion` | ✅ 已实现 | SM2 验签；`alg` 必须是 `SM2`（D29 写死：不协商降级、不兼容旧值、无开关） |
 | `GJ-CAP-02` | `SelectKeyByKid` | ✅ 已实现 | 按 JWT header 的 `kid` 选公钥 |
 | `GJ-CAP-03` | `JwksCache` | ✅ 已实现 | 启动/首次使用拉取并缓存，TTL 见配置 #13 |
 | `GJ-CAP-04` | `RefreshOnUnknownKid` | ✅ 已实现 | 未知 `kid` 强刷一次（配置 #14） |
@@ -59,7 +59,7 @@ if !ok { /* 该路由未受保护（公开路径）——不是"已登录但没�
 | `GJ-CAP-21` | `PolicyPull` | ⛔ 未实现（可选） | 默认 `agent.pull.enabled=false`（方案 A 零回源） |
 | `GJ-CAP-22` | `StartupSelfCheck` | ✅ 已实现 | 启动打印放行清单 + 配置 fail-fast |
 
-> 未实现的 11 条**全部**在 `Capabilities()` 里带 `Reason`（单测强制：未实现却不写理由即失败）。
+> 未实现的 10 条**全部**在 `Capabilities()` 里带 `Reason`（单测强制：未实现却不写理由即失败）。
 
 ## 配置（29 项，严格白名单）
 

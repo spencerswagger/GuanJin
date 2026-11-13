@@ -96,7 +96,12 @@ func TestPathMatcher(t *testing.T) {
 			t.Fatalf("%s 应公开", p)
 		}
 	}
-	private := []string{"/orders", "/orders/1", "/api/private", "/admin/users", "/exact/x"}
+	private := []string{"/orders", "/orders/1", "/api/private", "/admin/users", "/exact/x",
+		// 路径穿越必须被判私有（评审 P2：`..` 折掉后不再命中公开前缀，deny-by-default 不被绕过）
+		"/api/public/../admin/secret", "/healthz/../admin/secret", "/api/public/./a/../../admin",
+		// `*` 在中间的模式永不命中（只支持结尾形态）——声明错 = 不放行，fail-closed 而不是悄悄放行
+		"/orders/1/callback",
+	}
 	for _, p := range private {
 		if m.IsPublic(p) {
 			t.Fatalf("%s 不应公开（deny-by-default，GJ-CAP-19）", p)
@@ -175,10 +180,13 @@ var reservedEnvGolden = []string{
 	"GUANJIN_BOOTSTRAP_ADMIN_USERNAME", "GUANJIN_BOOTSTRAP_ADMIN_PASSWORD",
 	"GUANJIN_GATEWAY_UPSTREAM_TIMEOUT", "GUANJIN_GATEWAY_DIAL_TIMEOUT",
 	"GUANJIN_METRICS_ADDR", "GUANJIN_OTEL_ENDPOINT",
-	// B. 平台实现自用 8 条（后两条是数据面时钟偏移的现名/旧名，见 config.go 注释）
+	// B. 平台实现自用 7 条（数据面时钟偏移的现名，见 config.go 注释）
 	"GUANJIN_DB_DSN", "GUANJIN_REDIS_ADDR", "GUANJIN_REDIS_PASSWORD",
 	"GUANJIN_TRACE_HEADER", "GUANJIN_GATEWAY_ROUTES", "GUANJIN_SLO_NOTIFY_PATH",
-	"GUANJIN_GW_CLOCK_SKEW", "GUANJIN_GATEWAY_CLOCK_SKEW",
+	// `GUANJIN_GW_CLOCK_SKEW` 是 #121 后的现名。**#121 旧名
+	// `GUANJIN_GATEWAY_CLOCK_SKEW` 刻意不收**——它是配置键 #10 的机械映射名，收进保留名
+	// 会把该键的 env 来源静默吃掉（#51 评审 P1）。
+	"GUANJIN_GW_CLOCK_SKEW",
 	// C. 构建/本地/CI 夹具 8 条（后 6 条是过渡条目，随 GJTEST_* 改名 PR 删除）
 	"GUANJIN_DEV_DSN", "GUANJIN_STAGING_DSN", "GUANJIN_TEST_DSN", "GUANJIN_TEST_REDIS_ADDR",
 	"GUANJIN_TEST_REDIS_PASSWORD", "GUANJIN_TEST_DURATION",
@@ -230,6 +238,31 @@ func TestReservedEnvNamespaceIsClosed(t *testing.T) {
 		if _, err := LoadFromEnviron(append(env, bad)); err == nil {
 			t.Fatalf("%s 必须装载失败（保留清单不得退化成通配）", bad)
 		}
+	}
+}
+
+// TestReservedEnvNeverShadowsConfigKeyMappings：保留清单 ∩ 29 项配置键的机械映射名 = ∅。
+//
+// 否则 `LoadFromEnviron` 先判保留名、把该键的**唯一 env 来源**静默跳过（设了不生效、
+// 还 err=nil），「来源二、映射一」对该键不成立——#51 评审 P1 的真实缺陷：
+// `GUANJIN_GATEWAY_CLOCK_SKEW`（配置键 #10 的映射名）曾被误列进保留名。
+func TestReservedEnvNeverShadowsConfigKeyMappings(t *testing.T) {
+	if len(ConfigKeys) != 29 {
+		t.Fatalf("ConfigKeys 应为 29 项，实得 %d", len(ConfigKeys))
+	}
+	for _, k := range ConfigKeys {
+		if name := EnvName(k); isReservedEnv(name) {
+			t.Fatalf("配置键 %q 的机械映射名 %s 同时出现在保留清单：该键的 env 来源会被静默跳过", k, name)
+		}
+	}
+
+	// 功能面证据（不只靠集合断言）：clock-skew（#10）的 env 来源必须真的生效。
+	c, err := LoadFromEnviron([]string{"GUANJIN_GATEWAY_CLOCK_SKEW=90s"})
+	if err != nil {
+		t.Fatalf("clock-skew 的 env 装载不应报错：%v", err)
+	}
+	if c.Gateway.ClockSkew != 90*time.Second {
+		t.Fatalf("GUANJIN_GATEWAY_CLOCK_SKEW 必须作为配置键 #10 生效（期望 90s，实得 %v）", c.Gateway.ClockSkew)
 	}
 }
 

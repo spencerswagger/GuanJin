@@ -2,6 +2,7 @@ package guanjin
 
 import (
 	"net/http"
+	"path"
 	"strings"
 )
 
@@ -19,8 +20,14 @@ var BuiltinPublicPaths = []string{
 
 // PathMatcher 做公开路径判定（能力 GJ-CAP-19）：命中即放行，未命中一律要求身份。
 //
-// 模式语法（够用即止，不引入第三方路由库）：`*` 匹配**单个**路径段内的任意字符，
-// 结尾 `/*` 匹配该前缀下**任意深度**；比较区分大小写（URL 路径本就区分）。
+// 模式语法（够用即止，不引入第三方路由库；只支持**结尾 `*`** 两种形态）：
+//   - `/a/b`   → 精确匹配；
+//   - `/a/*`   → 该前缀下**任意深度**（含 `/a` 自身）；
+//   - `/a*`    → **字符串前缀**（无段边界：`/static*` 会命中 `/staticX/secret`，写声明时自己收紧）；
+//   - `*` 出现在**中间**（如 `/api/*/public`）的模式**永不命中**（fail-closed：声明错=不放行，
+//     不会悄悄放行；请改成结尾形态）。
+//
+// 比较区分大小写（URL 路径本就区分）。
 type PathMatcher struct {
 	patterns []string
 }
@@ -60,13 +67,17 @@ func normalizePath(p string) string {
 	if !strings.HasPrefix(p, "/") {
 		p = "/" + p
 	}
+	// `path.Clean` 折掉 `.`/`..`/重复斜杠：否则 `/public/../admin/secret` 会被判成公开路径
+	// （路径穿越绕过 deny-by-default——#51 评审 P2，fail-closed 加固）。Clean 对已规范路径恒等。
+	p = path.Clean(p)
 	if len(p) > 1 {
 		p = strings.TrimSuffix(p, "/")
 	}
 	return p
 }
 
-// matchPath 支持三种形态：精确、`/a/*`（任意深度前缀）、含 `*` 的单段通配。
+// matchPath 支持三种形态：精确、`/a/*`（任意深度前缀）、结尾 `*`（字符串前缀）。
+// `*` 在中间的模式不命中（见 PathMatcher 注释：声明错 = 不放行，fail-closed）。
 func matchPath(pattern, path string) bool {
 	pattern = normalizePath(pattern)
 	if pattern == path {
