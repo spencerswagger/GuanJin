@@ -260,7 +260,7 @@
 | 14 | `guanjin.gateway.jwks-unknown-kid-force-refresh` | bool | `true` | 否 | `gateway.jwksUnknownKidForceRefresh` | `gateway.jwksUnknownKidForceRefresh` | `Gateway.JwksUnknownKidForceRefresh` | 置 `false` **不降低安全性**，但密钥轮换后新 `kid` 全部 401（可用性风险）→ 生产保持 `true` |
 | 15 | `guanjin.authz.enabled` | bool | `true` ⛔C-1 | 否 | `authz.enabled` | `authz.enabled` | `Authz.Enabled` | 同 #1 profile 门控；`false` = **不注册判定**（等价未接入），**绝不是"全部放行"**；非 `local\|test` 置 `false` → 启动失败。**执行形态**：`authz.enabled=true` 且容器内无 `AuthzModel` bean → **启动失败**（不静默降级为"不判定"）；报错须点名修法——声明 `AuthzModel` bean（基线 §4.2 ② 的接入步骤本就要求，见 `GuanJin-SDK契约.md:287-292`），或**仅** `local\|test` profile 置 `authz.enabled=false`；不提供任何放行开关；Go/Node 同形态（装配期失败）。裁定见 `notes/sdk-authz-enabled-默认-2026-11-10.md` |
 | 16 | `guanjin.authz.default-role` | string | `user` | 否 | `authz.defaultRole` | `authz.defaultRole` | `Authz.DefaultRole` | **权限最小**，禁「已登录即全部」（等保 e）；名字必须与 `builder().defaultRole()` 一致，否则启动失败 |
-| 17 | `guanjin.authz.model-conf` | resource | `classpath:/guanjin/model.conf` | 否 | `authz.modelConf` | `authz.modelConf`（文件路径） | `Authz.ModelConf`（文件路径） | 不建议修改（三层模型是合规基线）；外部文件须做**完整性校验**，失败 → 拒绝授权判定（§4.4） |
+| 17 | `guanjin.authz.model-conf` | resource | `classpath:/guanjin/model.conf` | 否 | `authz.modelConf` | `authz.modelConf`（**resource 形态**：`classpath:` = 包内资源，**不得当文件路径 open**，解析口径见 **§3.2.2**） | `Authz.ModelConf`（**resource 形态**，同上） | 不建议修改（三层模型是合规基线）；**外部文件路径**须做**完整性校验**，失败 → 拒绝授权判定（§4.4）。**`classpath:` 前缀是"资源"不是"目录"**——Go/Node 侧按 §3.2.2 从**包内资源**取，直接 `open("classpath:/…")` 必炸（#143 收尾项） |
 | 18 | `guanjin.authz.replay-store` | enum | `redis` ✅C-4 | 否 | `authz.replayStore` | `authz.replayStore` | `Authz.ReplayStore` | 默认 `redis`；`memory` 仅 `local\|test`（多副本用 `memory` = `jti` 防重放失效 = 降级放行）；Redis 参数**不由 SDK 配置**（§3.5） |
 | 19 | `guanjin.agent.report.enabled` | bool | `true` | 否 | `agent.report.enabled` | `agent.report.enabled` | `Agent.Report.Enabled` | `false` 不影响判定，但平台侧策略快照失真（审计/回溯能力下降）→ 需报备，不是"性能优化项" |
 | 20 | `guanjin.agent.report.on-startup` | bool | `true` | 否 | `agent.report.onStartup` | `agent.report.onStartup` | `Agent.Report.OnStartup` | 无安全影响；关掉会使快照与实际声明不一致 |
@@ -309,6 +309,23 @@
 
 > **不新增配置键、不改 29 项、不进 CH**：本裁决只把 §1.1 已冻结的「字符串 `<n><unit>`」变成**可执行判定**，未改任何键名/默认值/必填性，业务方仍不能用基线原本不允许的方式配置 SDK → 按三分判据不进 CH。判据侧见 `docs/acceptance-criteria.md` **`AC-SDK-11`**（v19 新增，组末追加）。
 > **向量侧待补（Gate / `scripts/vecgen`）**：`config-mapping.json` 的 `known_divergences.parse_forms` 两条应从「口径差异」改写为**负例**（`3000`、`1d` 必须启动失败），并按上表补 `1h30m` / `1.5s` / `PT60S` 三条负例；改完前它们只是**定性记录**，不构成断言。
+
+### 3.2.2 `resource` 类型键的解析口径（`FROZEN`，三语言一致；2026-11-13 补，锚 #143）
+
+> **起因**：§3.2 #17 的**默认值**是 `classpath:/guanjin/model.conf`（`resource` 类型），但 Go/Node 两列原写「（文件路径）」——**默认值与前缀语义自相矛盾**：M5 照表抄会在 Go 里 `os.ReadFile("classpath:/guanjin/model.conf")`、Node 里 `fs.readFile("classpath:…")`，两者都拿到 `ENOENT` 直接炸（Java 不会，它有 `classpath:` 分支）。Go 侧默认值已在 **#143** 对齐成 `classpath:/guanjin/model.conf`（`sdk/go/guanjin/config.go` 的 `DefaultModelConf`，回退即红），**剩下的就是"拿到这个值之后怎么解析"没人写死**。
+
+| 项 | 规定（三语言逐字一致） |
+|---|---|
+| 两种形态 | ① **`classpath:<path>`** = **包内资源**（随 SDK 包一起交付的 `model.conf`）；② **其它值** = **外部文件路径**（绝对路径或以进程工作目录为基准的相对路径） |
+| `classpath:` 解析 | 剥掉前缀 `classpath:`，再**剥掉全部前导 `/`**（`classpath:/guanjin/model.conf` → `guanjin/model.conf`）；**不做 URL 解码、不做通配、不做 `~` 展开、不许 `..` 越出包根**（出现 `..` → 启动失败） |
+| 逐语言落点 | **Java**：`Authz.readModelConf` 的现有实现（`CLASSPATH_PREFIX` → 剥前导 `/` → `ClassLoader.getResourceAsStream`）即基准，**不改语义**；**Go**：**必须用 `//go:embed`**（编译期把 `guanjin/model.conf` 打进二进制，`embed.FS` 读取），**禁止** `os.Open`/`os.ReadFile` 直接吃带前缀的值；**Node**：`path.join(__dirname, …)` / `require.resolve` 取**包内**文件，同样**不得**把 `classpath:` 当路径 |
+| 内置资源的一致性 | 三语言包里各带一份 `model.conf`，**三份逐字节相同**（`digest` 相等；与 §4.1 **M5**「同一份 `model.conf` + 同一策略 → 同 allow/deny」同一件事）；改模型 = 改三份 + 改 digest 断言，**不得只在某一语言里改** |
+| 失败行为 | **启动失败（fail-fast）并报键名**：①值为空/纯空白；②`classpath:` 资源**在包里找不到**（Java `getResourceAsStream` 返回 null 即抛，Go/Node 同理）；③**判定只有两步**（不做 scheme 白名单）：以 `classpath:` 开头 → **包内资源**；**其余一律按文件路径**——故 `http:`/`jar:` 这类值**不会**被当 URL 去拉，只会因「文件不存在」启动失败（**不做网络拉取、不做隐式回退**；Windows 盘符 `C:\…` 因此天然按路径处理）；④`..` 越出包根 |
+| 外部文件路径 | 允许，但**必须做完整性校验**（`digest` 与期望值比对，失败 → **拒绝授权判定**、按 §4.4 fail-closed）；**该校验当前两侧均未实现**（见附录 C「向量实现状态」①与 `acceptance-criteria.md` §15-**G18**），**未实现前不得宣称"外部文件可用"** |
+| 向量口径 | `config-mapping.json` 里本键的 `kind` 词表现只有 `string`/`bool`/`duration_ms`/`list`，**缺 `resource`** → 须补 `resource`（或在其 `encoding` 里显式声明「`resource` 以 `string` 承载、值**逐字节**比较」），否则类型与契约表对不上（P2 待办，归 Gate/Nova） |
+
+> **不进 CH**：本条只补「默认值拿到后怎么解析」的既有语义（Java 已是这个语义、Go 默认值已对齐），**不改键名/类型/默认值/必填性，29 项与 22 条能力一条未动**；业务方仍不能用基线原本不允许的方式配置 SDK。
+> **锚**：#143（`a36336f`，Go `DefaultModelConf` 对齐 + `config-mapping.json` 的 `defects` 清空）；Java 基准实现 = `sdk/java/guanjin-core/src/main/java/com/guanjin/core/authz/Authz.java` 的 `readModelConf`。
 
 ### 3.3 3 项已废止（`REMOVED`，不得实现）
 
@@ -753,6 +770,16 @@ M1 的 S9 **只交付 Java 8 两份产物**；Node / Go 随 M2+ 落地。但**�
 
 > **未做（留给对应责任人，本节只登记）**：`agent-hmac.json` 摘 `AH-15` 的 `pending` + Go 侧 `pending` 集合断言（Edge/Gate）；`config-mapping.json` 的 duration 负例（Gate/`scripts/vecgen`）；Java 严格时长解析与 Go 正则前置（Nova，判据 `AC-SDK-11`）；`scope()` / 完整性校验实现（Nova/Edge，M5）。
 
+### 8.6 v13 → v14 修订点（2026-11-13：#143 收尾——`resource` 型键的解析口径）
+
+> 起因：Nova 把 Go 的 `authz.model-conf` 默认值改成契约字面量 `classpath:/guanjin/model.conf`（#143 `a36336f`）后，**默认值对了、解析口径没写**——Go/Node 两列还标「（文件路径）」，M5 照表抄会拿 `classpath:…` 去 `open()`，必炸。本轮只补这一处口径。
+
+| # | 位置 | 原（v13） | 现（v14） | 依据 |
+|---|---|---|---|---|
+| **E38** | §3.2 #17 行的 Go/Node 列 + 新增 **§3.2.2** | Go/Node 列写「（文件路径）」；`classpath:` 前缀没有任何解析规定 → 与默认值自相矛盾 | 两列改为「**resource 形态**：`classpath:` = 包内资源，**不得当文件路径 open**，见 §3.2.2」；新增 §3.2.2 写死：①两种形态（`classpath:<path>` = 包内资源 / 其它 = 外部文件路径）；②剥前缀 + **剥全部前导 `/`**、不 URL 解码、不许 `..`；③逐语言落点（Java 现有 `readModelConf` 即基准、**Go 必须 `//go:embed`**、Node 走包内相对路径）；④三份内置 `model.conf` **逐字节相同**；⑤失败 = 启动失败报键名（空 / 找不到 / 未知 scheme / `..` 越界）；⑥外部文件必须 digest 校验（**当前两侧未实现** → 见 `acceptance-criteria.md` §15-**G18**）；⑦向量 `kind` 词表缺 `resource`（P2 待办） | #143（Go 默认值对齐）；Java `Authz.readModelConf` 的 `CLASSPATH_PREFIX` 分支；§4.1 M5（同一份 `model.conf` → 同判定）；§4.4（完整性校验失败 → 拒绝判定） |
+
+> **不改的**：29 项键名/类型/默认值/必填性、22 条能力、§3.2.1 的时长口径、判据文件（`acceptance-criteria.md` 本轮只加 §15-**G20** 登记 P2 待办，账目仍 **91 = 84/0/0/6/0/1**）。
+
 ## 9. 附录
 
 ### 附录 A：能力 ID ↔ 基线 §2 编号 ↔ 对外 API 入口
@@ -834,4 +861,4 @@ M1 的 S9 **只交付 Java 8 两份产物**；Node / Go 随 M2+ 落地。但**�
 
 ---
 
-**校对快照（v13，供 Spec 抽查）**：`sdk-contract.md` / 行数 **837** 行（`wc -l`）/ md5 **`1c2f770b95379cec4e5d67db292c00b3`**（md5 覆盖范围 = **正文全部，即第 1..833 行**，命令 `head -n 833 docs/sdk-contract.md | md5sum`——不含快照节自身与其上方分隔线，避免自引用；行数含快照节）。上一快照 = v12 789 行 / md5 `25aef4a3515e032f73d8ce0a74fd8bc1`。本版（**E35–E37**，`spec/vectors` 首跑揪出的两裁决 + 一登记）：①新增 **§3.2.1**（时长严格解析：合法 = `trim` 后 `^[0-9]+(ms\|s\|m\|h)$`，纯数字/`d`/小数/组合 `1h30m`/`PT60S` 一律启动失败；Java 不得依赖 Spring 默认转换器）+ §1.1 时长行加指向；②§4.3 补 **A2 解码口径**（先 percent-decode 再编码排序、`+` 按字面，关闭 `AH-15` pending）；③附录 C 表后补**向量实现状态**（`scope()` / 模型完整性校验两侧未实现 = 不得记 PASS、归 M5、不阻塞 M1/S11 门禁）。**29 项键名/编号/默认值/必填性、22 条能力、基线正文一处未改、无源码**；判据侧见 `acceptance-criteria.md` v19（新增 `AC-SDK-11` + G18/G19）。
+**校对快照（v14，供 Spec 抽查）**：`sdk-contract.md` / 行数 **864** 行（`wc -l`）/ md5 **`519c9c6deffb86b256427eba0307a8fb`**（md5 覆盖范围 = **正文全部，即第 1..860 行**，命令 `head -n 860 docs/sdk-contract.md | md5sum`——不含快照节自身与其上方分隔线，避免自引用；行数含快照节）。上一快照 = v13 837 行 / md5 `1c2f770b95379cec4e5d67db292c00b3`。本版（**E38**，#143 收尾）：①§3.2 **#17** 的 Go/Node 两列由「（文件路径）」改为「**resource 形态**：`classpath:` = 包内资源、不得当文件路径 open」；②新增 **§3.2.2** 写死 `resource` 型键的解析口径（两种形态 / 剥前缀与前导 `/`、不许 `..` / Java 现有 `readModelConf` 为基准、**Go 必须 `//go:embed`**、Node 走包内相对路径 / 三份内置 `model.conf` 逐字节相同 / 空·找不到·未知 scheme·越界 → 启动失败报键名 / 外部文件必须 digest 校验 / 向量 `kind` 缺 `resource` 待补）。**29 项键名·类型·默认值·必填性、22 条能力、§3.2.1 时长口径一处未改、无源码**；判据侧只加 `acceptance-criteria.md` §15-**G20**（P2×3 登记），账目仍 **91 = 84/0/0/6/0/1**。
