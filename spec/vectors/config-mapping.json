@@ -429,17 +429,8 @@
     }
   ],
   "known_divergences": {
-    "defects": [
-      {
-        "contract": "classpath:/guanjin/model.conf",
-        "go": "model.conf",
-        "java": "classpath:/guanjin/model.conf",
-        "key": "guanjin.authz.model-conf",
-        "owner": "Nova（Go SDK config.go DefaultModelConf）",
-        "tracking": "2026-11-13 向量首跑发现；Go 侧断言已钉死，修好后本表与 Go 测试要同步改"
-      }
-    ],
-    "note": "已定性的三语言不一致。第一类是**实现缺陷**（按契约判，Go 侧偏差钉死，漂移即红）；第二类是解析口径差异（向量不采用这些形态，须 Spec/Ark 收口）",
+    "defects": [],
+    "note": "已定性的三语言不一致。第一类是**实现缺陷**：2026-11-13 `guanjin.authz.model-conf`（Go 曾给 \"model.conf\"）修好后**当前为空**；再出现时按旧法登记（期望按契约、把实现现值钉死，漂移即红）。第二类是解析口径差异（向量不采用这些形态，须 Spec/Ark 收口）",
     "parse_forms": [
       {
         "form": "纯数字 duration（如 3000）",

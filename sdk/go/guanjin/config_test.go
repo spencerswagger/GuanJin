@@ -45,6 +45,11 @@ func TestConfigDefaultsPerContract(t *testing.T) {
 	if !c.PublicPathsIncludeBuiltin || !c.Startup.PrintPublicPaths {
 		t.Fatal("public-paths-include-builtin / startup.print-public-paths 默认 true")
 	}
+	// 契约 #17：resource 形态，三语言逐字节一致（历史缺陷：Go 曾给 "model.conf"）。
+	if c.Authz.ModelConf != "classpath:/guanjin/model.conf" || DefaultModelConf != "classpath:/guanjin/model.conf" {
+		t.Fatalf("authz.model-conf 默认值必须等于契约 #17 的 %q，实得 %q",
+			"classpath:/guanjin/model.conf", c.Authz.ModelConf)
+	}
 }
 
 func TestConfigRejectsUnknownAndRemovedKeys(t *testing.T) {

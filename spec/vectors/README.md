@@ -34,5 +34,5 @@ go test -count=1 -run TestSpecVectors ./internal/agent/ ./sdk/go/guanjin/
 2. **`scope()` 无实现**：Java core 与 Go SDK 都没有（`grep -rn scope sdk/java/guanjin-core/src/main` = 0 命中；Go `capabilities.go` 里 GJ-CAP-12~16 `Implemented:false`）→ `authz-decisions.json` 的 `scope_cases` 定性 UNIMPLEMENTED。
 3. **模型/策略完整性校验无实现**：Java `Authz.init` 无 digest 校验、Go `internal/authz` 只有 `doc.go` → `integrity_cases` 定性 UNIMPLEMENTED（附录 C 把这条与 `scope()` 分列，故单列一个桶）。
 4. **Agent HMAC 无生产实现**：全仓 `hmac.New` 非测试调用 = 0，`internal/agent` 只拼 canonical；`internal/crypto.HMACSM3WithUserSecret` 明确**禁止**用于 Agent HMAC；Java `PullRequestSigner` 只有接口 → 签名由 gmsm 独立实现算出，待 Edge 落地后接同一向量。
-5. **Go SDK 默认值缺陷**：`guanjin.authz.model-conf` 契约 #17 = `classpath:/guanjin/model.conf`，Go 给 `model.conf`（Java 与契约一致）。`known_divergences.defects` 按契约写期望、**把 Go 现值钉死**；钉桩校验在 Go 侧（漂移即红 + 该键必须出现在某个 case 的 `expect` 里，防静默失效）。修好后 Go 测试会提示删表。
+5. **Go SDK 默认值缺陷（已修，2026-11-13）**：`guanjin.authz.model-conf` 契约 #17 = `classpath:/guanjin/model.conf`，Go 曾给 `model.conf`。现已对齐，`known_divergences.defects` 清空（机制保留：再出现同类漂移按「期望按契约 + 把实现现值钉死」登记，Go 侧漂移即红）。生成器也升级为**生成期硬校验**（实现漂移则生成向量时报错，不再静默覆盖期望）。
 6. **duration 解析口径**：纯数字（`3000`）与单位 `d`（`1d`）**Java 接受、Go 拒绝**。契约 §1.1 的规范形态是 `<n><unit>` ⇒ **Java 的宽松是偏差**（同一份配置 Java 起得来、Go 拒 = 静默不兼容）。向量不使用这些形态，已记 `known_divergences.parse_forms`，须 Spec/Ark 收口。
