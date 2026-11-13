@@ -183,39 +183,15 @@ public final class GuanjinConfigLoader {
     }
 
     /**
-     * duration 解析：与 Spring 的 {@code DurationStyle} 同口径——
-     * {@code 500ms} / {@code 2s} / {@code 10m} / {@code 1h} / {@code 1d}，纯数字按毫秒。
+     * duration 解析：**严格按契约 §3.2.1**（合法形态唯一 = {@code trim} 后
+     * {@code ^[0-9]+(ms|s|m|h)$}）。
+     *
+     * <p>本方法只是转调 {@link GuanjinConfigValidator#parseDuration}，保证
+     * 「Spring 绑定期」与「非 Spring 装载」用的**只有一份**判定；历史上的宽松分支
+     * （纯数字按毫秒、{@code d} 按天、整串转小写）已按 2026-11-13 裁决删除。
      */
     static Duration parseDuration(String key, String raw) {
-        String v = raw == null ? "" : raw.trim().toLowerCase(Locale.ROOT);
-        if (v.isEmpty()) {
-            throw new GuanjinConfigException(key, "取不到 duration（如 2s / 10m）");
-        }
-        try {
-            if (v.matches("^[0-9]+$")) {
-                return Duration.ofMillis(Long.parseLong(v));
-            }
-            if (v.endsWith("ms")) {
-                return Duration.ofMillis(Long.parseLong(v.substring(0, v.length() - 2)));
-            }
-            long n = Long.parseLong(v.substring(0, v.length() - 1));
-            char unit = v.charAt(v.length() - 1);
-            switch (unit) {
-                case 's':
-                    return Duration.ofSeconds(n);
-                case 'm':
-                    return Duration.ofMinutes(n);
-                case 'h':
-                    return Duration.ofHours(n);
-                case 'd':
-                    return Duration.ofDays(n);
-                default:
-                    throw new GuanjinConfigException(key,
-                            "取不到 duration（单位只接受 ms|s|m|h|d），得到 \"" + raw + "\"");
-            }
-        } catch (NumberFormatException e) {
-            throw new GuanjinConfigException(key, "取不到 duration（如 2s / 10m），得到 \"" + raw + "\"", e);
-        }
+        return GuanjinConfigValidator.parseDuration(key, raw);
     }
 
     private static List<String> parseList(String raw) {

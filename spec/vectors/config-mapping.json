@@ -432,7 +432,7 @@
     "defects": [],
     "duration_rule": {
       "failure": "启动失败（fail-fast），错误信息必须含键名；不得静默回落默认值",
-      "former_divergence": "首跑时 3000/1d 只有 Java 接受（Spring Duration 转换器）、Go 拒；1h30m/1.5s/+60s 反过来是 Go 接受、Java 拒 → 按 §3.2.1 全部改成负例，见 reject_cases（current = 各语言今日实跑行为）",
+      "former_divergence": "首跑时 3000/1d 只有 Java 接受（Spring Duration 转换器）、Go 拒；1h30m/1.5s/+60s 反过来是 Go 接受、Java 拒 → 按 §3.2.1 全部改成负例。2026-11-13 两侧均已收紧（Java core 正则 + boot2 绑定期守卫、Go 先正则再 time.ParseDuration），故 current 全部为 reject；这是**已落地断言**，不是现状记录",
       "legal": "trim 后整串匹配 ^[0-9]+(ms|s|m|h)$（单位闭合集只 4 个，大写不认）",
       "owner": "Nova 实施（Java + Go 同一正则）；Gate 出负例向量",
       "spec": "docs/sdk-contract.md §3.2.1（v13 裁决：收紧 Java，不放宽契约）"
@@ -444,7 +444,7 @@
       "case": "duration_reject_plain_number",
       "current": {
         "go": "reject",
-        "java": "accept"
+        "java": "reject"
       },
       "key": "guanjin.gateway.clock-skew",
       "reason": "§3.2.1 必须失败①：纯数字（隐式毫秒单位）",
@@ -455,7 +455,7 @@
       "case": "duration_reject_unit_d",
       "current": {
         "go": "reject",
-        "java": "accept"
+        "java": "reject"
       },
       "key": "guanjin.gateway.clock-skew",
       "reason": "§3.2.1 必须失败②：单位 `d`（不在闭合集 ms|s|m|h）",
@@ -465,7 +465,7 @@
     {
       "case": "duration_reject_combined",
       "current": {
-        "go": "accept",
+        "go": "reject",
         "java": "reject"
       },
       "key": "guanjin.gateway.clock-skew",
@@ -476,7 +476,7 @@
     {
       "case": "duration_reject_fraction",
       "current": {
-        "go": "accept",
+        "go": "reject",
         "java": "reject"
       },
       "key": "guanjin.platform.read-timeout",
@@ -498,8 +498,8 @@
     {
       "case": "duration_reject_signed",
       "current": {
-        "go": "accept",
-        "java": "accept"
+        "go": "reject",
+        "java": "reject"
       },
       "key": "guanjin.agent.pull.interval",
       "reason": "§3.2.1 必须失败⑦：带符号",
@@ -510,7 +510,7 @@
       "case": "duration_reject_upper_unit",
       "current": {
         "go": "reject",
-        "java": "accept"
+        "java": "reject"
       },
       "key": "guanjin.gateway.jwks-cache-ttl",
       "reason": "§3.2.1 单位闭合集判据：大写单位不认（`1S`/`10M` 非法）",

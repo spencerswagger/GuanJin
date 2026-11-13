@@ -49,6 +49,19 @@ public class GuanjinAutoConfiguration {
 
     private static final Logger LOG = LoggerFactory.getLogger("guanjin.sdk");
 
+    /**
+     * 时长键的绑定期守卫（契约 §3.2.1；`AC-SDK-11`）：在 {@code @ConfigurationProperties} 绑定**之前**
+     * 按 §3.2.1 的正则检查原始文本，非法形态（纯数字 / {@code d} / {@code PT60S} / {@code 1h30m} …）
+     * 一律启动失败并报键名，**不让 Spring 的 {@code Duration} 默认转换器自己发明单位**。
+     *
+     * <p>声明为 {@code static} 是 {@link org.springframework.beans.factory.config.BeanFactoryPostProcessor}
+     * 的固定写法：它必须在任何普通 Bean 实例化之前被创建（否则绑定已经发生了）。
+     */
+    @Bean
+    public static GuanjinDurationBindingGuard guanjinDurationBindingGuard() {
+        return new GuanjinDurationBindingGuard();
+    }
+
     /** 出站 HTTP（GJ-CAP-03/21 共用；宿主可覆盖，如换 OkHttp）。 */
     @Bean
     @ConditionalOnMissingBean(HttpFetcher.class)
