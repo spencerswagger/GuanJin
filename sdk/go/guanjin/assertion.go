@@ -12,8 +12,13 @@ import (
 	"github.com/tjfoc/gmsm/sm2"
 )
 
-// SigningAlg 是唯一允许的签名算法（契约 §4.1 M2：`alg` **不做协商降级**）。
-const SigningAlg = "SM3withSM2"
+// SigningAlg 是网关断言唯一允许的签名算法（`decisions.md` D29 已生效：平台 keygen 写死
+// SM2、契约 §4.1 M2 同口径——**不做协商降级、无 fallback、无 alg 配置键**；预留扩展
+// 留在 kid/接口层，不在配置层）。
+//
+// 注意：对外令牌（`id_token`/`access_token`）的 `SM3withSM2` 是另一条轨（基线
+// `技术栈:35`「对外令牌 SM3withSM2 / 网关断言 SM2」），不属本 SDK 的验签面。
+const SigningAlg = "SM2"
 
 // sm2UID 是 GM/T 0003 的默认用户标识；平台与 SDK 必须一致，否则验签永远失败。
 var sm2UID = []byte("1234567812345678")
@@ -60,7 +65,7 @@ func (v *Verifier) Verify(ctx context.Context, raw string) (*Claims, error) {
 		return nil, NewTokenInvalid("断言头不是合法 JSON", err)
 	}
 	if hdr.Alg != SigningAlg {
-		// 不做算法协商：alg 不是 SM3withSM2 一律拒（防 alg 混淆攻击）。
+		// 不做算法协商：alg 必须是 SM2（D29 唯一口径）；含 SM3withSM2 在内的其它值一律拒（防 alg 混淆攻击）。
 		return nil, NewTokenInvalid(fmt.Sprintf("alg 必须是 %s，得到 %q", SigningAlg, hdr.Alg), nil)
 	}
 	if hdr.Kid == "" {

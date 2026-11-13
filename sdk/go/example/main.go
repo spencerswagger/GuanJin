@@ -127,7 +127,8 @@ func sdkPathPatterns(sdk *guanjin.SDK) []string {
 
 func jwksDoc(k string, pub *sm2.PublicKey) []byte {
 	doc := map[string]any{"keys": []map[string]string{{
-		"kty": "EC", "crv": "SM2", "kid": k, "x": coord(pub.X), "y": coord(pub.Y),
+		"kty": "EC", "crv": "SM2", "kid": k, "use": "sig", "alg": guanjin.SigningAlg,
+		"x": coord(pub.X), "y": coord(pub.Y),
 	}}}
 	b, _ := json.Marshal(doc)
 	return b

@@ -38,12 +38,14 @@ func coord(b *big.Int) string {
 	return base64.RawURLEncoding.EncodeToString(buf)
 }
 
-// jwksBody 生成 JWKS 文档（kty=EC / crv=SM2，坐标 base64url 定长 32 字节）。
+// jwksBody 生成 JWKS 文档（kty=EC / crv=SM2 / alg=SM2（网关用途）/ use=sig，坐标 base64url 定长 32 字节）。
 func jwksBody(kid string, pubs ...*sm2.PublicKey) []byte {
 	type jwk struct {
 		Kty string `json:"kty"`
 		Crv string `json:"crv"`
 		Kid string `json:"kid"`
+		Use string `json:"use"`
+		Alg string `json:"alg"`
 		X   string `json:"x"`
 		Y   string `json:"y"`
 	}
@@ -55,7 +57,7 @@ func jwksBody(kid string, pubs ...*sm2.PublicKey) []byte {
 		if i > 0 {
 			k = fmt.Sprintf("%s-%d", kid, i)
 		}
-		doc.Keys = append(doc.Keys, jwk{Kty: "EC", Crv: "SM2", Kid: k, X: coord(p.X), Y: coord(p.Y)})
+		doc.Keys = append(doc.Keys, jwk{Kty: "EC", Crv: "SM2", Kid: k, Use: "sig", Alg: SigningAlg, X: coord(p.X), Y: coord(p.Y)})
 	}
 	b, _ := json.Marshal(doc)
 	return b
@@ -64,7 +66,14 @@ func jwksBody(kid string, pubs ...*sm2.PublicKey) []byte {
 // signAssertion 生成内部断言（r||s 64 字节，base64url 无填充）。
 func signAssertion(t *testing.T, priv *sm2.PrivateKey, kid string, claims map[string]any) string {
 	t.Helper()
-	hdr := map[string]any{"alg": SigningAlg, "kid": kid, "typ": "JWT"}
+	return signAssertionWithAlg(t, priv, kid, SigningAlg, claims)
+}
+
+// signAssertionWithAlg 同 signAssertion，但允许指定 header 的 `alg`——**只服务负向用例**
+// （旧值/错误 alg 必须被拒，D29 不兼容旧 alg、不协商）；生产路径只有 SigningAlg。
+func signAssertionWithAlg(t *testing.T, priv *sm2.PrivateKey, kid, alg string, claims map[string]any) string {
+	t.Helper()
+	hdr := map[string]any{"alg": alg, "kid": kid, "typ": "JWT"}
 	hb, _ := json.Marshal(hdr)
 	cb, _ := json.Marshal(claims)
 	p1 := base64.RawURLEncoding.EncodeToString(hb)

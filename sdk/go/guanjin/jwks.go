@@ -13,13 +13,15 @@ import (
 	"github.com/tjfoc/gmsm/sm2"
 )
 
-// JWK 是平台 JWKS 里的一条公钥（契约：`kty:"EC"` + `crv:"SM2"`，用 `kid` 区分
-// 「用户令牌 / 网关断言」两类密钥，索引 §4.2-23）。
+// JWK 是平台 JWKS 里的一条公钥（契约：`kty:"EC"` + `crv:"SM2"`，索引 §4.2-23）。
+// 平台把两类密钥同时发布，`use` 都是 `sig`，靠 `alg` 区分：对外令牌=`SM3withSM2`、
+// 网关断言=`SM2`（`decisions.md` D29）——`alg` 就是"网关用途"的判据。
 type JWK struct {
 	Kty string `json:"kty"`
 	Crv string `json:"crv"`
 	Kid string `json:"kid"`
 	Use string `json:"use,omitempty"`
+	Alg string `json:"alg,omitempty"`
 	X   string `json:"x"`
 	Y   string `json:"y"`
 }
@@ -84,7 +86,8 @@ func (j *JwksClient) PublicKey(kid string) (*sm2.PublicKey, error) {
 	return nil, NewTokenInvalid(fmt.Sprintf("未找到可用验签公钥 kid=%q", kid), nil)
 }
 
-// KeyCount 返回当前缓存里的公钥数量（启动自检用来判断"JWKS 里一个能用的键都没有"）。
+// KeyCount 返回当前缓存里的**网关用途**公钥数量（启动自检用来判断"JWKS 里一个能验断言
+// 的键都没有"；oidc（`SM3withSM2`）键在 ParseJWKS 里已被滤掉，见 `decisions.md` D29）。
 func (j *JwksClient) KeyCount() int {
 	j.mu.RLock()
 	defer j.mu.RUnlock()
@@ -135,8 +138,11 @@ func (j *JwksClient) Refresh() error {
 	return nil
 }
 
-// ParseJWKS 解析 JWKS 文档为 `kid → 公钥`（只接受 `kty=EC` / `crv=SM2`，
-// 其它曲线**跳过而不报错**：平台将来若同时发布别类公钥，SDK 不该因此起不来）。
+// ParseJWKS 解析 JWKS 文档为 `kid → 公钥`（只接受 `kty=EC` / `crv=SM2` / **`alg=SM2`**
+// 三条同时成立——`alg` 即"网关用途"判据：平台 `signing.Set.JWKS()` 把 oidc（`SM3withSM2`）
+// 与 gateway（`SM2`）两类键同时发布、`use` 都是 `sig`，而断言验签只认 SM2（`decisions.md`
+// D29）；oidc 键收进来只会制造"能选到却必然验不过"的 401 噪声）。
+// 不满足条件的键**跳过而不报错**：平台将来若同时发布别类公钥/算法，SDK 不该因此起不来。
 func ParseJWKS(body []byte) (map[string]*sm2.PublicKey, error) {
 	var doc jwksDoc
 	if err := json.Unmarshal(body, &doc); err != nil {
@@ -144,7 +150,7 @@ func ParseJWKS(body []byte) (map[string]*sm2.PublicKey, error) {
 	}
 	out := make(map[string]*sm2.PublicKey, len(doc.Keys))
 	for _, k := range doc.Keys {
-		if k.Kty != "EC" || k.Crv != "SM2" || k.Kid == "" {
+		if k.Kty != "EC" || k.Crv != "SM2" || k.Alg != SigningAlg || k.Kid == "" {
 			continue
 		}
 		pub, err := parseSM2JWK(k)

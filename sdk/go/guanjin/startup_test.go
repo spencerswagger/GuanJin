@@ -88,7 +88,7 @@ func TestStartupSelfCheckWarnsOnEmptyKeysAndDistinguishesCauses(t *testing.T) {
 	}
 	warned := false
 	for _, l := range logs {
-		if strings.Contains(l, "没有任何 SM2 公钥") {
+		if strings.Contains(l, "没有任何网关用途（alg=SM2）的公钥") {
 			warned = true
 		}
 	}

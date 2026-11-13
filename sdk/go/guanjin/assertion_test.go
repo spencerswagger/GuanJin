@@ -150,7 +150,7 @@ func TestValidateClaimsRejectsBadClaims(t *testing.T) {
 
 func TestParseJWKSSkipsForeignKeys(t *testing.T) {
 	priv := genKey(t)
-	body := []byte(`{"keys":[{"kty":"RSA","kid":"rsa1"},{"kty":"EC","crv":"SM2","kid":"k1","x":"` +
+	body := []byte(`{"keys":[{"kty":"RSA","kid":"rsa1"},{"kty":"EC","crv":"SM2","kid":"k1","use":"sig","alg":"SM2","x":"` +
 		coord(priv.X) + `","y":"` + coord(priv.Y) + `"}]}`)
 	got, err := ParseJWKS(body)
 	if err != nil {
@@ -162,8 +162,64 @@ func TestParseJWKSSkipsForeignKeys(t *testing.T) {
 }
 
 func TestParseJWKSRejectsBadCoordinateLength(t *testing.T) {
-	body := []byte(`{"keys":[{"kty":"EC","crv":"SM2","kid":"k1","x":"AAAA","y":"AAAA"}]}`)
+	body := []byte(`{"keys":[{"kty":"EC","crv":"SM2","kid":"k1","alg":"SM2","x":"AAAA","y":"AAAA"}]}`)
 	if _, err := ParseJWKS(body); err == nil {
 		t.Fatal("坐标长度不是 32 字节必须报错（不静默）")
+	}
+}
+
+// TestParseJWKSSkipsNonGatewayAlg：JWKS 同时发布 oidc（alg=SM3withSM2）与 gateway（alg=SM2）
+// 两类键，SDK **只保留网关用途**（decisions.md D29）——否则 KeyCount 会把 oidc 键数进来
+// （启动自检假通过），验签还可能"选到 oidc 键却必然验不过"。
+func TestParseJWKSSkipsNonGatewayAlg(t *testing.T) {
+	gw := genKey(t)
+	oidc := genKey(t)
+	body := []byte(`{"keys":[` +
+		`{"kty":"EC","crv":"SM2","kid":"gw-1","use":"sig","alg":"SM2","x":"` + coord(gw.X) + `","y":"` + coord(gw.Y) + `"},` +
+		`{"kty":"EC","crv":"SM2","kid":"oidc-1","use":"sig","alg":"SM3withSM2","x":"` + coord(oidc.X) + `","y":"` + coord(oidc.Y) + `"}]}`)
+	got, err := ParseJWKS(body)
+	if err != nil {
+		t.Fatalf("解析失败：%v", err)
+	}
+	if len(got) != 1 || got["gw-1"] == nil {
+		t.Fatalf("只应保留网关用途（alg=SM2）一条，实得 %d 条", len(got))
+	}
+	if got["oidc-1"] != nil {
+		t.Fatal("oidc 用途（alg=SM3withSM2）的键不得进入验签集合")
+	}
+}
+
+// TestJwksClientKeyCountCountsOnlyGatewayKeys：启动自检口径——JWKS 里有键、但只有 oidc
+// 用途（alg=SM3withSM2）时必须 KeyCount=0（否则"部署成功但全 401"会被计数器掩盖）。
+func TestJwksClientKeyCountCountsOnlyGatewayKeys(t *testing.T) {
+	gw := genKey(t)
+	oidc := genKey(t)
+	body := []byte(`{"keys":[` +
+		`{"kty":"EC","crv":"SM2","kid":"gw-1","use":"sig","alg":"SM2","x":"` + coord(gw.X) + `","y":"` + coord(gw.Y) + `"},` +
+		`{"kty":"EC","crv":"SM2","kid":"oidc-1","use":"sig","alg":"SM3withSM2","x":"` + coord(oidc.X) + `","y":"` + coord(oidc.Y) + `"}]}`)
+	srv := jwksServer(t, func() []byte { return body })
+	cfg := testConfig(t, srv.URL)
+	j := NewJwksClient(cfg, nil)
+	if err := j.Refresh(); err != nil {
+		t.Fatalf("Refresh: %v", err)
+	}
+	if n := j.KeyCount(); n != 1 {
+		t.Fatalf("KeyCount 只数网关用途键，应为 1，实得 %d", n)
+	}
+}
+
+// TestVerifyRejectsSM3WithSM2AlgHeader：对外令牌那条轨的 alg 值（SM3withSM2）用在断言上
+// 必须被拒——D29 只认 SM2，不做算法协商降级、不兼容旧值、无开关。
+func TestVerifyRejectsSM3WithSM2AlgHeader(t *testing.T) {
+	priv := genKey(t)
+	srv := jwksServer(t, func() []byte { return jwksBody("k1", &priv.PublicKey) })
+	cfg := testConfig(t, srv.URL)
+	v := NewVerifier(cfg, NewJwksClient(cfg, nil))
+
+	raw := signAssertionWithAlg(t, priv, "k1", "SM3withSM2", claims(time.Now().Unix()))
+	_, err := v.Verify(context.Background(), raw)
+	var ge *Error
+	if !errors.As(err, &ge) || ge.Code != CodeTokenInvalid {
+		t.Fatalf("alg=SM3withSM2 的断言必须 TOKEN_INVALID（不兼容旧 alg、不协商），实得 %v", err)
 	}
 }

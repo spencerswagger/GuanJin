@@ -73,7 +73,7 @@ func New(cfg Config, opts ...Option) (*SDK, error) {
 	// 与 Java `GuanjinStartupChecker.check()` 同口径：拉到了但**没有网关用途的 SM2 公钥**只告警
 	// （部署能起，但任何断言都会 401）——这里不升级为失败，否则与 Java 语义分叉（契约 §4.1 M2/M6）。
 	if n := s.jwks.KeyCount(); n == 0 {
-		s.logf("[guanjin] 警告：JWKS 里没有任何 SM2 公钥（kid 集合为空）——部署能起，但所有断言都会 401；"+
+		s.logf("[guanjin] 警告：JWKS 里没有任何网关用途（alg=SM2）的公钥（kid 集合为空）——部署能起，但所有断言都会 401；"+
 			"检查平台 signing_keys 的 purpose=gateway（%s）", cfg.JwksURI())
 	}
 	if o.replay != nil {
