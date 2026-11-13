@@ -328,7 +328,7 @@
 | # | 项目 | 判据 |
 |---|---|---|
 | M1 | **Agent 面 HMAC canonical 串** | §4.3 一字不差；同一向量三语言签名**逐字节相同** |
-| M2 | **断言验签算法** | `SM3withSM2`（JWT 形态），`kid` 选键，`alg` 不做协商降级；失败一律拒 |
+| M2 | **断言验签算法** | **`SM2`（JWT 形态，`alg` 值 = 平台 `signing_keys.algorithm` 原样写入 header；网关用途绑死 SM2，见 `migrations/000013` CHECK 与 `decisions.md` D29）**，`kid` 选键，`alg` 不做协商降级、无 fallback、无 alg 配置键（**SM2 唯一，预留扩展但不留开关**）；失败一律拒 |
 | M3 | **能力 ID** | `GJ-CAP-01..22` 与语义一一对应，不得增删改 |
 | M4 | **错误码** | 只消费接口 §5.4（含 D3-F 新增 `STEP_ALREADY_SATISFIED` E4/409，仅平台 `internal/flow` 产生，**SDK 不得产生也不得吞**）；**`SERVICE_DEGRADED` 已废弃（D8-C′⑤），SDK 永不返回**；SDK 本地拒绝（缺 header / 验签失败 / 重放 / `iss`·`aud` 不符 / `exp`·`iat` 越界）统一映射 **401 `TOKEN_INVALID`**，不自造新码。**`TOKEN_EXPIRED` 属平台对用户令牌（`access_token`）的响应，SDK 永不返回**——界分见 §4.4 末表 |
 | M5 | **model.conf 三层语义** | 同一份 `model.conf` + 同一策略 → 同 allow/deny；`auditor` 豁免、`defaultRole` 兜底、密级 `≥` 判定一致。**客体密级入口 `✅ 已定`（D11 补选方案①，标「Spec 终校（2026-11-02）」）**：**不做声明式打标**，客体密级由**业务在调用点**把值传给既有能力 `Authz.checkLabel(objLevel)`（`GJ-CAP-16` 语义不变）；**不新增 builder 方法、不新增配置、不新增 SDK API**；`dataLabel()` 作废（**裸 `clearance()` 同属作废**，见 §2.1.2）且**不留别名、不另造替代名**（索引 §4.2-25 冻结的五项里没有客体声明入口）。判定**不进 CH**（不改 key、能力仍 22、不改既有签名），作**设计选择**登记 **ADR-004**（见附录 A 注） |
@@ -401,7 +401,7 @@ X-GuanJin-Signature = Base64( HMAC-SM3( K, canonical ) )
 | 步 | 动作 | 关键点（三语言同） |
 |:--:|---|---|
 | ① | **读**原始请求头 | 从**原始请求**取 `X-GuanJin-Assertion`（`guanjin.gateway.assertion-header`，配置 #7）。**此时不删**——它是唯一凭证来源。缺失 → 401 `TOKEN_INVALID` |
-| ② | **验签** | `SM3withSM2`；公钥按 `kid` 取自 JWKS 缓存，未知 `kid` 强刷一次，无缓存则拒（`GJ-CAP-02/03/04`） |
+| ② | **验签** | `SM2`（D29）；公钥按 `kid` 取自 JWKS 缓存，未知 `kid` 强刷一次，无缓存则拒（`GJ-CAP-02/03/04`） |
 | ③ | **校验 claim** | `exp`/`iat`（±`clock-skew`）、`iss`、`aud`、**`jti` 重放**（`GJ-CAP-05/06/07`） |
 | ④ | **注入上下文** | `SecurityContext` / `Principal`（Java `GuanjinContextHolder`、Node `req.guanjin`、Go `context.Context`）（`GJ-CAP-09/10`） |
 | ⑤ | **替换请求视图（= 剥离）** | 交给宿主的 request 中该头**已不存在**：Java `HttpServletRequestWrapper` 覆写 `getHeader`/`getHeaders`/`getHeaderNames`（大小写不敏感）；Node 显式 copy 后删除；Go 删除并**重建** `r.Header`。客户端伪造的同名头一并丢弃（不是覆盖） |
@@ -718,7 +718,7 @@ M1 的 S9 **只交付 Java 8 两份产物**；Node / Go 随 M2+ 落地。但**�
 | 向量文件 | 最少条目 | 覆盖 |
 |---|:--:|---|
 | `spec/vectors/agent-hmac.json` | 10 | 空 query、单 query、多 query 乱序（验字节序）、**重复参数名（不同值 → 两级排序）**、**同名同值（顺序无关）**、`?` 后为空、空 body（GET）、含 UTF-8 body、**带 context-path 的 `PATH`**（如 `/order/api/v1/agent/report`）、**`/a` 与 `/a/` 视为不同串**；每条含 `expected_signature`（逐字节） |
-| `spec/vectors/assertion-verify.json` | 10 | 正常、签名错、`exp` 边界 ±skew、`iat` 未来、`iss` 错、`aud` 错、未知 `kid`（强刷）、JWKS 无缓存（503 `KEY_UNAVAILABLE`）、`jti` 重放、`alg` 非 `SM3withSM2` |
+| `spec/vectors/assertion-verify.json` | 10 | 正常、签名错、`exp` 边界 ±skew、`iat` 未来、`iss` 错、`aud` 错、未知 `kid`（强刷）、JWKS 无缓存（503 `KEY_UNAVAILABLE`）、`jti` 重放、`alg` 非 `SM2` |
 | `spec/vectors/authz-decisions.json` | 12 | RBAC allow/deny、`defaultRole` 兜底、`auditor` 豁免、密级 `>`/`=`/`<`、`scope()` 受限/全量、完整性校验失败 fail-closed |
 | `spec/vectors/config-mapping.json` | 29 | 29 个规范键 → 三语言读入后内部值等价（含默认值、`duration` 解析） |
 
@@ -728,5 +728,5 @@ M1 的 S9 **只交付 Java 8 两份产物**；Node / Go 随 M2+ 落地。但**�
 
 ---
 
-**校对快照（v8，供 Spec 抽查）**：`sdk-contract.md` / 行数 **732** 行（`wc -l`） / md5 **`c220f6a6a5f61dc13946a282c9eaa0b0`**（md5 覆盖范围 = **本节 4 行以外、即第 1..728 行**，避免自引用；行数含本节）。上一快照 = v8 731 行 / md5 `a317c945`（PR #1 合入版）。本轮：**按 PR #1 Owl 评审一次性修完 2 个 P2 + 4 个 P3**——E26 `checkLabel(objLevel)` 全文统一（原三处仍写 `level`）；E27 命名原则重写为**两层命名 + §1.5 的 R-1..R-5 封闭形态规则 + 三处冲突的差异类别与理由 + CI 反射比对**（选「改 N3 措辞、不改表」）；E28 配置 #26 的 Node/Go 字段名改为机械可推导（并补 Go 缩写白名单）；E29 新增 **§2.1.2**（`withClearance` 唯一写法、裸 `clearance()` 与 `dataLabel()` 一并作废、密级 1/2/3 词表、公开不占级、禁词正则与扫描范围）；E30 补 `TOKEN_INVALID` vs `TOKEN_EXPIRED` 界分表；E31 确认 Ark 已在他分支放开 `.gitignore` 的 `docs/`（`origin/main` 尚未生效，我不重复改）。**能力仍 22 条、配置仍 29 项，键名/编号/默认值/必填性/判据一处未改；基线未动、无源码。** 追加 **E34**：按 Gate 把关（PR #1 READY 附 1 处 P3）把 §5.1.1 的 **C-2** 「上表 10 条」改为「上表 **14 条**（原 10 条 + 第 11–14 条同批扫描）」，连带把 **C-1** 的「第 1–10 条」改为「第 1–14 条」，与表体、E8/E19 的「14 条」全部对齐——**只改文字，黑名单条目一条未增删**。
+**校对快照（v9，供 Spec 抽查）**：`sdk-contract.md` / 行数 **732** 行（`wc -l`） / md5 **`0d5dfc923d9db6b1e3cfe692352cb915`**（md5 覆盖范围 = **正文全部，即第 1..727 行**，命令 `head -n 727 docs/sdk-contract.md | md5sum`——不含快照节自身与其上方分隔线，避免自引用；行数含快照节）。上一快照 = v8 732 行 / md5 `c220f6a6a5f61dc13946a282c9eaa0b0`（PR #1 合入版；该值当时的覆盖口径未存命令、经逐行核验无法复现，**自本版起口径 = 可复现命令**）。本轮（PR #51 配套，`decisions.md` **D29**）：**断言验签算法口径订正——`SM3withSM2` → `SM2`**，共三处（§4.1 M2 行、§4.5 步②、§7 `assertion-verify.json` 向量行）。性质 = **纠错**：基线 `技术栈:35` / `数据模型:62/812` 本就冻结「对外令牌 `SM3withSM2` / 网关断言 `SM2`」双轨，`000013` CHECK 把 `purpose='gateway'` 绑死 `SM2`，平台 keygen 与 signing 已按此实现；M2 行原写 `SM3withSM2` 与同文件 `GJ-CAP-01` 能力行（「验 …SM2 签名」）自相矛盾，且会使 Java `JwksSet` 按 alg 过滤时把真网关键筛掉（#51 实测真机 100% 401）。**M2 行同时补死「无协商降级、无 fallback、无 alg 配置键——SM2 唯一，预留扩展但不留开关」**（spencer 2026-11-13 拍板）。**能力仍 22 条、配置仍 29 项，键名/编号/默认值/必填性/判据一处未改；基线未动、无源码。**
 
