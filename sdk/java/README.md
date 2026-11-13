@@ -3,14 +3,14 @@
 > 权威契约：**`docs/sdk-contract.md`**（22 条能力 `GJ-CAP-01..22` + 29 项配置）。
 > 本目录只放**实现**，口径一律以那份文档为准，本文不复制契约内容。
 >
-> **D23③（spencer 2026-11-13 追认通过）**：`sdk/java` 的依赖漏洞覆盖**立即可做**——本目录聚合
-> `pom.xml` 已内置 `org.cyclonedx:cyclonedx-maven-plugin`（**2.8.0**，版本锁死；**不绑 phase**，
-> 默认 `mvn test` 行为零变化）。生成：`mvn cyclonedx:makeAggregateBom` → `target/bom.json`
-> （CycloneDX **1.5** 聚合 BOM，两模块依赖一体收录，**每次构建重生成、不用人维护**）。
+> **D23③（spencer 2026-11-13 追认通过；手段见 D28③）**：`sdk/java` 的依赖漏洞覆盖——
+> 本目录聚合 `pom.xml` 已内置 `org.cyclonedx:cyclonedx-maven-plugin`（**2.8.0**，版本锁死；
+> **不绑 phase**，默认 `mvn test` 行为零变化）。生成：`mvn cyclonedx:makeAggregateBom` →
+> `target/bom.json`（CycloneDX **1.5** 聚合 BOM，两模块依赖一体收录，**每次构建重生成、不用人维护**）。
 > 注意：2.8.0 的 goal 标注 `@RequiresOnline`，**生成需联网**（D23 写的「`mvn -o`」不可行，按
-> 「复用当次已热的 `~/.m2`」执行——`sdk` job 本身有网）；**消费侧离线**（`vuln` job 只读
-> artifact、不解析 pom、不打外网）。链路 = **Nova 产 → Gate 判**；**死线 2026-12-10**，
-> 逾期则 `AC-ENG-07` 账目降级为「Java 侧未覆盖」并如实记账。
+> 「复用当次已热的 `~/.m2`」执行——`sdk` job 拉依赖后仓库已热）；**消费侧离线**（`vuln` job 由
+> 同一判定引擎 `scripts/vuln-gate.py` 读 artifact、不解析 pom、不打外网）。链路 = **Nova 产 → Gate 判**；
+> **死线 2026-12-10**，逾期则 `AC-ENG-07` 账目降级为「Java 侧未覆盖」并如实记账。
 
 ## 交付结构（契约 §5.1）
 
