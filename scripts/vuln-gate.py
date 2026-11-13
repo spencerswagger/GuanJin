@@ -71,13 +71,15 @@ def vparse(text):
     Go 侧形态：v9.7.0 / v9.7.0-beta.1 / v0.0.0-20200520072559-a9ecdc9d1d3a / v2.0.0+incompatible
     npm 侧形态：3.5.13 / 6.4.6-beta.1
     Maven 侧形态（D23③ 第二段）：1.78.1 / 4.1.101.Final / 5.2.0.RELEASE / 5.0.0.RC2 / 5.0.0.M1 /
-      5.3.39.SEC03。规则（对齐 Maven ComparableVersion 的**保守近似**，只许误红不许漏报）：
+      5.3.39.SEC03 / 2.5.7.SR5。规则（对齐 Maven ComparableVersion 的**保守近似**）：
       - 尾缀 `.RELEASE` / `.Final` / `.GA`（大小写不敏感）= 发布版本身 → 剥掉后按数字比；
-      - 尾缀 `.SEC<n>` / `.SP<n>` = 发布版**之后**的安全/补丁修订 → 剥掉后 patch 号 +n
-        （近似排序：5.3.39 < 5.3.39.SEC01 < 5.3.39.SEC03 ⇒ 5.3.39/5.3.40/5.3.42；
-        只会把边界"收紧"——区间含糊时多报，不漏报）；
-      - 其余点号尾缀（`.RC2` / `.M1` / `.Alpha1` …）按**预发布**处理（< 同数字发布版，与 Maven 一致）；
-      - **四段数字版本**（Maven 微版本：2.13.4.2 / 2.12.6.1）按 (major,minor,patch,micro) 比；
+      - 尾缀 `.SEC<n>` / `.SP<n>` / `.SR<n>` = 发布版**之后**的安全/补丁修订（Spring 的 SR=Service
+        Release）→ 剥掉后**末段（micro）+n**（5.3.39.SEC03 ⇒ 5.3.39.3；2.5.7.SR5 ⇒ 2.5.7.5；
+        SR0<SR5<SR023 ⇒ .0 < .5 < .23，与 Maven 序一致）；
+      - 其余点号尾缀（`.RC2` / `.M1` / `.Alpha1` …）与连字符尾缀（`-jre` / `-beta.1`）按**预发布**
+        处理（< 同数字发布版）；预发布序号**数值感知**比较（RC10 > RC2，不按字典序）——残余边界：
+        "未知尾缀 vs 纯发布版"的相对序是近似（OSV 同公告的区间与坐标形态同源，实际影响限于跨形态混用）；
+      - 四段数字版本（Maven 微版本：2.13.4.2 / 2.12.6.1）按 (major,minor,patch,micro) 比；
         数字段 5 段以上（剥尾缀后）→ None（fail-closed）。
     """
     if text is None:
@@ -97,12 +99,12 @@ def vparse(text):
         if m and len(parts) >= 2:
             parts = parts[:-1]          # 发布等价尾缀：剥掉按发布版比
         else:
-            m2 = re.match(r"^(SEC|SP)(\d+)$", last, re.IGNORECASE)
+            m2 = re.match(r"^(SEC|SP|SR)(\d+)$", last, re.IGNORECASE)
             if m2 and len(parts) >= 2:
-                bump = int(m2.group(2))  # 发布后补丁：剥掉 + 末段 +n（保守近似）
+                bump = int(m2.group(2))  # 发布后补丁：剥掉 + 末段（micro）+n（保守近似）
                 parts = parts[:-1]
             else:
-                pre = ("%s%s" % (last, ("-" + pre if pre else ""))).lower()  # RC/M/Alpha… = 预发布
+                pre = ("%s%s" % (last, ("-" + pre if pre else ""))).lower()  # RC/M/Alpha/jre… = 预发布
                 parts = parts[:-1]
     if not 1 <= len(parts) <= 4:
         return None
@@ -120,6 +122,17 @@ def vparse(text):
     return (tuple(nums), pre)
 
 
+def _pre_key(pre):
+    """预发布序号的**数值感知**键：'rc2' → ('rc', 2)，'rc10' → ('rc', 10)，'beta.1' → ('beta', 1)。
+
+    纯字典序会把 RC10 排在 RC2 前面（漏报方向）；数字段必须按数值比。
+    """
+    out = []
+    for tok in re.findall(r"\d+|\D+", pre):
+        out.append(int(tok) if tok.isdigit() else tok)
+    return tuple(out)
+
+
 def vcmp(a, b):
     na, pa = a
     nb, pb = b
@@ -131,7 +144,28 @@ def vcmp(a, b):
         return 1                        # 正式版 > 预发布版
     if not pb:
         return -1
-    return -1 if pa < pb else 1
+    try:
+        ka, kb = _pre_key(pa), _pre_key(pb)
+        # 同位对齐：数字段对数字段、字母段对字母段；先耗尽（更短）= 更小（'beta' < 'beta.1'）
+        n = max(len(ka), len(kb))
+        ka += ("",) * (n - len(ka))
+        kb += ("",) * (n - len(kb))
+        for x, y in zip(ka, kb):
+            if x == y:
+                continue
+            if x == "":
+                return -1
+            if y == "":
+                return 1
+            x_num, y_num = isinstance(x, int), isinstance(y, int)
+            if x_num and y_num:
+                return -1 if x < y else 1
+            sx, sy = str(x), str(y)
+            if sx != sy:
+                return -1 if sx < sy else 1
+        return 0
+    except TypeError:
+        return -1 if pa < pb else 1
 
 
 def parse_expr(expr):
@@ -947,6 +981,24 @@ def self_test(out=sys.stdout):
         return run(tmp, _snapshot(tmp, gen, SNAP_BASE), allow)
     check("maven/无 BOM 时 Maven 白名单不判不再命中", 0, c34,
           want_text=["[UNCOVERED] sdk/java", "[OK]"], forbid_text=["不再命中"])
+
+    # ㉟ Maven 发布后补丁 .SR<n>（Spring Service Release）：2.5.7.SR5 ∈ [SR0, SR023) → 红（Owl 评审点名的漏报路径）
+    def c35(tmp):
+        _fixture(tmp, [("golang.org/x/text", "v0.41.0")])
+        bom = _bom(tmp, OWN + [("org.springframework", "spring-core", "2.5.7.SR5")])
+        row = ("GHSA-wv88-pf73-x22p\tMaven\torg.springframework:spring-core\t>=2.5.7.SR0,<2.5.7.SR023\tHIGH\t-\tSR range\n")
+        return run(tmp, _snapshot(tmp, gen, SNAP_BASE + row, java_bom=bom), _allow(tmp), java_bom=bom)
+    check("maven/SR 发布后补丁区间命中 → 红", 1, c35,
+          want_text=["[FAIL] bom.json:3 org.springframework:spring-core@2.5.7.SR5", "GHSA-wv88-pf73-x22p"])
+
+    # ㊱ 预发布序号数值感知（RC10 > RC2，不按字典序）：RC5 ∈ [RC2, RC10) → 红
+    def c36(tmp):
+        _fixture(tmp, [("golang.org/x/text", "v0.41.0")])
+        bom = _bom(tmp, OWN + [("com.example", "probe", "5.0.0.RC5")])
+        row = "GHSA-rc-order\tMaven\tcom.example:probe\t>=5.0.0.RC2,<5.0.0.RC10\tHIGH\t-\trc ordering\n"
+        return run(tmp, _snapshot(tmp, gen, SNAP_BASE + row, java_bom=bom), _allow(tmp), java_bom=bom)
+    check("maven/预发布序号数值感知（RC5 ∈ [RC2,RC10)）→ 红", 1, c36,
+          want_text=["[FAIL] bom.json:3 com.example:probe@5.0.0.RC5", "GHSA-rc-order"])
 
     bad = [r for r in results if not r[0]]
     for ok, name, rc, want, buf, want_text, forbid in results:

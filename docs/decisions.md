@@ -610,6 +610,7 @@
   - **第一段（立即可做，不需追认）**：`scripts/check-vuln.sh` 必须在输出里**显式打一行** `[UNCOVERED] sdk/java：pom 解析需外网（实测 429），本闸不覆盖——见 decisions.md D23③`，并把这行计入 job 日志（**不是注释、不是 echo 到 /dev/null**）；`docs/qa/vuln-scan.md` 同步写清 **`AC-ENG-07` 的 PASS 口径 = `go.mod` + `web/package-lock.json` 两个生态 + `sdk/java` 未覆盖（显式标注）**，账目里不得写成"全量覆盖"。
   - **第二段（一个迭代内，2026-12-10 前）**：改**离线 SBOM**（**手段已被 D28③ 修订**：`trivy sbom` 需 `ghcr.io` 的库，零网络下跑不起来 → 改为「Nova 产 CycloneDX `bom.json` → 同一判定引擎消费」；**期限与逾期降级不变**），链路是「**Nova 产 → Gate 判**」：`sdk` job 里用 `cyclonedx-maven-plugin`（`mvn -o` 或复用当次已热的 `~/.m2`）生成 `bom.json` 并作为 **artifact 上传**；`vuln` job 下载 artifact 后由**同一判定引擎**消费（`vuln-gate.py` 读 CycloneDX `bom.json` 按坐标逐条判；
   **不再用 `trivy sbom`**，理由见 D28③——trivy 要 `ghcr.io` 的库）。**保鲜** = SBOM **每次构建重生成**（与依赖同源，不用人维护），`vuln` job **只消费当次 artifact、不解析 pom、不打外网** → 天然免疫 429。**判红** = ①有未白名单的 HIGH/CRITICAL；②**artifact 缺失或早于本次 commit**（= 未验证 = 红）；③白名单条目过期/不再命中（沿用现有规则）。
+  - **状态更新（2026-11-13，第二段已落地，PR #136）**：链路已上线——`sdk` job（仅 JDK8 腿）生成 CycloneDX 1.5 聚合 BOM 并上传 artifact（含 `bom-commit.txt` commit 锚），`vuln` job `needs: sdk` 下载后由同一引擎 `--java-bom` 三生态齐判（CI 实证 run 43355241554：`[OK] 扫描 176 坐标（Go 18 / npm 107 / Maven 51）`）。**`[UNCOVERED]` 的语义反转**：第一段的"必须显式打印"仍成立，但触发条件收窄为"未传 `--java-bom`"（本地 `make gates` 口径）；**CI 里出现 `[UNCOVERED] sdk/java` 即红**。覆盖边界：只含 BOM 的 compile/runtime 组件（`includeTestScope` 默认 false，test 依赖不入闸），详见 `docs/qa/vuln-scan.md` §5。
   - **逾期后果（写死，防拖）**：2026-12-10 未上线 SBOM，则 `AC-ENG-07` 的账目**必须降级为"Java 侧未覆盖"并如实写**，不能继续记完整 PASS。
 - **属基线变更吗**：**不算**（CI 门禁实现范围，不涉对外契约/表结构/表名/端点）→ 不进 CH；但 **`AC-ENG-07` 的 PASS 口径** 由本条钉住，Gate 记账照此。
 
@@ -719,6 +720,7 @@
 - **② `AC-ENG-07` 的 PASS 口径（钉住，Gate 照此记账）**：`go.mod` + `web/package-lock.json` **两个生态**
   无未白名单的阻断级漏洞，**且** `sdk/java` 的未覆盖被**显式打印**（`[UNCOVERED]`，D23③ 第一段）。
   账目里**不得**写成"全量覆盖"。
+  **状态更新（2026-11-13，被 D23③② 落地取代，PR #136）**：PASS 口径升为**三生态**（`go.mod` + `web/package-lock.json` + `sdk/java` 的 CycloneDX BOM artifact）无未白名单的阻断级漏洞，**且** SBOM artifact 存在、锚定本次 run（`bom-commit.txt == GITHUB_SHA`）；CI 出现 `[UNCOVERED] sdk/java` 即红。本地（`make gates`，无 BOM）仍是两生态 + 显式 `[UNCOVERED]`（此时 33 条 Maven 白名单条目不参与判定），不得记成"全量覆盖"。
 - **③ D23③ 第二段的手段随之收窄**：原文写的是「`trivy sbom --severity HIGH,CRITICAL --exit-code 1`」，
   而 trivy 自己要 `ghcr.io` 的库、零网络下同样跑不起来 → 改为「**Nova 产 CycloneDX `bom.json` → 同一判定引擎消费**」。
   **期限与逾期后果不变**（2026-12-10 前未上线则账目降级为"Java 侧未覆盖"）。

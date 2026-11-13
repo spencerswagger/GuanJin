@@ -93,7 +93,7 @@ python3 scripts/vuln-snapshot-refresh.py --osv http://<内网镜像>   # 内网�
 |---|---|
 | `go.mod`（含 indirect） | **覆盖**（18 个坐标） |
 | `web/package-lock.json` | **覆盖**（107 个包，逐包 `文件:行号`） |
-| `sdk/java` | **覆盖**（D23③②，2026-11-13 起）：CI `vuln` job 消费 `sdk` job 产出的 **CycloneDX 1.5 聚合 BOM** artifact（`--java-bom`），51 个第三方组件（`com.guanjin:*` 自有模块排除，两端规则逐字一致）；**不解析 pom**（要外网、实测 429），BOM 每次构建重生成、artifact 锚定本次 commit（`bom-commit.txt` 逐字节核对，缺失或不符 = 红）。本地**不传** `--java-bom` 时该生态不进判定，但**显式打** `[UNCOVERED] sdk/java：未提供 --java-bom …`（不许静默跳过）；`make gates` 的本地口径即此 |
+| `sdk/java` | **覆盖**（D23③②，2026-11-13 起）：CI `vuln` job 消费 `sdk` job 产出的 **CycloneDX 1.5 聚合 BOM** artifact（`--java-bom`），51 个第三方组件（`com.guanjin:*` 自有模块排除，两端规则逐字一致）；**不解析 pom**（要外网、实测 429），BOM 每次构建重生成、artifact 锚定本次 run（`bom-commit.txt` 逐字节核对，缺失或不符 = 红）。**覆盖边界：只含 compile/runtime 作用域组件**——cyclonedx 插件 `includeTestScope` 默认 false（pom 未打开），test 依赖（junit-jupiter、spring-boot-starter-test 及其传递链）**不入闸**（它们不进发布物；要覆盖 test 面属新判据，须另行立项）。本地**不传** `--java-bom` 时该生态不进判定，但**显式打** `[UNCOVERED] sdk/java：未提供 --java-bom …`（不许静默跳过）；`make gates` 的本地口径即此，且此时 **33 条 Maven 白名单条目完全不参与判定（汇总行 `白名单 0`）** | |
 | `go.mod` 里的**本地路径** `replace` | **不覆盖**，每次运行显式打 `[UNCOVERED] go.mod:<行号> …` |
 | **Go 标准库** | **不覆盖**（快照只收 `go.mod` 的第三方坐标、引擎不读 `go` 指令；`grep -c stdlib docs/qa/vuln-advisories.tsv` = 0）→ D23① 的 10 条 stdlib 公告（修复只在 go1.26.x）在本闸**不产生输出**，**"阻断 0" ≠ "Go 面全绿"**；收口见 `decisions.md` **D28⑤**（升 Go 1.26 或快照加 `stdlib` 行，同一期限 2026-12-10） |
 
@@ -103,15 +103,21 @@ python3 scripts/vuln-snapshot-refresh.py --osv http://<内网镜像>   # 内网�
 不得记成"全量覆盖"；CI 日志里的 `[OK] …（Go X / npm Y / Maven Z）` 行才是全量证据。
 
 **Maven 版本语义（引擎里写死，保守近似——只许误红不许漏报）**：`.RELEASE`/`.Final`/`.GA` 尾缀=发布版本身（剥掉比）；
-`.SEC<n>`/`.SP<n>`=发布后补丁（剥掉后末段 +n，如 5.3.39.SEC03 ⇒ 5.3.42）；`.RC2`/`.M1`/`.Alpha1` 等=预发布；
-四段数字（2.13.4.2）按 (maj,min,patch,micro) 比；五段以上不可解析 → 红（fail-closed）。
+`.SEC<n>`/`.SP<n>`/`.SR<n>`=发布后补丁（剥掉后**末段 micro +n**，如 5.3.39.SEC03 ⇒ 5.3.39.3、2.5.7.SR5 ⇒ 2.5.7.5，
+SR0<SR5<SR023 序与 Maven 一致）；`.RC<n>`/`.M<n>`/`.Alpha…`/`-jre` 等=预发布（< 同数字发布版），
+预发布**序号数值感知**比较（RC10 > RC2，不按字典序）；四段数字（2.13.4.2）按 (maj,min,patch,micro) 比；
+五段以上不可解析 → 红（fail-closed）。**残余边界（已钉）**："未知尾缀 vs 纯发布版"的相对序是近似；
+OSV 同公告的区间与坐标形态同源，实际影响限于跨形态混用——refresh 端解析不了的形态直接丢弃并 exit 1（人工复核），不会静默落库。
 快照头除全集 `coords_sha256` 外另有 `coords_sha256_go/npm/maven` 分生态指纹：本地子集运行（无 BOM）按生态核对，
 CI 全生态运行查全集指纹（口径没有变松）。
 
 **Maven 白名单现状（33 条，到期 2026-12-13，30 天）**：`sdk/java` 首次入闸一次性暴露的真实命中
 （bcprov 1.78.1、netty 4.1.101.Final、jackson 2.13.5、spring 5.3.31/2.7.18 系、snakeyaml 1.30、logback 1.2.12、commons-io 2.11.0），
-其中 **CRITICAL 4 条**（bcprov ×2 / spring-web / spring-webmvc）。这些是**权宜账**：修复 = 升级依赖，**归 Nova 排期**
-（Spring Boot 2.7 线整体升级属 SDK 契约面，不是本闸能单方面动的）；白名单到期即重判红，"不再命中必须删行"的收紧规则不变。
+**CRITICAL 5 条**（bcprov ×2：GHSA-9pwp-9qqc-pr26/GHSA-574f-3g2m-x479；spring-web GHSA-4wrc-f8pq-fpqp；
+spring-webmvc GHSA-pc63-qcmh-9cmg；netty-handler GHSA-c4c3-7fpv-j4q5）。这些是**权宜账**，理由按族区分：
+**同线小跳、可立刻修**（bcprov→1.80.2+、logback→1.2.13+、commons-io→2.14+、jackson→2.18.11+、netty→4.1.137+，归 Nova 出一行升级 PR）；
+**跨线升级、需契约同步**（spring 5.3.x/Boot 2.7 线、snakeyaml 1.x→2.x，归 Nova+Spec）。
+到期即重判红；升级落地后"不再命中必须删行"的收紧规则不变。
 
 ## 6. 与「国密/算法扫描门禁」的边界（不重叠）
 
@@ -129,20 +135,20 @@ CI 全生态运行查全集指纹（口径没有变松）。
 ```bash
 ./scripts/check-vuln.sh              # 判本仓（Go + npm；sdk/java 显式 [UNCOVERED]；零网络）
 ./scripts/check-vuln.sh --java-bom sdk/java/target/bom.json   # 三生态口径（与 CI vuln job 同一条命令）
-./scripts/check-vuln.sh --self-test  # 正控/负控 35 项（临时夹具注入，不动工作树、不联网）
+./scripts/check-vuln.sh --self-test  # 正控/负控 37 项（临时夹具注入，不动工作树、不联网）
 make gates                           # 上面已并入工程红线门禁（本地口径）
 ```
 
-自检 35 项覆盖：Go HIGH 判红并点位、修复版判绿（版本敏感）、Go 无 CVSS 也阻断、npm HIGH 判红并点位、
+自检 37 项覆盖：Go HIGH 判红并点位、修复版判绿（版本敏感）、Go 无 CVSS 也阻断、npm HIGH 判红并点位、
 npm MODERATE 只提示、npm 缺级别（`MAL-*`）阻断、白名单"未过期绿 / 过期红 / 不再命中红 / 到期日过远红 / 格式坏行红"、
 快照"0 行红 / 缺生态红 / 过期红 / 未来日期红 / 坏行红 / 缺失红"、坐标指纹"不符红 / 缺失红"、
 依赖坐标 0（Go / npm）红、依赖版本不可解析红、本地路径 replace 打 `[UNCOVERED]`。
 自检还覆盖「缺 `# dropped:` 头 → 红」（与 `coords_sha256` 对称）。
-**Maven/BOM 11 项**（D23③②）：HIGH 命中红并点名 `bom.json:<组件序号>`、修复版绿（版本敏感）、
+**Maven/BOM 13 项**（D23③②）：HIGH 命中红并点名 `bom.json:<组件序号>`、修复版绿（版本敏感）、
 无 BOM → 显式 `[UNCOVERED] sdk/java`、BOM 文件缺失红、BOM 坏 JSON 红、BOM 0 组件红、
 全是自有模块红（0 第三方坐标）、MODERATE 只提示、缺级别（`MAL-*`）红、四段微版本区间命中红、
-无 BOM 时 Maven 白名单条目不误判"不再命中"。
-CI 侧断言"逐项 `[OK]` 行数 **恰为 35**"（删用例让自己变绿会被抓；加用例要同步改这个数字）。
+无 BOM 时 Maven 白名单条目不误判"不再命中"、SR 发布后补丁区间命中红、预发布序号数值感知（RC10>RC2）命中红。
+CI 侧断言"逐项 `[OK]` 行数 **恰为 37**"（删用例让自己变绿会被抓；加用例要同步改这个数字）。
 
 **快照防篡改的边界（写清，别误会）**：引擎只判**结构性缺失**（0 行 / 缺生态 / 指纹不符 / 缺头部字段）。
 "快照里被删掉一行公告"引擎看不出来——**内容的增减只由 PR diff 保证**（这也是把数据入库、让评审能逐行看的原因）。

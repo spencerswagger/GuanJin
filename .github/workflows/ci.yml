@@ -301,22 +301,33 @@ jobs:
     #   - 本 job **不装任何工具、不访问外网**（python3 是 runner 镜像自带；artifact 拉取是 Actions 内部通道）
     # 刻意**不用** actions/setup-go：本 job 不需要 Go 工具链，也就不需要下载工具链。
     needs: sdk
+    # **不许被 sdk 连坐成 skipped**：skipped 不是绿。`if: always()` 让本 job 在 sdk 红/取消时
+    # 仍然执行，由第一步把 `needs.sdk.result != success` 判红（否则"唯一能证明 SBOM 被消费
+    # 的 job"会直接消失，Owl 评审 #136 P1-3）。
+    if: always()
     runs-on: ubuntu-latest
     steps:
+      - name: 前置断言：sdk job 必须 success（SBOM 只在 sdk 成功时产出）
+        if: always()
+        run: |
+          echo "sdk job result: ${{ needs.sdk.result }}"
+          [ "${{ needs.sdk.result }}" = "success" ] \
+            || { echo "[FAIL] sdk job 未 success（${{ needs.sdk.result }}）→ SBOM 无从产出 = 未验证 = 红"; exit 1; }
       - uses: actions/checkout@v4
       - name: 下载 sdk job 的 SBOM artifact（本次 run 内产出；找不到 = sdk job 没传 = 红）
         uses: actions/download-artifact@v4
         with:
           name: sdk-java-bom
           path: sbom-artifact
-      - name: artifact 锚定本次 commit（D23③②：早于本次 commit 的 SBOM = 未验证 = 红）
+      - name: artifact 锚定本次 run（D23③②：SBOM 不是本 run 产出 = 未验证 = 红）
+        # GITHUB_SHA 在 pull_request 事件下是 PR 的临时 merge sha（run 内一致即可，锚的是"本次 run"）。
         run: |
           set -euo pipefail
           bom=sbom-artifact/bom.json
           [ -f "$bom" ] || { echo "[FAIL] SBOM artifact 缺失（sdk job 未产出/未上传）= 未验证 = 红"; exit 1; }
           anchored="$(cat sbom-artifact/bom-commit.txt)"
           echo "bom_commit=$anchored this_commit=$GITHUB_SHA"
-          [ "$anchored" = "$GITHUB_SHA" ] || { echo "[FAIL] SBOM 不是本次 commit 产出（$anchored ≠ $GITHUB_SHA）= 未验证 = 红"; exit 1; }
+          [ "$anchored" = "$GITHUB_SHA" ] || { echo "[FAIL] SBOM 不是本次 run 产出（$anchored ≠ $GITHUB_SHA）= 未验证 = 红"; exit 1; }
       - name: python3 版本（证据行：引擎只依赖标准库）
         run: python3 -VV
       - name: 依赖漏洞门禁（fail-closed；日志即合入证据；三生态 Go+npm+Maven）
@@ -327,20 +338,20 @@ jobs:
           ./scripts/check-vuln.sh --java-bom sbom-artifact/bom.json | tee vuln-gate.log
           grep -qE '^\[OK\] 依赖漏洞门禁通过：扫描 [0-9]+ 个依赖坐标（Go [1-9][0-9]* / npm [1-9][0-9]* / Maven [1-9][0-9]*）' vuln-gate.log \
             || { echo "[FAIL] 三个生态必须都扫到坐标，否则该生态等于没扫 = 红"; cat vuln-gate.log; exit 1; }
-          if grep -q '^\[UNCOVERED\]' vuln-gate.log; then
-            echo "[FAIL] 出现 [UNCOVERED] 行 → 有生态未纳入判定（D23③②：sdk/java 必须经 SBOM 覆盖）= 红"
+          if grep -q '^\[UNCOVERED\] sdk/java' vuln-gate.log; then
+            echo "[FAIL] 出现 [UNCOVERED] sdk/java 行 → Maven 生态未纳入判定（D23③②：sdk/java 必须经 SBOM 覆盖）= 红"
             grep '^\[UNCOVERED\]' vuln-gate.log; exit 1
           fi
       - name: 正控/负控（临时夹具注入已知漏洞依赖 → 必须判红并点名 文件:行号）
-        # 脚本存在 ≠ 门禁存在：35 项自检覆盖"判红/点位/版本敏感/白名单五态/快照七态/坐标漂移/解析失败"，
-        # 以及 Maven/BOM 七态（命中红/修复版绿/无 BOM 显式 UNCOVERED/缺失红/坏 JSON 红/0 组件红/白名单作用域）。
+        # 脚本存在 ≠ 门禁存在：37 项自检覆盖"判红/点位/版本敏感/白名单五态/快照七态/坐标漂移/解析失败"，
+        # 以及 Maven/BOM 十三态（命中红/修复版绿/无 BOM 显式 UNCOVERED/缺失红/坏 JSON 红/0 组件红/白名单作用域）。
         run: |
           set -euo pipefail
           ./scripts/check-vuln.sh --self-test | tee vuln-selftest.log
-          # 自洽校验：逐项 OK 行数必须等于汇总行声明的项数，且**恰为 35 项**（防"把用例删掉让自己变绿"；
+          # 自洽校验：逐项 OK 行数必须等于汇总行声明的项数，且**恰为 37 项**（防"把用例删掉让自己变绿"；
           # 上限取下界：加用例要同步改这个数字，比"能静默删掉三项"划算）。
           ok_n=$(grep -c '^  \[OK\] self-test/' vuln-selftest.log || true)
-          [ "$ok_n" -eq 35 ] || { echo "[FAIL] 自检跑了 $ok_n 项，应为 35 项：用例被删或加用例没同步改了红线 = 红"; exit 1; }
+          [ "$ok_n" -eq 37 ] || { echo "[FAIL] 自检跑了 $ok_n 项，应为 37 项：用例被删或加用例没同步改了红线 = 红"; exit 1; }
           grep -qE "^\[OK\] 漏洞门禁自检 ${ok_n} 项全过" vuln-selftest.log \
             || { echo "[FAIL] 汇总行声明的项数（${ok_n} 项的 OK 行）对不上 = 红"; exit 1; }
 

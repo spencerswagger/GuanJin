@@ -19,7 +19,7 @@
 #
 # 用法：
 #   ./scripts/check-vuln.sh              # 判本仓（CI / make gates 用法）
-#   ./scripts/check-vuln.sh --self-test  # 正控/负控 35 项（离线，临时目录注入，不动工作树）
+#   ./scripts/check-vuln.sh --self-test  # 正控/负控 37 项（离线，临时目录注入，不动工作树）
 #   ./scripts/check-vuln.sh --help       # 其余参数（--root / --snapshot / --max-age-days）透传给引擎
 set -euo pipefail
 
