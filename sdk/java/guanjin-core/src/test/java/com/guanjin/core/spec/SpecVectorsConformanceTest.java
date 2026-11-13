@@ -38,7 +38,6 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -104,6 +103,7 @@ class SpecVectorsConformanceTest {
             String decision = "allow";
             int status = 0;
             String code = "";
+            String reason = "";
             Assertion parsed = null;
             try {
                 parsed = new Sm2AssertionVerifier(jwks).verify(v.get("token").asText());
@@ -112,6 +112,7 @@ class SpecVectorsConformanceTest {
                 decision = "reject";
                 status = e.getStatus();
                 code = e.getCode();
+                reason = e.getMessage() == null ? "" : e.getMessage();
             }
 
             if (v.path("replay_times").asInt(0) > 1) {
@@ -131,6 +132,13 @@ class SpecVectorsConformanceTest {
             }
 
             JsonNode expect = v.get("expect");
+            if (expect.has("reason_contains")) {
+                // D29 判别性断言：拒的理由必须是 alg（不是「找不到键」）。摘掉 alg 闸 → AV-14 会被接受/理由不含 alg。
+                String want = expect.get("reason_contains").asText();
+                assertEquals("reject", decision, v.get("vector_id").asText() + " 必须拒绝");
+                assertTrue(reason.toLowerCase(java.util.Locale.ROOT).contains(want.toLowerCase(java.util.Locale.ROOT)),
+                        v.get("vector_id").asText() + " 拒绝理由不含 " + want + "：" + reason);
+            }
             assertEquals(expect.get("decision").asText(), decision, v.get("vector_id").asText() + " decision");
             assertEquals(expect.get("status").asInt(0), status, v.get("vector_id").asText() + " status");
             assertEquals(expect.get("code").asText(""), code, v.get("vector_id").asText() + " code");
@@ -251,6 +259,12 @@ class SpecVectorsConformanceTest {
                 in.put(e.getKey(), e.getValue().asText());
             }
             GuanjinConfig cfg = GuanjinConfigLoader.fromMap(in);
+            assertEquals(29, c.get("expect").size(),
+                    c.get("vector_id").asText() + " expect 只有 " + c.get("expect").size() + " 个键（契约 29 项）");
+            for (JsonNode k : keys) {
+                assertTrue(c.get("expect").has(k.get("key").asText()),
+                        c.get("vector_id").asText() + " expect 缺键 " + k.get("key").asText());
+            }
             Map<String, Object> got = canonical(cfg);
             java.util.Iterator<Map.Entry<String, JsonNode>> ex = c.get("expect").fields();
             while (ex.hasNext()) {
@@ -330,6 +344,5 @@ class SpecVectorsConformanceTest {
         for (String f : new String[]{"agent-hmac.json", "assertion-verify.json", "authz-decisions.json", "config-mapping.json"}) {
             assertNotNull(vector(f), "缺 " + f);
         }
-        assertNull(null);
     }
 }

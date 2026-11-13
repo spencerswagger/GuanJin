@@ -33,10 +33,11 @@ func TestSpecVectorsAssertionVerify(t *testing.T) {
 			JwksMode string `json:"jwks_mode"`
 			Replay   int    `json:"replay_times"`
 			Expect   struct {
-				Decision string `json:"decision"`
-				Status   int    `json:"status"`
-				Code     string `json:"code"`
-				Stage    string `json:"stage"`
+				Decision       string `json:"decision"`
+				Status         int    `json:"status"`
+				Code           string `json:"code"`
+				Stage          string `json:"stage"`
+				ReasonContains string `json:"reason_contains"`
 			} `json:"expect"`
 		} `json:"vectors"`
 	}
@@ -120,10 +121,15 @@ func TestSpecVectorsAssertionVerify(t *testing.T) {
 				v.VectorID, v.Case, v.Expect.Stage, dec, status, code, v.Expect.Decision, v.Expect.Status, v.Expect.Code, err)
 		}
 
-		// 关键负例（D29）单独再断言一次：alg 非 SM2 必须在取公钥之前就被拒（不是"找不到键"的 401）。
-		if v.Case == "alg_not_sm2_oidc_track" || v.Case == "alg_hs256_downgrade" {
+		// D29 判别性断言：拒的理由必须是 **alg**（不是"找不到键"/"签名长度不对"）。
+		// 摘掉 assertion.go 里的 alg 闸 → AV-14（网关 kid + SM3withSM2 + 网关私钥真签）会被接受，本条立红。
+		if v.Expect.ReasonContains != "" {
 			if err == nil {
-				t.Fatalf("%s: alg 降级竟然通过验签", v.VectorID)
+				t.Fatalf("%s(%s): 期望拒绝（理由含 %q），实际通过", v.VectorID, v.Case, v.Expect.ReasonContains)
+			}
+			if msg := err.Error(); !strings.Contains(strings.ToLower(msg), strings.ToLower(v.Expect.ReasonContains)) {
+				t.Fatalf("%s(%s): 拒绝理由不含 %q —— 这就不是「拒 alg」而是别的路径：%v",
+					v.VectorID, v.Case, v.Expect.ReasonContains, msg)
 			}
 			var e *Error
 			if !errors.As(err, &e) || e.Code != CodeTokenInvalid {
@@ -193,6 +199,16 @@ func TestSpecVectorsConfigMapping(t *testing.T) {
 	pinned := map[string]string{}
 	for _, d := range doc.Divergences.Defects {
 		pinned[d.Key] = d.Go
+		covered := false
+		for _, c := range doc.Cases {
+			if _, ok := c.Expect[d.Key]; ok {
+				covered = true
+				break
+			}
+		}
+		if !covered {
+			t.Errorf("known_divergences 里的键 %q 不在任何 case 的 expect 里 → 钉桩静默失效", d.Key)
+		}
 		if d.Contract == d.Go {
 			t.Errorf("known_divergences 记的缺陷 %q 两侧已一致，请从表里删掉（表不能腐化）", d.Key)
 		}
@@ -203,6 +219,14 @@ func TestSpecVectorsConfigMapping(t *testing.T) {
 		if err != nil {
 			t.Errorf("%s(%s): LoadFromMap 失败: %v", c.VectorID, c.Case, err)
 			continue
+		}
+		if len(c.Expect) != len(doc.Keys) {
+			t.Errorf("%s(%s): expect 只有 %d 个键，契约是 29 项（少写一个键 = 那一项没人验）", c.VectorID, c.Case, len(c.Expect))
+		}
+		for _, k := range doc.Keys {
+			if _, ok := c.Expect[k.Key]; !ok {
+				t.Errorf("%s(%s): expect 缺键 %q", c.VectorID, c.Case, k.Key)
+			}
 		}
 		got := configCanonical(cfg)
 		for k, want := range c.Expect {

@@ -9,8 +9,8 @@
         "kid": "gw-2026-11",
         "kty": "EC",
         "use": "sig",
-        "x": "sFwRqS5jfUm-hggxm1aIv4OQe74OEtF55cQI0Odq2Ew",
-        "y": "wxzLEIe-CfVKmKFVLia4heUVJ5Wq3h4bWYuBs3VnxrI"
+        "x": "SM7VGCXYvhWg4rfLVfozHYs5I2AQXGPldzwCgo3eaOw",
+        "y": "pFvSkpXlz3O_iyZwetu-FyTN9zKvNLfPre8rQDoVq04"
       },
       {
         "alg": "SM3withSM2",
@@ -18,12 +18,12 @@
         "kid": "oidc-2026-11",
         "kty": "EC",
         "use": "sig",
-        "x": "-BAe_bwSQdKSW5bl7LKnWGDQs_zb9TvhCTJUSQ_000k",
-        "y": "bbP8HDtMCeK9Yx8hsTXKDQkkRt-g3GTLsa0OE7IlxBo"
+        "x": "txmAT_0rz_G2vtcNm7Hm6THeXxd2-hbJc6-3JI_pqOQ",
+        "y": "pA-dqX0-VqBPWERuFoAlIimgF65m_z9WOIMewfimaKo"
       }
     ]
   },
-  "jwks_note": "JWKS 同时含 gateway（alg=SM2）与 oidc（alg=SM3withSM2）两把键——AV-12 用后者真签，证明拒绝依据是 alg 而非缺键",
+  "jwks_note": "JWKS 同时含 gateway（alg=SM2）与 oidc（alg=SM3withSM2）两把键；判别「拒的是 alg」靠 AV-14（网关 kid + alg=SM3withSM2 + 网关私钥真签），AV-12 只是 oidc 轨的补充面",
   "oidc_track_note": "对外令牌（id_token/access_token）仍用 SM3withSM2 由平台签发/校验（signing 包），**不属本向量面**；本文件只覆盖网关内部断言，故不存在『oidc 令牌通过』向量",
   "reference_now": "2026-01-01T00:00:00Z",
   "reference_now_unix": 1767225600,
@@ -32,7 +32,7 @@
     {
       "vector_id": "AV-01",
       "case": "valid",
-      "token": "eyJhbGciOiJTTTIiLCJraWQiOiJndy0yMDI2LTExIiwidHlwIjoiSldUIn0.eyJhY3IiOiJBQUwyIiwiYW1yIjpbInB3ZCJdLCJhdWQiOiJvcmRlcnMiLCJjaWQiOiJvcmRlcnMiLCJleHAiOjE3NjcyMjU2NTAsImlhdCI6MTc2NzIyNTU5MCwiaXNzIjoiZ3Vhbmppbi1nYXRld2F5IiwianRpIjoiMTExMTExMTEtMjIyMi00MzMzLTg0NDQtNTU1NTU1NTU1NTU1Iiwicm9sZXMiOlsidXNlciJdLCJzdWIiOiJ1c2VyLTEiLCJ1bmFtZSI6ImFsaWNlIn0.sH0aVkEmJDWkihNwHRsT6fILkiKEloMxwG-qrbWimkYItYoLI-M1tYkG8xYdSsnIlPgTSjgIzl5v5r8boxMS2w",
+      "token": "eyJhbGciOiJTTTIiLCJraWQiOiJndy0yMDI2LTExIiwidHlwIjoiSldUIn0.eyJhY3IiOiJBQUwyIiwiYW1yIjpbInB3ZCJdLCJhdWQiOiJvcmRlcnMiLCJjaWQiOiJvcmRlcnMiLCJleHAiOjE3NjcyMjU2NTAsImlhdCI6MTc2NzIyNTU5MCwiaXNzIjoiZ3Vhbmppbi1nYXRld2F5IiwianRpIjoiMTExMTExMTEtMjIyMi00MzMzLTg0NDQtNTU1NTU1NTU1NTU1Iiwicm9sZXMiOlsidXNlciJdLCJzdWIiOiJ1c2VyLTEiLCJ1bmFtZSI6ImFsaWNlIn0.rk-HltTvZSgBBx9c4GZIyOHOJGZ5-m8_ByAqdGDcdlDhiynYc5CriFAzI4INt_sodRiLKrom_wJ5gqS6893GZg",
       "jwks_mode": "available",
       "expect": {
         "code": "",
@@ -45,7 +45,7 @@
     {
       "vector_id": "AV-02",
       "case": "tampered_payload",
-      "token": "eyJhbGciOiJTTTIiLCJraWQiOiJndy0yMDI2LTExIiwidHlwIjoiSldUIn0.eyJhY3IiOiJBQUwyIiwiYW1yIjpbInB3ZCJdLCJhdWQiOiJvcmRlcnMiLCJjaWQiOiJvcmRlcnMiLCJleHAiOjE3NjcyMjU2NTAsImlhdCI6MTc2NzIyNTU5MCwiaXNzIjoiZ3Vhbmppbi1nYXRld2F5IiwianRpIjoiMTExMTExMTEtMjIyMi00MzMzLTg0NDQtNTU1NTU1NTU1NTU1Iiwicm9sZXMiOlsidXNlciJdLCJzdWIiOiJhdHRhY2tlciIsInVuYW1lIjoiYWxpY2UifQ.sH0aVkEmJDWkihNwHRsT6fILkiKEloMxwG-qrbWimkYItYoLI-M1tYkG8xYdSsnIlPgTSjgIzl5v5r8boxMS2w",
+      "token": "eyJhbGciOiJTTTIiLCJraWQiOiJndy0yMDI2LTExIiwidHlwIjoiSldUIn0.eyJhY3IiOiJBQUwyIiwiYW1yIjpbInB3ZCJdLCJhdWQiOiJvcmRlcnMiLCJjaWQiOiJvcmRlcnMiLCJleHAiOjE3NjcyMjU2NTAsImlhdCI6MTc2NzIyNTU5MCwiaXNzIjoiZ3Vhbmppbi1nYXRld2F5IiwianRpIjoiMTExMTExMTEtMjIyMi00MzMzLTg0NDQtNTU1NTU1NTU1NTU1Iiwicm9sZXMiOlsidXNlciJdLCJzdWIiOiJhdHRhY2tlciIsInVuYW1lIjoiYWxpY2UifQ.rk-HltTvZSgBBx9c4GZIyOHOJGZ5-m8_ByAqdGDcdlDhiynYc5CriFAzI4INt_sodRiLKrom_wJ5gqS6893GZg",
       "jwks_mode": "available",
       "expect": {
         "code": "TOKEN_INVALID",
@@ -58,7 +58,7 @@
     {
       "vector_id": "AV-03",
       "case": "exp_boundary_inclusive",
-      "token": "eyJhbGciOiJTTTIiLCJraWQiOiJndy0yMDI2LTExIiwidHlwIjoiSldUIn0.eyJhY3IiOiJBQUwyIiwiYW1yIjpbInB3ZCJdLCJhdWQiOiJvcmRlcnMiLCJjaWQiOiJvcmRlcnMiLCJleHAiOjE3NjcyMjU1NDAsImlhdCI6MTc2NzIyNTU5MCwiaXNzIjoiZ3Vhbmppbi1nYXRld2F5IiwianRpIjoiMTExMTExMTEtMjIyMi00MzMzLTg0NDQtNTU1NTU1NTU1NTU1Iiwicm9sZXMiOlsidXNlciJdLCJzdWIiOiJ1c2VyLTEiLCJ1bmFtZSI6ImFsaWNlIn0.lCnhzM6krorHls6aYrZkFZBtPlA0uZ3IRoGM6RScCJvk6eMvDqAwUxWL5Zy_gwcV-yAnXEPZjUCEdjCPwHlQbg",
+      "token": "eyJhbGciOiJTTTIiLCJraWQiOiJndy0yMDI2LTExIiwidHlwIjoiSldUIn0.eyJhY3IiOiJBQUwyIiwiYW1yIjpbInB3ZCJdLCJhdWQiOiJvcmRlcnMiLCJjaWQiOiJvcmRlcnMiLCJleHAiOjE3NjcyMjU1NDAsImlhdCI6MTc2NzIyNTU5MCwiaXNzIjoiZ3Vhbmppbi1nYXRld2F5IiwianRpIjoiMTExMTExMTEtMjIyMi00MzMzLTg0NDQtNTU1NTU1NTU1NTU1Iiwicm9sZXMiOlsidXNlciJdLCJzdWIiOiJ1c2VyLTEiLCJ1bmFtZSI6ImFsaWNlIn0.JEyX0f4qJJRAa8kOa_jatfe75CmyeEqLbKb562EyJH5BRoalIlyBOyQasIaX8U2Dm1CyJg-Upzk_zEGy7VV2cg",
       "jwks_mode": "available",
       "expect": {
         "code": "",
@@ -71,7 +71,7 @@
     {
       "vector_id": "AV-04",
       "case": "exp_boundary_plus_one",
-      "token": "eyJhbGciOiJTTTIiLCJraWQiOiJndy0yMDI2LTExIiwidHlwIjoiSldUIn0.eyJhY3IiOiJBQUwyIiwiYW1yIjpbInB3ZCJdLCJhdWQiOiJvcmRlcnMiLCJjaWQiOiJvcmRlcnMiLCJleHAiOjE3NjcyMjU1MzksImlhdCI6MTc2NzIyNTU5MCwiaXNzIjoiZ3Vhbmppbi1nYXRld2F5IiwianRpIjoiMTExMTExMTEtMjIyMi00MzMzLTg0NDQtNTU1NTU1NTU1NTU1Iiwicm9sZXMiOlsidXNlciJdLCJzdWIiOiJ1c2VyLTEiLCJ1bmFtZSI6ImFsaWNlIn0.WRN3s851kBSg8RlzG9bHd-xI7zBXgggNfWxMU3W2KlmIiS2dPRPMyn1N3ZlVP4lHPclWXVJ_POeWJmZXFc716g",
+      "token": "eyJhbGciOiJTTTIiLCJraWQiOiJndy0yMDI2LTExIiwidHlwIjoiSldUIn0.eyJhY3IiOiJBQUwyIiwiYW1yIjpbInB3ZCJdLCJhdWQiOiJvcmRlcnMiLCJjaWQiOiJvcmRlcnMiLCJleHAiOjE3NjcyMjU1MzksImlhdCI6MTc2NzIyNTU5MCwiaXNzIjoiZ3Vhbmppbi1nYXRld2F5IiwianRpIjoiMTExMTExMTEtMjIyMi00MzMzLTg0NDQtNTU1NTU1NTU1NTU1Iiwicm9sZXMiOlsidXNlciJdLCJzdWIiOiJ1c2VyLTEiLCJ1bmFtZSI6ImFsaWNlIn0.CExVzEDrGqLy61uOaSOOWB-iFB83GF2LLvkqlQgm2ZB6y9_adQ1eHTN5GbG2_qagsjI20l75B0dfPbsQ5UbQRg",
       "jwks_mode": "available",
       "expect": {
         "code": "TOKEN_INVALID",
@@ -84,7 +84,7 @@
     {
       "vector_id": "AV-05",
       "case": "iat_boundary_inclusive",
-      "token": "eyJhbGciOiJTTTIiLCJraWQiOiJndy0yMDI2LTExIiwidHlwIjoiSldUIn0.eyJhY3IiOiJBQUwyIiwiYW1yIjpbInB3ZCJdLCJhdWQiOiJvcmRlcnMiLCJjaWQiOiJvcmRlcnMiLCJleHAiOjE3NjcyMjU2NTAsImlhdCI6MTc2NzIyNTY2MCwiaXNzIjoiZ3Vhbmppbi1nYXRld2F5IiwianRpIjoiMTExMTExMTEtMjIyMi00MzMzLTg0NDQtNTU1NTU1NTU1NTU1Iiwicm9sZXMiOlsidXNlciJdLCJzdWIiOiJ1c2VyLTEiLCJ1bmFtZSI6ImFsaWNlIn0.njUGbWJxrGKgHHa-D__3PrYajrA9JipROfenHhGlsQzE8GL7eZgga1NLLpdLXCP6a4SEzw-fKQVswrpmgdWcHA",
+      "token": "eyJhbGciOiJTTTIiLCJraWQiOiJndy0yMDI2LTExIiwidHlwIjoiSldUIn0.eyJhY3IiOiJBQUwyIiwiYW1yIjpbInB3ZCJdLCJhdWQiOiJvcmRlcnMiLCJjaWQiOiJvcmRlcnMiLCJleHAiOjE3NjcyMjU2NTAsImlhdCI6MTc2NzIyNTY2MCwiaXNzIjoiZ3Vhbmppbi1nYXRld2F5IiwianRpIjoiMTExMTExMTEtMjIyMi00MzMzLTg0NDQtNTU1NTU1NTU1NTU1Iiwicm9sZXMiOlsidXNlciJdLCJzdWIiOiJ1c2VyLTEiLCJ1bmFtZSI6ImFsaWNlIn0.Tz4RdvyeVAdrP3p3ypyaBPBWIKI3ZERaoCyqwE6XIppSl9KN_hxvcBYr-GLrVhVP90zDy9keJj-TCkgI7JHLEg",
       "jwks_mode": "available",
       "expect": {
         "code": "",
@@ -97,7 +97,7 @@
     {
       "vector_id": "AV-06",
       "case": "iat_boundary_plus_one",
-      "token": "eyJhbGciOiJTTTIiLCJraWQiOiJndy0yMDI2LTExIiwidHlwIjoiSldUIn0.eyJhY3IiOiJBQUwyIiwiYW1yIjpbInB3ZCJdLCJhdWQiOiJvcmRlcnMiLCJjaWQiOiJvcmRlcnMiLCJleHAiOjE3NjcyMjU2NTAsImlhdCI6MTc2NzIyNTY2MSwiaXNzIjoiZ3Vhbmppbi1nYXRld2F5IiwianRpIjoiMTExMTExMTEtMjIyMi00MzMzLTg0NDQtNTU1NTU1NTU1NTU1Iiwicm9sZXMiOlsidXNlciJdLCJzdWIiOiJ1c2VyLTEiLCJ1bmFtZSI6ImFsaWNlIn0.kR4x06aw8WX5da-27W5Qiwzioan91bpyeEHXt7CIygYtO9FfORmRtKFcBDIiJ6myJLn-3h4lDsRmbm_qHwuPtw",
+      "token": "eyJhbGciOiJTTTIiLCJraWQiOiJndy0yMDI2LTExIiwidHlwIjoiSldUIn0.eyJhY3IiOiJBQUwyIiwiYW1yIjpbInB3ZCJdLCJhdWQiOiJvcmRlcnMiLCJjaWQiOiJvcmRlcnMiLCJleHAiOjE3NjcyMjU2NTAsImlhdCI6MTc2NzIyNTY2MSwiaXNzIjoiZ3Vhbmppbi1nYXRld2F5IiwianRpIjoiMTExMTExMTEtMjIyMi00MzMzLTg0NDQtNTU1NTU1NTU1NTU1Iiwicm9sZXMiOlsidXNlciJdLCJzdWIiOiJ1c2VyLTEiLCJ1bmFtZSI6ImFsaWNlIn0.EKyAYceXBiERLJapnJ1QCYDqYyakNtChrj0NHQJpKL-3sMFTXZH9-NsnOrw_ngszJ79V7x1VhQjZDpQsLk6f3Q",
       "jwks_mode": "available",
       "expect": {
         "code": "TOKEN_INVALID",
@@ -110,7 +110,7 @@
     {
       "vector_id": "AV-07",
       "case": "iss_mismatch",
-      "token": "eyJhbGciOiJTTTIiLCJraWQiOiJndy0yMDI2LTExIiwidHlwIjoiSldUIn0.eyJhY3IiOiJBQUwyIiwiYW1yIjpbInB3ZCJdLCJhdWQiOiJvcmRlcnMiLCJjaWQiOiJvcmRlcnMiLCJleHAiOjE3NjcyMjU2NTAsImlhdCI6MTc2NzIyNTU5MCwiaXNzIjoiZXZpbCIsImp0aSI6IjExMTExMTExLTIyMjItNDMzMy04NDQ0LTU1NTU1NTU1NTU1NSIsInJvbGVzIjpbInVzZXIiXSwic3ViIjoidXNlci0xIiwidW5hbWUiOiJhbGljZSJ9.XGdhMT1jrRWDt5kBVM00U4nkZdm_j6HysHJlYSrot9hIFOHCVIoyk5xQldiDqHvC1qKrUuDdL8jbRE1hemd5-w",
+      "token": "eyJhbGciOiJTTTIiLCJraWQiOiJndy0yMDI2LTExIiwidHlwIjoiSldUIn0.eyJhY3IiOiJBQUwyIiwiYW1yIjpbInB3ZCJdLCJhdWQiOiJvcmRlcnMiLCJjaWQiOiJvcmRlcnMiLCJleHAiOjE3NjcyMjU2NTAsImlhdCI6MTc2NzIyNTU5MCwiaXNzIjoiZXZpbCIsImp0aSI6IjExMTExMTExLTIyMjItNDMzMy04NDQ0LTU1NTU1NTU1NTU1NSIsInJvbGVzIjpbInVzZXIiXSwic3ViIjoidXNlci0xIiwidW5hbWUiOiJhbGljZSJ9.NMeEM9lOOvhE4aWqFzVCvniyoekC2AiOSjqqck022-RE_vN0obF7jCeH0-2F9TIYP0jXLm4Mh7evnkbq9-x1Pg",
       "jwks_mode": "available",
       "expect": {
         "code": "TOKEN_INVALID",
@@ -122,7 +122,7 @@
     {
       "vector_id": "AV-08",
       "case": "aud_mismatch",
-      "token": "eyJhbGciOiJTTTIiLCJraWQiOiJndy0yMDI2LTExIiwidHlwIjoiSldUIn0.eyJhY3IiOiJBQUwyIiwiYW1yIjpbInB3ZCJdLCJhdWQiOiJvdGhlciIsImNpZCI6Im9yZGVycyIsImV4cCI6MTc2NzIyNTY1MCwiaWF0IjoxNzY3MjI1NTkwLCJpc3MiOiJndWFuamluLWdhdGV3YXkiLCJqdGkiOiIxMTExMTExMS0yMjIyLTQzMzMtODQ0NC01NTU1NTU1NTU1NTUiLCJyb2xlcyI6WyJ1c2VyIl0sInN1YiI6InVzZXItMSIsInVuYW1lIjoiYWxpY2UifQ.vyoNe4saR3mf0Guh5DeF4AQtYpmzSqrZx1g2yCP_LVNb4QtY6paP_l3UVe9XRkHu1TYRC0EkLGfWR0zLtGILmA",
+      "token": "eyJhbGciOiJTTTIiLCJraWQiOiJndy0yMDI2LTExIiwidHlwIjoiSldUIn0.eyJhY3IiOiJBQUwyIiwiYW1yIjpbInB3ZCJdLCJhdWQiOiJvdGhlciIsImNpZCI6Im9yZGVycyIsImV4cCI6MTc2NzIyNTY1MCwiaWF0IjoxNzY3MjI1NTkwLCJpc3MiOiJndWFuamluLWdhdGV3YXkiLCJqdGkiOiIxMTExMTExMS0yMjIyLTQzMzMtODQ0NC01NTU1NTU1NTU1NTUiLCJyb2xlcyI6WyJ1c2VyIl0sInN1YiI6InVzZXItMSIsInVuYW1lIjoiYWxpY2UifQ.aTt4uJnGi4Zhm0vVQIQFnlFXTcrWypVw2yTQa2uAXkqA8cUH-QncauO4fiK1YHKRIvVbFFlUw8sbGxliZuPH7g",
       "jwks_mode": "available",
       "expect": {
         "code": "TOKEN_INVALID",
@@ -134,7 +134,7 @@
     {
       "vector_id": "AV-09",
       "case": "unknown_kid",
-      "token": "eyJhbGciOiJTTTIiLCJraWQiOiJndy1yb2d1ZSIsInR5cCI6IkpXVCJ9.eyJhY3IiOiJBQUwyIiwiYW1yIjpbInB3ZCJdLCJhdWQiOiJvcmRlcnMiLCJjaWQiOiJvcmRlcnMiLCJleHAiOjE3NjcyMjU2NTAsImlhdCI6MTc2NzIyNTU5MCwiaXNzIjoiZ3Vhbmppbi1nYXRld2F5IiwianRpIjoiMTExMTExMTEtMjIyMi00MzMzLTg0NDQtNTU1NTU1NTU1NTU1Iiwicm9sZXMiOlsidXNlciJdLCJzdWIiOiJ1c2VyLTEiLCJ1bmFtZSI6ImFsaWNlIn0.g4iycEVZuLPRYE9qly0wQb_6QSCBtRF5kAu15ZYMn46INlQCRWUHVtRrmf6s6aXloEZARiiVXcNUCJfrdL6Q-w",
+      "token": "eyJhbGciOiJTTTIiLCJraWQiOiJndy1yb2d1ZSIsInR5cCI6IkpXVCJ9.eyJhY3IiOiJBQUwyIiwiYW1yIjpbInB3ZCJdLCJhdWQiOiJvcmRlcnMiLCJjaWQiOiJvcmRlcnMiLCJleHAiOjE3NjcyMjU2NTAsImlhdCI6MTc2NzIyNTU5MCwiaXNzIjoiZ3Vhbmppbi1nYXRld2F5IiwianRpIjoiMTExMTExMTEtMjIyMi00MzMzLTg0NDQtNTU1NTU1NTU1NTU1Iiwicm9sZXMiOlsidXNlciJdLCJzdWIiOiJ1c2VyLTEiLCJ1bmFtZSI6ImFsaWNlIn0.y_YjtyQwFo2_9yG6hAQVqoJVMRyd2BgQ2wIXtrKPg_Qsy3omjCfTj8W0j_39M3qVcVI9ssiGq4uexb4fXGryVA",
       "jwks_mode": "available",
       "expect": {
         "code": "TOKEN_INVALID",
@@ -147,7 +147,7 @@
     {
       "vector_id": "AV-10",
       "case": "jwks_unavailable_no_cache",
-      "token": "eyJhbGciOiJTTTIiLCJraWQiOiJndy0yMDI2LTExIiwidHlwIjoiSldUIn0.eyJhY3IiOiJBQUwyIiwiYW1yIjpbInB3ZCJdLCJhdWQiOiJvcmRlcnMiLCJjaWQiOiJvcmRlcnMiLCJleHAiOjE3NjcyMjU2NTAsImlhdCI6MTc2NzIyNTU5MCwiaXNzIjoiZ3Vhbmppbi1nYXRld2F5IiwianRpIjoiMTExMTExMTEtMjIyMi00MzMzLTg0NDQtNTU1NTU1NTU1NTU1Iiwicm9sZXMiOlsidXNlciJdLCJzdWIiOiJ1c2VyLTEiLCJ1bmFtZSI6ImFsaWNlIn0.sH0aVkEmJDWkihNwHRsT6fILkiKEloMxwG-qrbWimkYItYoLI-M1tYkG8xYdSsnIlPgTSjgIzl5v5r8boxMS2w",
+      "token": "eyJhbGciOiJTTTIiLCJraWQiOiJndy0yMDI2LTExIiwidHlwIjoiSldUIn0.eyJhY3IiOiJBQUwyIiwiYW1yIjpbInB3ZCJdLCJhdWQiOiJvcmRlcnMiLCJjaWQiOiJvcmRlcnMiLCJleHAiOjE3NjcyMjU2NTAsImlhdCI6MTc2NzIyNTU5MCwiaXNzIjoiZ3Vhbmppbi1nYXRld2F5IiwianRpIjoiMTExMTExMTEtMjIyMi00MzMzLTg0NDQtNTU1NTU1NTU1NTU1Iiwicm9sZXMiOlsidXNlciJdLCJzdWIiOiJ1c2VyLTEiLCJ1bmFtZSI6ImFsaWNlIn0.rk-HltTvZSgBBx9c4GZIyOHOJGZ5-m8_ByAqdGDcdlDhiynYc5CriFAzI4INt_sodRiLKrom_wJ5gqS6893GZg",
       "jwks_mode": "unavailable",
       "expect": {
         "code": "KEY_UNAVAILABLE",
@@ -160,7 +160,7 @@
     {
       "vector_id": "AV-11",
       "case": "jti_replay",
-      "token": "eyJhbGciOiJTTTIiLCJraWQiOiJndy0yMDI2LTExIiwidHlwIjoiSldUIn0.eyJhY3IiOiJBQUwyIiwiYW1yIjpbInB3ZCJdLCJhdWQiOiJvcmRlcnMiLCJjaWQiOiJvcmRlcnMiLCJleHAiOjE3NjcyMjU2NTAsImlhdCI6MTc2NzIyNTU5MCwiaXNzIjoiZ3Vhbmppbi1nYXRld2F5IiwianRpIjoiMTExMTExMTEtMjIyMi00MzMzLTg0NDQtNTU1NTU1NTU1NTU1Iiwicm9sZXMiOlsidXNlciJdLCJzdWIiOiJ1c2VyLTEiLCJ1bmFtZSI6ImFsaWNlIn0.sH0aVkEmJDWkihNwHRsT6fILkiKEloMxwG-qrbWimkYItYoLI-M1tYkG8xYdSsnIlPgTSjgIzl5v5r8boxMS2w",
+      "token": "eyJhbGciOiJTTTIiLCJraWQiOiJndy0yMDI2LTExIiwidHlwIjoiSldUIn0.eyJhY3IiOiJBQUwyIiwiYW1yIjpbInB3ZCJdLCJhdWQiOiJvcmRlcnMiLCJjaWQiOiJvcmRlcnMiLCJleHAiOjE3NjcyMjU2NTAsImlhdCI6MTc2NzIyNTU5MCwiaXNzIjoiZ3Vhbmppbi1nYXRld2F5IiwianRpIjoiMTExMTExMTEtMjIyMi00MzMzLTg0NDQtNTU1NTU1NTU1NTU1Iiwicm9sZXMiOlsidXNlciJdLCJzdWIiOiJ1c2VyLTEiLCJ1bmFtZSI6ImFsaWNlIn0.rk-HltTvZSgBBx9c4GZIyOHOJGZ5-m8_ByAqdGDcdlDhiynYc5CriFAzI4INt_sodRiLKrom_wJ5gqS6893GZg",
       "jwks_mode": "available",
       "expect": {
         "code": "TOKEN_INVALID",
@@ -174,15 +174,30 @@
     {
       "vector_id": "AV-12",
       "case": "alg_not_sm2_oidc_track",
-      "token": "eyJhbGciOiJTTTN3aXRoU00yIiwia2lkIjoib2lkYy0yMDI2LTExIiwidHlwIjoiSldUIn0.eyJhY3IiOiJBQUwyIiwiYW1yIjpbInB3ZCJdLCJhdWQiOiJvcmRlcnMiLCJjaWQiOiJvcmRlcnMiLCJleHAiOjE3NjcyMjU2NTAsImlhdCI6MTc2NzIyNTU5MCwiaXNzIjoiZ3Vhbmppbi1nYXRld2F5IiwianRpIjoiMTExMTExMTEtMjIyMi00MzMzLTg0NDQtNTU1NTU1NTU1NTU1Iiwicm9sZXMiOlsidXNlciJdLCJzdWIiOiJ1c2VyLTEiLCJ1bmFtZSI6ImFsaWNlIn0.6wZb4tD88HjmTesz11bEhoHskZul63OrnJxTXVbUzjUzSIfOz_iUmVYaLgCMM3ptHqNRBhKABhTaIfonuzez4g",
+      "token": "eyJhbGciOiJTTTN3aXRoU00yIiwia2lkIjoib2lkYy0yMDI2LTExIiwidHlwIjoiSldUIn0.eyJhY3IiOiJBQUwyIiwiYW1yIjpbInB3ZCJdLCJhdWQiOiJvcmRlcnMiLCJjaWQiOiJvcmRlcnMiLCJleHAiOjE3NjcyMjU2NTAsImlhdCI6MTc2NzIyNTU5MCwiaXNzIjoiZ3Vhbmppbi1nYXRld2F5IiwianRpIjoiMTExMTExMTEtMjIyMi00MzMzLTg0NDQtNTU1NTU1NTU1NTU1Iiwicm9sZXMiOlsidXNlciJdLCJzdWIiOiJ1c2VyLTEiLCJ1bmFtZSI6ImFsaWNlIn0.5QNQSCGLCvBvJWE5ellSkp40xwGcYDc-X52L2IjELnL-JRb1VrHT2h9T0hgBnT45Mr-b4kEL04G1Cs8uM5gUaQ",
       "jwks_mode": "available",
       "expect": {
         "code": "TOKEN_INVALID",
         "decision": "reject",
+        "reason_contains": "alg",
         "stage": "alg",
         "status": 401
       },
-      "note": "D29 核心证据：网关断言只认 alg=SM2。SM3withSM2 是**对外令牌（oidc 轨）**的 alg，用它验断言必须拒（防算法降级；公钥就在 JWKS 里，证明拒的是 alg 不是缺键）"
+      "note": "oidc 轨（alg=SM3withSM2）的键签的断言必须拒；注意 SDK 的 ParseJWKS 本来就会滤掉 oidc 键，所以**这条不能单独证明「拒的是 alg」**——判别力由 AV-14 提供"
+    },
+    {
+      "vector_id": "AV-14",
+      "case": "alg_sm3withsm2_gateway_key",
+      "token": "eyJhbGciOiJTTTN3aXRoU00yIiwia2lkIjoiZ3ctMjAyNi0xMSIsInR5cCI6IkpXVCJ9.eyJhY3IiOiJBQUwyIiwiYW1yIjpbInB3ZCJdLCJhdWQiOiJvcmRlcnMiLCJjaWQiOiJvcmRlcnMiLCJleHAiOjE3NjcyMjU2NTAsImlhdCI6MTc2NzIyNTU5MCwiaXNzIjoiZ3Vhbmppbi1nYXRld2F5IiwianRpIjoiMTExMTExMTEtMjIyMi00MzMzLTg0NDQtNTU1NTU1NTU1NTU1Iiwicm9sZXMiOlsidXNlciJdLCJzdWIiOiJ1c2VyLTEiLCJ1bmFtZSI6ImFsaWNlIn0.WF4ZrvSh_JsgXuI2aOaTK4uVky6deN3TQ-utjQ8M-ZNrU-GcrxPbn7SaUL9mOOmt1Y7AyrG9ghlbRLhcKA6KFg",
+      "jwks_mode": "available",
+      "expect": {
+        "code": "TOKEN_INVALID",
+        "decision": "reject",
+        "reason_contains": "alg",
+        "stage": "alg",
+        "status": 401
+      },
+      "note": "**D29 的判别性证据**：kid=gw-2026-11（JWKS 里确有这把 SM2 键）+ 头里 alg=SM3withSM2 + 用**网关私钥真签**（SM3withSM2 与 SM2 是同一段字节的签名，去掉 alg 闸这种断言会被接受）。摘掉 alg 闸 → 本条与 AV-13 必红"
     },
     {
       "vector_id": "AV-13",
@@ -192,10 +207,11 @@
       "expect": {
         "code": "TOKEN_INVALID",
         "decision": "reject",
+        "reason_contains": "alg",
         "stage": "alg",
         "status": 401
       },
-      "note": "经典 alg 降级（HS256）也必须拒——不做算法协商"
+      "note": "经典 alg 降级（HS256）也必须拒——不做算法协商；摘掉 alg 闸时本条会落到「签名必须 64 字节/验签失败」而不是「alg」，故 reason_contains 也能抓到"
     }
   ]
 }

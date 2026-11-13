@@ -27,6 +27,7 @@ func TestSpecVectorsAgentHMAC(t *testing.T) {
 		Vectors   []struct {
 			VectorID            string      `json:"vector_id"`
 			Case                string      `json:"case"`
+			PendingSpec         bool        `json:"pending_spec"`
 			Method              string      `json:"method"`
 			Path                string      `json:"path"`
 			Query               [][2]string `json:"query_pairs"`
@@ -54,7 +55,13 @@ func TestSpecVectorsAgentHMAC(t *testing.T) {
 	}
 
 	seen := map[string]bool{}
+	pending := []string{}
 	for _, v := range doc.Vectors {
+		if v.PendingSpec {
+			// 不静默跳过：记下来并断言"只有登记过的条目可以 pending"。
+			pending = append(pending, v.VectorID)
+			continue
+		}
 		if seen[v.VectorID] {
 			t.Fatalf("vector_id 重复: %s", v.VectorID)
 		}
@@ -86,4 +93,10 @@ func TestSpecVectorsAgentHMAC(t *testing.T) {
 			t.Errorf("%s(%s) 签名不一致：got=%s want=%s", v.VectorID, v.Case, sig, v.ExpectedSignature)
 		}
 	}
+
+	// pending 只能是已登记的那一条（AH-12：A2 解码口径未定）。悄悄多出/少掉都要红。
+	if len(pending) != 1 || pending[0] != "AH-12" {
+		t.Fatalf("pending 集合变了：%v（只允许 AH-12，见 spec/vectors/README.md）", pending)
+	}
+	t.Logf("pending（未参与断言）：%v", pending)
 }

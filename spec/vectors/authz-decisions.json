@@ -92,14 +92,14 @@
         ]
       },
       "operation": {
-        "kind": "enforce",
+        "kind": "require",
         "resource": "orders",
         "action": "read"
       },
       "expect": {
         "decision": "allow"
       },
-      "note": "RBAC allow：声明了 orders:read"
+      "note": "RBAC allow 走 require()：声明了 orders:read → 不抛（allow 路径也要被钉住）"
     },
     {
       "vector_id": "AZ-02",
@@ -374,7 +374,13 @@
         "expect": {
           "filter": null
         }
-      },
+      }
+    ]
+  },
+  "integrity_cases": {
+    "status": "UNIMPLEMENTED",
+    "note": "契约附录 C 单列「完整性校验失败 fail-closed」：Java Authz.init 无模型/策略 digest 校验、Go 侧 authz 未实现（internal/authz 只有 doc.go）→ 先落盘定性",
+    "cases": [
       {
         "vector_id": "AZ-S3",
         "case": "scope_model_integrity_failure",
