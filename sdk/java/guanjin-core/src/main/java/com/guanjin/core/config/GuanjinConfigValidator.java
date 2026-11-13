@@ -8,6 +8,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
+import java.util.regex.Pattern;
 
 /**
  * 启动期配置校验（fail-fast）：契约 §3.6 / §4.4 / AC-SDK-01/02/03/04、AC-SESS-05。
@@ -31,7 +32,90 @@ public final class GuanjinConfigValidator {
     private static final List<String> HOST_OWNED_HEADERS = Collections.unmodifiableList(Arrays.asList(
             "authorization", "proxy-authorization", "cookie", "set-cookie", "host", "content-length"));
 
+    /**
+     * 时长键的**唯一合法形态**（契约 §3.2.1，`FROZEN`）：`trim` 后整串匹配
+     * {@code ^[0-9]+(ms|s|m|h)$}。
+     *
+     * <p>三语言逐字一致（Go {@code durationPattern} / Node 同一正则）；单位**只 4 个**、
+     * 小写、非负整数。**大写单位不认**（{@code 1S}/{@code 10M} 非法）。
+     */
+    public static final String DURATION_PATTERN = "^[0-9]+(ms|s|m|h)$";
+
+    private static final Pattern DURATION = Pattern.compile(DURATION_PATTERN);
+
     private GuanjinConfigValidator() {
+    }
+
+    /**
+     * 严格解析时长键（契约 §3.2.1，2026-11-13 裁决「收紧 Java、不放宽契约」）。
+     *
+     * <p><b>为什么不交给 Spring 的 {@code Duration} 转换器</b>：它接受纯数字（按**毫秒**）、
+     * {@code d}（按**天**）和 ISO-8601 {@code PT60S}——那等于自己发明隐式单位，撞 §3.6
+     * 「禁隐性逻辑」与 §4.1 M7（三语言同接受/同拒绝）。这里只认 §3.2.1 的 4 个单位，
+     * 其余**一律抛 {@link GuanjinConfigException} 并报出键名**，**不得回落默认值**。
+     *
+     * @param key 契约键名（错误信息必须含它，§3.6）
+     * @param raw 原样文本（允许首尾空白，内部空白不认）
+     * @return 毫秒精度的 {@link Duration}（无隐式单位）
+     * @throws GuanjinConfigException 非 {@code ^[0-9]+(ms|s|m|h)$}，或数值溢出
+     */
+    public static Duration parseDuration(String key, String raw) {
+        String v = raw == null ? "" : raw.trim();
+        if (!DURATION.matcher(v).matches()) {
+            throw new GuanjinConfigException(key, "取不到时长（契约 §3.2.1：合法形态唯一 = trim 后 "
+                    + DURATION_PATTERN + "，单位只 ms|s|m|h、小写、非负整数；纯数字 3000 / d / ns / us / "
+                    + "小数 1.5s / 组合 1h30m / ISO-8601 PT60S / 带符号 +60s / 空串 / 内部空白 60 s 一律拒绝），"
+                    + "得到 \"" + raw + "\"");
+        }
+        boolean millis = v.endsWith("ms");
+        String number = millis ? v.substring(0, v.length() - 2) : v.substring(0, v.length() - 1);
+        try {
+            long n = Long.parseLong(number);
+            if (millis) {
+                return Duration.ofMillis(n);
+            }
+            switch (v.charAt(v.length() - 1)) {
+                case 's':
+                    return Duration.ofSeconds(n);
+                case 'm':
+                    return Duration.ofMinutes(n);
+                case 'h':
+                    return Duration.ofHours(n);
+                default:
+                    // DURATION 正则已限定单位闭合集；这里只是防御（改动正则而忘了改这里才会到）
+                    throw new GuanjinConfigException(key, "内部错误：正则与单位换算不同步，得到 \"" + raw + "\"");
+            }
+        } catch (NumberFormatException e) {
+            throw new GuanjinConfigException(key, "时长数值超出 long 范围，得到 \"" + raw + "\"", e);
+        } catch (ArithmeticException e) {
+            throw new GuanjinConfigException(key, "时长数值溢出（换算成毫秒失败），得到 \"" + raw + "\"", e);
+        }
+    }
+
+    /**
+     * 该键是否在契约 §3.2 里是 {@code duration} 类型（6 项：#3/#4/#10/#11/#13/#23）。
+     *
+     * <p>Spring 适配层的绑定期守卫用它决定"哪些原始文本必须按 §3.2.1 校验"——
+     * 不硬编码键名，跟着 {@link GuanjinConfigKeys#DESCRIPTORS} 的类型列走。
+     */
+    public static boolean isDurationKey(String key) {
+        for (GuanjinConfigKeys.KeyDescriptor d : GuanjinConfigKeys.DESCRIPTORS) {
+            if (d.key().equals(key)) {
+                return "duration".equals(d.wireType());
+            }
+        }
+        return false;
+    }
+
+    /** 契约 §3.2 里全部 {@code duration} 键（顺序 = 契约编号）。 */
+    public static List<String> durationKeys() {
+        List<String> out = new ArrayList<String>();
+        for (GuanjinConfigKeys.KeyDescriptor d : GuanjinConfigKeys.DESCRIPTORS) {
+            if ("duration".equals(d.wireType())) {
+                out.add(d.key());
+            }
+        }
+        return Collections.unmodifiableList(out);
     }
 
     /**

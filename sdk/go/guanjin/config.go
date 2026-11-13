@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -112,6 +113,47 @@ const (
 // ErrConfig 是配置错误族：**一律启动失败**，且必须报出键名（契约 §3.6）。
 var ErrConfig = errors.New("guanjin: config")
 
+// DurationPattern 是时长键的**唯一合法形态**（契约 §3.2.1，FROZEN；三语言逐字一致）：
+// `trim` 后整串匹配 `^[0-9]+(ms|s|m|h)$`。单位**只 4 个**、小写、非负整数；大写单位不认。
+const DurationPattern = `^[0-9]+(ms|s|m|h)$`
+
+var durationPattern = regexp.MustCompile(DurationPattern)
+
+// parseDurationStrict 严格解析时长键（契约 §3.2.1）：**先**正则、**再**用 time.ParseDuration 换算。
+//
+// 为什么不能只靠 time.ParseDuration：它接受 `1h30m`（组合）、`1.5s`（小数）、`100ns`（ns/us 单位），
+// 而 Java/Node 按 §3.2.1 只认 `<非负整数><单位>`（单位 ms|s|m|h）——同一份配置三语言必须
+// 同接受/同拒绝（§4.1 M7）。非法形态**一律失败并报出键名**，**不得回落默认值**。
+func parseDurationStrict(key, raw string) (time.Duration, error) {
+	v := strings.TrimSpace(raw)
+	if !durationPattern.MatchString(v) {
+		return 0, fmt.Errorf("%w: 键 %q 取不到时长（契约 §3.2.1：唯一合法形态 = trim 后 %s"+
+			"，单位只 ms|s|m|h、小写、非负整数；纯数字 3000 / d / ns / us / 小数 1.5s / 组合 1h30m / "+
+			"ISO-8601 PT60S / 带符号 +60s / 空串 / 内部空白 60 s 一律拒绝），得到 %q",
+			ErrConfig, key, DurationPattern, raw)
+	}
+	d, err := time.ParseDuration(v)
+	if err != nil {
+		return 0, fmt.Errorf("%w: 键 %q 的时长 %q 换算失败: %v", ErrConfig, key, raw, err)
+	}
+	return d, nil
+}
+
+// setDuration 按 §3.2.1 解析并写入字段，同时保留原文——让 Validate() 能对"同一批判定"再跑一遍
+// （typed Config 里已经看不出原始文本，只有保留下来才能在 Validate 阶段执行"先正则再换算"）。
+func (c *Config) setDuration(key, raw string, dst *time.Duration) error {
+	d, err := parseDurationStrict(key, raw)
+	if err != nil {
+		return err
+	}
+	*dst = d
+	if c.rawDurations == nil {
+		c.rawDurations = make(map[string]string, 6)
+	}
+	c.rawDurations[key] = raw
+	return nil
+}
+
 // Config 是 29 项配置的 Go 结构体形态（字段名 = 契约 §3.2 的 Go 列）。
 type Config struct {
 	Enabled bool
@@ -162,6 +204,10 @@ type Config struct {
 	Startup struct {
 		PrintPublicPaths bool
 	}
+
+	// rawDurations 保留"从文本装载时的原文"（键 → 原文），只为 Validate() 能再执行一次
+	// §3.2.1 的严格判定；程序化构造（DefaultConfig + 直接赋值）时为空 = 没有文本可判。
+	rawDurations map[string]string
 }
 
 // DefaultConfig 返回契约 §3.2 的默认值（必填项为空，Validate 会挡住）。
@@ -389,7 +435,6 @@ func (c *Config) set(key, raw string) error {
 		return fmt.Errorf("%w: 键 %q 取不到 %s", ErrConfig, key, want)
 	}
 	boolVal := func() (bool, error) { return strconv.ParseBool(strings.TrimSpace(raw)) }
-	durVal := func() (time.Duration, error) { return time.ParseDuration(strings.TrimSpace(raw)) }
 
 	switch key {
 	case KeyEnabled:
@@ -401,17 +446,13 @@ func (c *Config) set(key, raw string) error {
 	case KeyPlatformBaseURL:
 		c.Platform.BaseURL = strings.TrimSuffix(strings.TrimSpace(raw), "/")
 	case KeyPlatformConnectTimeout:
-		d, err := durVal()
-		if err != nil {
-			return bad("duration（如 2s）", err)
+		if err := c.setDuration(key, raw, &c.Platform.ConnectTimeout); err != nil {
+			return err
 		}
-		c.Platform.ConnectTimeout = d
 	case KeyPlatformReadTimeout:
-		d, err := durVal()
-		if err != nil {
-			return bad("duration（如 3s）", err)
+		if err := c.setDuration(key, raw, &c.Platform.ReadTimeout); err != nil {
+			return err
 		}
-		c.Platform.ReadTimeout = d
 	case KeyClientID:
 		c.Client.ID = strings.TrimSpace(raw)
 	case KeyClientHMACSecret:
@@ -423,25 +464,19 @@ func (c *Config) set(key, raw string) error {
 	case KeyGatewayAud:
 		c.Gateway.Aud = strings.TrimSpace(raw)
 	case KeyGatewayClockSkew:
-		d, err := durVal()
-		if err != nil {
-			return bad("duration", err)
+		if err := c.setDuration(key, raw, &c.Gateway.ClockSkew); err != nil {
+			return err
 		}
-		c.Gateway.ClockSkew = d
 	case KeyGatewayReplayWindow:
-		d, err := durVal()
-		if err != nil {
-			return bad("duration", err)
+		if err := c.setDuration(key, raw, &c.Gateway.ReplayWindow); err != nil {
+			return err
 		}
-		c.Gateway.ReplayWindow = d
 	case KeyGatewayJwksURI:
 		c.Gateway.JwksURI = strings.TrimSpace(raw)
 	case KeyGatewayJwksCacheTTL:
-		d, err := durVal()
-		if err != nil {
-			return bad("duration", err)
+		if err := c.setDuration(key, raw, &c.Gateway.JwksCacheTTL); err != nil {
+			return err
 		}
-		c.Gateway.JwksCacheTTL = d
 	case KeyGatewayJwksUnknownKidRefresh:
 		b, err := boolVal()
 		if err != nil {
@@ -489,11 +524,9 @@ func (c *Config) set(key, raw string) error {
 		}
 		c.Agent.Pull.Enabled = b
 	case KeyAgentPullInterval:
-		d, err := durVal()
-		if err != nil {
-			return bad("duration", err)
+		if err := c.setDuration(key, raw, &c.Agent.Pull.Interval); err != nil {
+			return err
 		}
-		c.Agent.Pull.Interval = d
 	case KeyPublicPaths:
 		c.PublicPaths = splitList(raw)
 	case KeyPublicPathsIncludeBuiltin:
@@ -549,6 +582,11 @@ func splitList(raw string) []string {
 //   - `jwks-uri` 只允许平台基址 + `/.well-known/jwks.json`（C-2 / AC-SDK-03 / AC-FC-04）；
 //   - `replay-window` 必须 ≥ 令牌 exp（60s），否则漏检重放（契约 §3.2 #11）。
 func (c Config) Validate(env Env) error {
+	// 契约 §3.2.1：**先**正则**再**换算。装载阶段已拒过一次；这里对保留的原文再判一遍，
+	// 保证「Validate() 也拒绝非法形态」而不是只有 set() 拒（AC-SDK-11）。
+	if err := c.validateDurationTexts(); err != nil {
+		return err
+	}
 	if strings.TrimSpace(c.Platform.BaseURL) == "" {
 		return fmt.Errorf("%w: 必填键 %q 为空（平台地址必须来自配置/环境变量，禁硬编码；AC-SDK-04）",
 			ErrConfig, KeyPlatformBaseURL)
@@ -602,6 +640,28 @@ func (c Config) Validate(env Env) error {
 	if !sameOrigin(u, ju) {
 		return fmt.Errorf("%w: 键 %q 必须与 %q 同源（跨域地址 = 换信任源，需 ADR）：%q vs %q",
 			ErrConfig, KeyGatewayJwksURI, KeyPlatformBaseURL, uri, c.Platform.BaseURL)
+	}
+	return nil
+}
+
+// validateDurationTexts 对装载时保留的原文再跑一次 §3.2.1（先正则、再 time.ParseDuration）。
+//
+// 结构化 Config 里已经看不出原始文本（`3000` 与 `3000ms` 都是 3s 的 Duration），所以
+// LoadFromMap / LoadFromEnviron 把原文留在 rawDurations 里，让 Validate() 能做同一批判定。
+// 程序化构造（DefaultConfig + 直接赋值）没有文本可判 = 直接跳过。
+func (c Config) validateDurationTexts() error {
+	if len(c.rawDurations) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(c.rawDurations))
+	for k := range c.rawDurations {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys) // 错误信息稳定：同一组非法配置每次都报同一个键
+	for _, k := range keys {
+		if _, err := parseDurationStrict(k, c.rawDurations[k]); err != nil {
+			return err
+		}
 	}
 	return nil
 }
