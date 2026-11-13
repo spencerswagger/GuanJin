@@ -26,7 +26,7 @@ public final class JwksSet {
         return out;
     }
 
-    /** 只返回网关用途的键（{@code alg=SM3withSM2}），SDK 验签只用这些。 */
+    /** 只返回网关用途的键（{@code alg=SM2}，D29 双轨），SDK 验签只用这些。 */
     public List<JwksKey> gatewayKeys() {
         List<JwksKey> out = new ArrayList<JwksKey>(keys.size());
         for (JwksKey k : keys) {

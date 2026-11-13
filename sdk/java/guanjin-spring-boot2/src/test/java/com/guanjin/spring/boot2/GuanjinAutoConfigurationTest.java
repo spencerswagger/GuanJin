@@ -67,13 +67,14 @@ class GuanjinAutoConfigurationTest {
 
     @Test
     void AC_SDK_03_jwksWithoutGatewayKeyWarnsButStarts() {
+        // 只有对外令牌用途的键（alg=SM3withSM2，000013 CHECK 绑死 oidc）：网关键缺席，须告警
         platform.jwksBody("{\"keys\":[{\"kty\":\"EC\",\"crv\":\"SM2\",\"kid\":\"oidc-1\",\"use\":\"sig\","
-                + "\"alg\":\"SM2\",\"x\":\"aa\",\"y\":\"bb\"}]}");
+                + "\"alg\":\"SM3withSM2\",\"x\":\"aa\",\"y\":\"bb\"}]}");
         ConfigurableApplicationContext ctx = start(baseProps(), StubConfig.class);
         try {
             GuanjinStartupReport report = ctx.getBean(GuanjinStartupReport.class);
             assertTrue(report.report().gatewayKids().isEmpty());
-            assertTrue(report.report().warnings().toString().contains("SM3withSM2"),
+            assertTrue(report.report().warnings().toString().contains("alg=SM2"),
                     "没有网关用途公钥必须告警（否则任何断言都会 401）");
         } finally {
             ctx.close();

@@ -22,11 +22,11 @@ public final class TestPlatform implements AutoCloseable {
 
     private static final Charset UTF8 = Charset.forName("UTF-8");
 
-    /** 平台真实形态的 JWKS：oidc（alg=SM2）+ gateway（alg=SM3withSM2）。 */
+    /** 平台真实形态的 JWKS（000013 CHECK / keygen.go:44-47 / D29）：oidc（alg=SM3withSM2）+ gateway（alg=SM2）。 */
     public static final String REAL_JWKS = "{\"keys\":["
-            + "{\"kty\":\"EC\",\"crv\":\"SM2\",\"kid\":\"oidc-2026-11\",\"use\":\"sig\",\"alg\":\"SM2\","
+            + "{\"kty\":\"EC\",\"crv\":\"SM2\",\"kid\":\"oidc-2026-11\",\"use\":\"sig\",\"alg\":\"SM3withSM2\","
             + "\"x\":\"JgXKQ1n0a2Zk9Q8m1oQbYw\",\"y\":\"Zt7b1s0hVn2m5cQ9xJ8kLw\"},"
-            + "{\"kty\":\"EC\",\"crv\":\"SM2\",\"kid\":\"gw-2026-11\",\"use\":\"sig\",\"alg\":\"SM3withSM2\","
+            + "{\"kty\":\"EC\",\"crv\":\"SM2\",\"kid\":\"gw-2026-11\",\"use\":\"sig\",\"alg\":\"SM2\","
             + "\"x\":\"Qk9m2v1s0hVn5cQ8xJ7kLw\",\"y\":\"JgXKQ1n0a2Zk9Q8m1oQbYw\"}"
             + "]}";
 

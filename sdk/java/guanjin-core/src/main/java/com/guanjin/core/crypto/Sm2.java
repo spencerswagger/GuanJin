@@ -19,7 +19,7 @@ import java.util.Arrays;
 
 /**
  * 国密 SM2 的**最小**工具面（GJ-CAP-01 的密码学底座）：
- * 公钥从 JWKS 的 {@code x}/{@code y} 构造、{@code r||s} 与 DER 互转、{@code SM3withSM2} 验签。
+ * 公钥从 JWKS 的 {@code x}/{@code y} 构造、{@code r||s} 与 DER 互转、{@code SM2} 验签。
  *
  * <p>三条与平台（Go 侧 {@code internal/signing}）必须逐字节对齐的口径：
  * <ul>
@@ -28,12 +28,27 @@ import java.util.Arrays;
  *   <li>用户标识用 **GM/T 0003 默认值 {@code 1234567812345678}**（平台 {@code crypto.DefaultSM2UID} 同值）。</li>
  * </ul>
  *
- * <p>不做算法协商：只认 {@code SM3withSM2}，别的 alg 一律拒（防算法降级）。
+ * <p>不做算法协商：只认 {@code SM2}（D29：网关断言唯一口径，平台 keygen 写死），别的 alg 一律拒（防算法降级）。
  */
 public final class Sm2 {
 
-    /** 断言验签唯一允许的算法（契约 §4.1 M2）。 */
-    public static final String ALG = "SM3withSM2";
+    /**
+     * 断言验签唯一允许的算法（契约 §4.1 M2；D29：平台 keygen 写死 SM2，无 alg 配置键）。
+     *
+     * <p>这是 **JWS/JWKS 的 alg 标识**（header 里写什么、JWKS 里发布什么）。
+     * 注意它与下面的 {@link #JCA_ALG} 是两回事。
+     */
+    public static final String ALG = "SM2";
+
+    /**
+     * BouncyCastle 的 JCA {@link Signature} 查找名。
+     *
+     * <p>BC 只把 GM/T 的 JWS 标识 {@code SM3withSM2} 注册成了 Signature 名
+     * （OID 1.2.156.10197.1.501 的 JCA name），{@code "SM2"} 不是合法的
+     * {@code Signature.getInstance} 名。D29 改的是对外发布的 alg 标识（上面 {@link #ALG}），
+     * **不是**密码学实现名——签名算法本身（SM2WithSM3）没变，故 JCA 层仍用 {@code SM3withSM2}。
+     */
+    static final String JCA_ALG = "SM3withSM2";
 
     /** 曲线名（GM/T 0003）。 */
     public static final String CURVE = "sm2p256v1";
@@ -76,13 +91,13 @@ public final class Sm2 {
         }
     }
 
-    /** 用 {@code SM3withSM2} 验签；{@code signature} 是 JWS 里的 {@code r||s}（64 字节）。 */
+    /** 用 {@code SM2} 验签；{@code signature} 是 JWS 里的 {@code r||s}（64 字节）。 */
     public static boolean verify(PublicKey publicKey, byte[] message, byte[] signature) {
         if (publicKey == null || message == null || signature == null || signature.length != SIG_BYTES) {
             return false;
         }
         try {
-            Signature verifier = Signature.getInstance(ALG, BouncyCastleProvider.PROVIDER_NAME);
+            Signature verifier = Signature.getInstance(JCA_ALG, BouncyCastleProvider.PROVIDER_NAME);
             verifier.initVerify(publicKey);
             verifier.update(message);
             return verifier.verify(rawToDer(signature));
