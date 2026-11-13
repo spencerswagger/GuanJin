@@ -59,9 +59,10 @@ go test -count=1 -run TestSpecVectors ./internal/agent/ ./sdk/go/guanjin/
      （#155 起 Java 补 `int64` 纳秒上界判定、Go 补 `ParseUint` 上界并让文案含键名）。
    - **已落地（原 `CM-16`）**：`gateway.clock-skew="\u00A02s"`（NBSP）—— 两侧 `reject@load`
      （#155 起两侧都只 trim 4 个 ASCII 空白，禁用语言默认 trim）。
-   - **剩余差异（`CM-13`，pending）**：`gateway.clock-skew=0s` —— 契约补口① 明写**合法**（零容忍），但**两侧都拒**：
-     Go `reject@validate`（『必须为正（默认 60s）』）、Java `reject@load`（同义）。要么 Nova 放开零值，要么 Spec 改补口①
-     措辞，**Gate 不自行判**（已报 Spec）。
+   - **剩余差异（`CM-13`，pending；契约已裁决）**：`gateway.clock-skew=0s` —— 契约 **v16 §8.8 E42** 已判
+     「`0s` **合法**、语义 = 零容忍，**不得**以『必须为正』拒绝」（基线无下界；零容忍只会更严 = fail-closed）。
+     两侧当前仍拒：Go `reject@validate`（『必须为正（默认 60s）』）、Java `reject@load`（同义）→ **放开零值 = G21⑤（Nova）**；
+     落地后本目录把 `CM-13` 移进 **`cases` 正向**（`expect` 里 `gateway.clock-skew = 0`，且 ≠ 默认 `60000`）= **G21⑥（Gate）**。
    - `CM-14`（`replay-window=0s`）两侧都拒且属**安全约束**失败（不是解析失败），与补口① 一致。
    - `CM-17`（`"\t30s\r\n"` → 30000）/ `CM-17B`（`"\t45s\r\n"` → 45000）：trim 已落地。**CM-17 单独证明不了
      「没回落默认」**（30s 恰是 #23 的默认值），故 Gate 补了 `CM-17B`——这一条是加严，不是 Spec 清单要求。
