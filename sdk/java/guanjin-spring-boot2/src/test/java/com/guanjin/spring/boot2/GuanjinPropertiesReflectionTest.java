@@ -279,26 +279,13 @@ class GuanjinPropertiesReflectionTest {
         }
     }
 
+    /**
+     * 契约 §3.2.1：默认值也必须过**同一份**严格判定——不在这里自己写第三份解析
+     * （历史上的宽松分支会接受 {@code d}/裸数字，测试跟着放松就验不出偏差）。
+     */
     private static Duration parseDuration(String text) {
-        String v = text.trim().toLowerCase();
-        if (v.endsWith("ms")) {
-            return Duration.ofMillis(Long.parseLong(v.substring(0, v.length() - 2)));
-        }
-        long n = Long.parseLong(v.substring(0, v.length() - 1));
-        char unit = v.charAt(v.length() - 1);
-        if (unit == 's') {
-            return Duration.ofSeconds(n);
-        }
-        if (unit == 'm') {
-            return Duration.ofMinutes(n);
-        }
-        if (unit == 'h') {
-            return Duration.ofHours(n);
-        }
-        if (unit == 'd') {
-            return Duration.ofDays(n);
-        }
-        throw new IllegalArgumentException("无法解析 duration：" + text);
+        return com.guanjin.core.config.GuanjinConfigValidator.parseDuration(
+                "guanjin.duration.default", text);
     }
 
     /** 契约 §3.2 的一行。 */

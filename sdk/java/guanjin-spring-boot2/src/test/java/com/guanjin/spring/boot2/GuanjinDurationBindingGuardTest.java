@@ -103,6 +103,28 @@ class GuanjinDurationBindingGuardTest {
         }
     }
 
+    @Test
+    void AC_SDK_11_surroundingWhitespaceIsTrimmedNotRejected() {
+        // 契约 §3.2.1 显式允许「首尾空白（trim）」；Spring 的 Duration 转换器本身不 trim，
+        // 所以守卫必须在判过之后把规范文本回写到属性源，否则契约允许的形态在主路径上起不来。
+        Map<String, Object> props = baseProps();
+        props.put("guanjin.platform.connect-timeout", " 2s ");
+        props.put("guanjin.gateway.clock-skew", "60s\n");
+        props.put("guanjin.agent.pull.interval", "\t1h\t");
+        props.put("guanjin.authz.enabled", "false");
+
+        ConfigurableApplicationContext ctx = start(props);
+        try {
+            GuanjinProperties bound = ctx.getBean(GuanjinProperties.class);
+            assertEquals(java.time.Duration.ofSeconds(2), bound.getPlatform().getConnectTimeout(),
+                    "首尾空白必须按 trim 后解析（Go 侧 strings.TrimSpace 同样接受）");
+            assertEquals(java.time.Duration.ofSeconds(60), bound.getGateway().getClockSkew());
+            assertEquals(java.time.Duration.ofHours(1), bound.getAgent().getPull().getInterval());
+        } finally {
+            ctx.close();
+        }
+    }
+
     /** 该键的原始文本是非法形态 → 启动失败，错误里必须有键名与 §3.2.1 的合法形态。 */
     private void assertRejected(String key, String raw, String expectedKeyInMessage) {
         Map<String, Object> props = baseProps();

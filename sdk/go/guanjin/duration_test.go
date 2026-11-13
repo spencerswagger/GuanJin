@@ -19,7 +19,7 @@ var durationKeysForTest = []string{
 
 // 契约 §3.2.1：合法形态唯一 = `trim` 后 `^[0-9]+(ms|s|m|h)$`；下列九类**必须启动失败**，
 // 且错误里必须出现**键名**、不得回落默认值（AC-SDK-11）。
-func TestDurationRejectsNineIllegalForms(t *testing.T) {
+func TestAC_SDK_11_DurationRejectsNineIllegalForms(t *testing.T) {
 	illegal := []struct {
 		name string
 		raw  string
@@ -65,7 +65,7 @@ func TestDurationRejectsNineIllegalForms(t *testing.T) {
 }
 
 // 合法形态：4 个单位、非负整数、允许首尾空白（trim），换算成无隐式单位的时间值。
-func TestDurationAcceptsOnlyCanonicalForms(t *testing.T) {
+func TestAC_SDK_11_DurationAcceptsOnlyCanonicalForms(t *testing.T) {
 	cases := []struct {
 		raw  string
 		want time.Duration
@@ -110,7 +110,7 @@ func TestDurationAcceptsOnlyCanonicalForms(t *testing.T) {
 }
 
 // 非法时长不得返回"可用实例"：结构体必须是零值（§3.6 Go ④）。
-func TestDurationIllegalFormReturnsNoUsableConfig(t *testing.T) {
+func TestAC_SDK_11_DurationIllegalFormReturnsNoUsableConfig(t *testing.T) {
 	cfg, err := LoadFromMap(map[string]string{
 		KeyPlatformBaseURL:     "https://gj.example.com",
 		KeyClientID:            "orders",
@@ -125,7 +125,7 @@ func TestDurationIllegalFormReturnsNoUsableConfig(t *testing.T) {
 }
 
 // Validate() 也要拒：装载期已拒一次，但程序化赋值/二次校验同样不能放过（AC-SDK-11）。
-func TestValidateRechecksDurationTexts(t *testing.T) {
+func TestAC_SDK_11_ValidateRechecksDurationTexts(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.Platform.BaseURL = "https://gj.example.com"
 	cfg.Client.ID = "orders"
@@ -144,7 +144,7 @@ func TestValidateRechecksDurationTexts(t *testing.T) {
 }
 
 // 环境变量形态同样按 §3.2.1 判（同名键、同一错误）。
-func TestDurationFromEnvironIsStrict(t *testing.T) {
+func TestAC_SDK_11_DurationFromEnvironIsStrict(t *testing.T) {
 	_, err := LoadFromEnviron([]string{
 		"GUANJIN_PLATFORM_BASE_URL=https://gj.example.com",
 		"GUANJIN_CLIENT_ID=orders",

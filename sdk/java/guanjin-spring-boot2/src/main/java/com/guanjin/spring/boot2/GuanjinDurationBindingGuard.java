@@ -14,9 +14,10 @@ import org.springframework.context.EnvironmentAware;
 import org.springframework.core.Ordered;
 import org.springframework.core.env.ConfigurableEnvironment;
 import org.springframework.core.env.Environment;
+import org.springframework.core.env.MapPropertySource;
 
-import java.util.List;
-import java.util.Locale;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 /**
  * 时长键的**绑定期守卫**（契约 §3.2.1，`FROZEN`；判据 `AC-SDK-11`）。
@@ -64,11 +65,25 @@ final class GuanjinDurationBindingGuard implements BeanFactoryPostProcessor, Env
             return;
         }
         Iterable<ConfigurationPropertySource> sources = ConfigurationPropertySources.get(environment);
+        Map<String, Object> normalized = new LinkedHashMap<String, Object>();
         for (String key : GuanjinConfigValidator.durationKeys()) {
             ConfigurationProperty property = findEffective(sources, key);
-            if (property != null) {
-                requireDurationText(key, unwrap(property.getValue()));
+            if (property == null) {
+                continue;
             }
+            String canonical = requireDurationText(key, unwrap(property.getValue()));
+            Object raw = unwrap(property.getValue());
+            if (canonical != null && !canonical.equals(raw)) {
+                normalized.put(key, canonical);
+            }
+        }
+        if (!normalized.isEmpty()) {
+            // 契约 §3.2.1 显式允许「首尾空白」（trim 是写进契约的），但 Spring 的 Duration 转换器
+            // **不做 trim**（" 2s " 会抛 ConversionFailedException，且文案不带 §3.2.1）。
+            // 判过之后把 trim 版本以最高优先级塞回去，binder 拿到的就是规范文本——
+            // 否则同一条契约在 Java 主路径上做不到（Go 侧 strings.TrimSpace 本来就能过）。
+            environment.getPropertySources()
+                    .addFirst(new MapPropertySource("guanjinDurationTrimmed", normalized));
         }
     }
 
@@ -84,8 +99,12 @@ final class GuanjinDurationBindingGuard implements BeanFactoryPostProcessor, Env
         return null;
     }
 
-    /** 生效值不是 §3.2.1 的字符串形态（或占位符解析不掉）→ 启动失败，报键名。 */
-    private void requireDurationText(String key, Object value) {
+    /**
+     * 生效值不是 §3.2.1 的字符串形态（或占位符解析不掉）→ 启动失败，报键名。
+     *
+     * @return 通过校验后的**规范文本**（占位符已解析、首尾空白已 trim），供调用方回写属性源
+     */
+    private String requireDurationText(String key, Object value) {
         if (value == null) {
             throw new GuanjinConfigException(key,
                     "取不到时长（契约 §3.2.1：必须显式给出 " + GuanjinConfigValidator.DURATION_PATTERN + " 形态，如 2s）。"
@@ -107,6 +126,7 @@ final class GuanjinDurationBindingGuard implements BeanFactoryPostProcessor, Env
             }
         }
         GuanjinConfigValidator.parseDuration(key, text);
+        return text.trim();
     }
 
     private static Object unwrap(Object value) {
@@ -120,15 +140,5 @@ final class GuanjinDurationBindingGuard implements BeanFactoryPostProcessor, Env
     @Override
     public int getOrder() {
         return Ordered.LOWEST_PRECEDENCE;
-    }
-
-    /** 规范化配置名（仅用于错误信息与诊断；查找本身交给 Spring 的宽松映射）。 */
-    static String normalize(String name) {
-        return name.toLowerCase(Locale.ROOT).replace("-", "").replace("_", "");
-    }
-
-    /** 契约里 6 个 duration 键（顺序 = 契约编号），诊断用。 */
-    static List<String> keys() {
-        return GuanjinConfigValidator.durationKeys();
     }
 }
