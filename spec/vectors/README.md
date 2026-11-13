@@ -53,12 +53,12 @@ go test -count=1 -run TestSpecVectors ./internal/agent/ ./sdk/go/guanjin/
 2. **模型/策略完整性校验无实现**：Java `Authz.init` 无 digest 校验、Go `internal/authz` 只有 `doc.go` → `integrity_cases` 定性 UNIMPLEMENTED（附录 C 把这条与 `scope()` 分列，故单列一个桶）。
 3. **Agent HMAC 无生产实现**：全仓 `hmac.New` 非测试调用 = 0，`internal/agent` 只拼 canonical；`internal/crypto.HMACSM3WithUserSecret` 明确**禁止**用于 Agent HMAC；Java `PullRequestSigner` 只有接口 → 签名由 gmsm 独立实现算出，待 Edge 落地后接同一向量。
 5. **Go SDK 默认值缺陷（已修，2026-11-13）**：`guanjin.authz.model-conf` 契约 #17 = `classpath:/guanjin/model.conf`，Go 曾给 `model.conf`。现已对齐、`defects` **已删空**（口径：**已修就删表、未修才登记**；历史只在 git 里，不留"已修条目"）。首选拦法是**生成期硬校验**（实现漂移则 `go run ./scripts/vecgen` 直接 panic），`defects` 只留给"生成期判不死"的偏差。
-5. **duration 严格解析（契约 §3.2.1 v15 / `AC-SDK-11`）：九类非法已落地，补口三项仍有差异**
+5. **duration 严格解析（契约 §3.2.1 v15 / `AC-SDK-11`）：九类非法已落地；补口① 未落地（`CM-13` pending），补口③ 已消解**
    - **已落地**：`3000`/`1d`/`1h30m`/`1.5s`/`PT60S`/`+60s`/`1S` 及空串/内部空白 —— 两侧全部 `reject@load`（`CM-06`~`CM-12`）。
-   - **差异 1（`CM-15`）**：`platform.connect-timeout=9999999999999h` —— Go `reject@load`（`time.ParseDuration` 溢出），
-     **Java `accept`**（`Duration.ofHours` 不溢出，缺 `toNanos()` 上界判定）→ 补口③ 未落地。
-   - **差异 2（`CM-16`）**：`gateway.clock-skew="\u00A02s"`（NBSP）—— **Go `accept`**（`strings.TrimSpace` 会剥 Unicode 空白），
-     Java `reject@load`（已按 4 字符集）→ 补口③ 只在 Java 落地。
+   - **差异 1（`CM-15`）：已消解（2026-11-13，`#155` 后复测）** —— `platform.connect-timeout=9999999999999h`
+     两侧均 `reject@load`：Go `time.ParseDuration` 溢出、Java 已补 `toNanos()` 上界判定并报键名。
+   - **差异 2（`CM-16`）：已消解（同日）** —— `gateway.clock-skew="\u00A02s"`（NBSP）两侧均 `reject@load`：
+     Go 已按 4 个 ASCII 空白 trim（不再 `strings.TrimSpace`）、Java 本就按 4 字符集拒。
    - **差异 3（`CM-13`，pending）**：`gateway.clock-skew=0s` —— 契约补口① 明写**合法**（零容忍），但**两侧都拒**：
      Go `reject@validate`（『必须为正（默认 60s）』）、Java `reject@load`（同义）。要么 Nova 放开零值，要么 Spec 改补口①
      措辞，**Gate 不自行判**（已报 Spec）。
