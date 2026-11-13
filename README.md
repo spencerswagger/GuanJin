@@ -63,7 +63,7 @@ docs/                       # 设计基线（只读）+ 裁定台账 + M1 切片
 
 ## 技术栈（基线冻结）
 
-- 后端 **Go 1.25**：Gin + GORM + golang-migrate + pgx + `tjfoc/gmsm` + `golang-jwt/v5` + zap + `caarlos0/env`，`CGO_ENABLED=0`
+- 后端 **Go 1.26**（`go.mod` 锁定 1.26.10）：Gin + GORM + golang-migrate + pgx + `tjfoc/gmsm` + `golang-jwt/v5` + zap + `caarlos0/env`，`CGO_ENABLED=0`
 - 前端 **Vue 3.5 + Vite + TypeScript + pinia + element-plus**，产物 `go:embed` 与后端同端口
 - SDK 三语言 **Java 8 / Node / Go**（共用 `docs/sdk-contract.md` 一份语言无关契约：22 条能力 + 29 项配置）
 - 全链路国密固定最高级：口令 **PBKDF2-SM3**、摘要 **SM3**、审计 **HMAC-SM3**、敏感字段 **SM4**、网关断言 **SM2**、对外令牌 **SM3withSM2**；主密钥只从环境变量注入、经 **HKDF-SM3** 派生子密钥、**不落库**
